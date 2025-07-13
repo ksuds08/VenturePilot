@@ -1,0 +1,4 @@
+name = "venturepilot"
+main = "worker/index.js"
+compatibility_date = "2025-07-13"
+workers_dev = true
