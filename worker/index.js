@@ -19,3 +19,5 @@ export default {
 };
       case 'planBusiness':
         return new Response(JSON.stringify({ status: 'stub', tool: 'planBusiness' }), { headers: { 'Content-Type': 'application/json' } });
+// Business Ops endpoints: formBusinessEntity, setupEIN, suggestBankAccounts, generateLegalDocs, setupAccounting, trackCompliance
+// Maintenance endpoints: checkSystemHealth, retryFailedAction, updateFromGitHub, logMaintenanceEvent
