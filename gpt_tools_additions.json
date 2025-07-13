@@ -1,0 +1,12 @@
+[
+  {
+    "name": "formBusinessEntity",
+    "description": "Collects state & entity preference, links to filing services",
+    "url": "https://venturepilot.workers.dev/formBusinessEntity"
+  },
+  {
+    "name": "setupEIN",
+    "description": "Guides EIN registration and lists required info",
+    "url": "https://venturepilot.workers.dev/setupEIN"
+  }
+]
