@@ -8,9 +8,14 @@ export default {
         return new Response(JSON.stringify({ status: 'ok' }), {
           headers: { 'Content-Type': 'application/json' }
         });
-      // TODO: Add other tool endpoints (planBusiness, generateProduct, etc.)
-      default:
+      //
+        
+        TODO: Add other tool endpoints (planBusiness, generateProduct, etc.)
+      de
+        fault:
         return new Response('Not found', { status: 404 });
     }
   }
 };
+      case 'planBusiness':
+        return new Response(JSON.stringify({ status: 'stub', tool: 'planBusiness' }), { headers: { 'Content-Type': 'application/json' } });
