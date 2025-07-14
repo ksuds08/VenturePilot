@@ -35,29 +35,20 @@ export default function Validate() {
 
       <textarea
         rows={4}
-        style=https://operator.chatgpt.com/c/687521cc36d08190b9030e4234ab24fe#cua_citation-%20width:%20'100%'%20
         placeholder="Paste your SaaS idea..."
         value={idea}
         onChange={(e) => setIdea(e.target.value)}
       />
 
-      <button
-        onClick={runValidate}
-        disabled={loading}
-        style=https://operator.chatgpt.com/c/687521cc36d08190b9030e4234ab24fe#cua_citation-%20marginTop:%20'1rem',%20padding:%20'0.5rem%201rem'%20
-      >
+      <button onClick={runValidate} disabled={loading}>
         {loading ? 'Validating…' : 'Validate'}
       </button>
 
       {result && (
         <>
-          <pre
-            style=https://operator.chatgpt.com/c/687521cc36d08190b9030e4234ab24fe#cua_citation-%20%20%20%20%20%20%20%20%20%20%20%20%20%20marginTop:%20'2rem',%20%20%20%20%20%20%20%20%20%20%20%20%20%20background:%20'#f5f5f5',%20%20%20%20%20%20%20%20%20%20%20%20%20%20padding:%20'1rem',%20%20%20%20%20%20%20%20%20%20%20%20%20%20whiteSpace:%20'pre-wrap',%20%20%20%20%20%20%20%20%20%20%20%20%20%20wordBreak:%20'break-word',%20%20%20%20%20%20%20%20%20%20%20%20
-          >
-            {JSON.stringify(result, null, 2)}
-          </pre>
+          <pre>{JSON.stringify(result, null, 2)}</pre>
           <Link href="/brand">
-            <button style=https://operator.chatgpt.com/c/687521cc36d08190b9030e4234ab24fe#cua_citation-%20marginTop:%20'1rem'%20>Next: Brand</button>
+            <button>Next: Brand</button>
           </Link>
         </>
       )}
