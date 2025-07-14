@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import Nav from '../components/Nav';
 import { loadIdea } from '../utils/ideaStore';
+import { loadIdeaId } from '../utils/ideaIdStore';
 
 export default function MVP() {
   const [idea] = useState(loadIdea());
@@ -9,12 +10,17 @@ export default function MVP() {
   const [loading, setLoading] = useState(false);
 
   const generateMVP = async () => {
-    if (!idea) return;
+    const ideaId = loadIdeaId();
+    if (!idea || !ideaId) {
+      setResult({ error: 'Missing idea or ideaId. Go back to Idea step.' });
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await axios.post(
         'https://venturepilot-api.promptpulse.workers.dev/mvp',
-        { idea, ideaId: 'demo-id' } // Replace with real ideaId later
+        { idea, ideaId }
       );
       setResult(res.data);
     } catch (err) {
