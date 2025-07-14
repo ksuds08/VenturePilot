@@ -3,6 +3,7 @@ import axios from 'axios';
 import Link from 'next/link';
 import Nav from '../components/Nav';
 import { saveIdea, loadIdea } from '../utils/ideaStore';
+import { saveIdeaId } from '../utils/ideaIdStore';
 
 export default function Home() {
   const [prompt, setPrompt] = useState(loadIdea());
@@ -17,8 +18,10 @@ export default function Home() {
         'https://venturepilot-api.promptpulse.workers.dev/idea',
         { prompt }
       );
-      setResponse(res.data);
+      // res.data = { ideaId, aiResponse }
       saveIdea(prompt);
+      saveIdeaId(res.data.ideaId);
+      setResponse(res.data.aiResponse);
     } catch (err) {
       setResponse({ error: err.message });
     } finally {
