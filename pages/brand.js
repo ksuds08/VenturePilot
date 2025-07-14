@@ -27,8 +27,8 @@ export default function Brand() {
   };
 
   return (
-    <main style=https://operator.chatgpt.com/c/687521cc36d08190b9030e4234ab24fe#cua_citation-%20maxWidth:%20600,%20margin:%20'2rem%20auto',%20fontFamily:%20'sans-serif'%20>
-      <Nav />
+    <main>
+    <Nav />
       <h1>Brand Generator</h1>
 
       <textarea
