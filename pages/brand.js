@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import Nav from '../components/Nav';
 import { loadIdea } from '../utils/ideaStore';
+import { loadIdeaId } from '../utils/ideaIdStore';
 
 export default function Brand() {
   const [idea, setIdea] = useState('');
@@ -11,12 +12,13 @@ export default function Brand() {
   useEffect(() => setIdea(loadIdea()), []);
 
   const runBrand = async () => {
-    if (!idea.trim()) return;
+    const ideaId = loadIdeaId();
+    if (!idea.trim() || !ideaId) return;
     setLoading(true);
     try {
       const res = await axios.post(
         'https://venturepilot-api.promptpulse.workers.dev/brand',
-        { idea }
+        { idea, ideaId }
       );
       setResult(res.data);
     } catch (err) {
