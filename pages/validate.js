@@ -3,6 +3,7 @@ import axios from 'axios';
 import Link from 'next/link';
 import Nav from '../components/Nav';
 import { saveIdea, loadIdea } from '../utils/ideaStore';
+import { loadIdeaId } from '../utils/ideaIdStore';
 
 export default function Validate() {
   const [idea, setIdea] = useState('');
@@ -12,12 +13,13 @@ export default function Validate() {
   useEffect(() => setIdea(loadIdea()), []);
 
   const runValidate = async () => {
-    if (!idea.trim()) return;
+    const ideaId = loadIdeaId();
+    if (!idea.trim() || !ideaId) return;
     setLoading(true);
     try {
       const res = await axios.post(
         'https://venturepilot-api.promptpulse.workers.dev/validate',
-        { idea }
+        { idea, ideaId }
       );
       setResult(res.data);
       saveIdea(idea);
