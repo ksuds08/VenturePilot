@@ -1,5 +1,6 @@
 import Layout from "../components/layout";
 import { motion } from "framer-motion";
+import ChatAssistant from "../components/ChatAssistant";
 
 export default function LandingPage() {
   return (
@@ -47,11 +48,7 @@ export default function LandingPage() {
         {/* Onboarding Assistant Section */}
         <section id="start" className="py-12">
           <h2 className="text-3xl font-bold mb-6 text-center">Your AI Co-Founder Is Ready</h2>
-          <div className="max-w-3xl mx-auto bg-slate-100 dark:bg-slate-800 p-6 rounded-xl shadow">
-            <p className="text-center text-slate-600 dark:text-slate-300">
-              [This is where your assistant/chat interface will live.]
-            </p>
-          </div>
+          <ChatAssistant />
         </section>
       </>
     </Layout>
