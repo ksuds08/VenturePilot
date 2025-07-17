@@ -14,13 +14,13 @@ export default function ChatAssistant() {
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-  // Load locked ideas on mount
   useEffect(() => {
     const saved = localStorage.getItem("lockedIdeas");
     if (saved) setLockedIdeas(JSON.parse(saved));
   }, []);
 
   const saveLockedIdea = (idea: string) => {
+    if (lockedIdeas.includes(idea)) return;
     const updated = [...lockedIdeas, idea];
     setLockedIdeas(updated);
     localStorage.setItem("lockedIdeas", JSON.stringify(updated));
