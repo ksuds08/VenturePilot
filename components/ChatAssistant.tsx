@@ -1,4 +1,3 @@
-// ...imports
 "use client";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -12,6 +11,8 @@ export default function ChatAssistant() {
   const [lockedIdeas, setLockedIdeas] = useState<string[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [validatedIdeas, setValidatedIdeas] = useState<Record<string, string>>({});
+  const [validationLoading, setValidationLoading] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("lockedIdeas");
@@ -27,7 +28,10 @@ export default function ChatAssistant() {
 
   const deleteLockedIdea = (index: number) => {
     const updated = [...lockedIdeas];
-    updated.splice(index, 1);
+    const [removed] = updated.splice(index, 1);
+    const newValidations = { ...validatedIdeas };
+    delete newValidations[removed];
+    setValidatedIdeas(newValidations);
     setLockedIdeas(updated);
     localStorage.setItem("lockedIdeas", JSON.stringify(updated));
   };
@@ -45,6 +49,26 @@ export default function ChatAssistant() {
     localStorage.setItem("lockedIdeas", JSON.stringify(updated));
     setEditingIndex(null);
     setEditValue("");
+  };
+
+  const validateIdea = async (idea: string) => {
+    const ideaId = btoa(idea).slice(0, 12); // deterministic short ID
+    if (validatedIdeas[idea]) return; // already validated
+
+    setValidationLoading(idea);
+    try {
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea, ideaId }),
+      });
+
+      const data = await res.json();
+      setValidatedIdeas((prev) => ({ ...prev, [idea]: data.content || "Validation complete." }));
+    } catch (err) {
+      setValidatedIdeas((prev) => ({ ...prev, [idea]: "⚠️ Validation failed. Please try again." }));
+    }
+    setValidationLoading(null);
   };
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -196,7 +220,19 @@ export default function ChatAssistant() {
                         >
                           Delete
                         </button>
+                        <button
+                          onClick={() => validateIdea(idea)}
+                          disabled={validationLoading === idea}
+                          className="text-green-600 hover:underline text-sm"
+                        >
+                          {validationLoading === idea ? "Validating..." : "Validate"}
+                        </button>
                       </div>
+                      {validatedIdeas[idea] && (
+                        <div className="mt-2 p-2 rounded bg-slate-200 dark:bg-slate-700 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{validatedIdeas[idea]}</ReactMarkdown>
+                        </div>
+                      )}
                     </>
                   )}
                 </li>
