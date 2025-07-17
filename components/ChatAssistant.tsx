@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { v4 as uuidv4 } from "uuid";
 
 type PhaseStatus = "not_started" | "in_progress" | "completed";
 
@@ -11,11 +12,12 @@ interface PhaseState {
   pendingUpdate?: string;
 }
 
-interface IdeaPhaseState {
-  title: string;
-  phases: {
-    [phaseKey: string]: PhaseState;
-  };
+interface VentureIdea {
+  id: string;
+  title: string;          // Locked version
+  draft?: string;         // Latest GPT suggestion
+  history: string[];      // Prior refinements
+  phases: { [key: string]: PhaseState };
 }
 
 const phaseStructure = [
@@ -32,55 +34,94 @@ export default function ChatAssistant() {
   const [messages, setMessages] = useState([{ role: "assistant", content: "Hi! Ready to build your startup together?" }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [ideas, setIdeas] = useState<IdeaPhaseState[]>([]);
+  const [ideas, setIdeas] = useState<VentureIdea[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("lockedIdeasV2");
+    const saved = localStorage.getItem("ventureIdeas-v2");
     if (saved) setIdeas(JSON.parse(saved));
   }, []);
 
-  const persistIdeas = (updated: IdeaPhaseState[]) => {
+  const persistIdeas = (updated: VentureIdea[]) => {
     setIdeas(updated);
-    localStorage.setItem("lockedIdeasV2", JSON.stringify(updated));
+    localStorage.setItem("ventureIdeas-v2", JSON.stringify(updated));
   };
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-  const lockRefinedIdea = (refinedIdea: string) => {
-    const newIdea: IdeaPhaseState = {
-      title: refinedIdea,
+  const addNewIdea = (draft: string) => {
+    const newIdea: VentureIdea = {
+      id: uuidv4(),
+      title: draft,
+      draft: undefined,
+      history: [],
       phases: phaseStructure.reduce((acc, phase) => {
         acc[phase.key] = {
           status: phase.key === "refinedIdea" ? "completed" : "not_started",
-          output: phase.key === "refinedIdea" ? refinedIdea : undefined,
+          output: phase.key === "refinedIdea" ? draft : undefined,
         };
         return acc;
       }, {} as Record<string, PhaseState>),
     };
-    const updated = [...ideas, newIdea];
+    persistIdeas([...ideas, newIdea]);
+  };
+
+  const updateIdeaDraft = (id: string, newDraft: string) => {
+    setIdeas((prev) =>
+      prev.map((idea) =>
+        idea.id === id
+          ? { ...idea, draft: newDraft }
+          : idea
+      )
+    );
+  };
+
+  const acceptRefinedDraft = (id: string) => {
+    setIdeas((prev) =>
+      prev.map((idea) => {
+        if (idea.id !== id || !idea.draft) return idea;
+        return {
+          ...idea,
+          history: [...idea.history, idea.title],
+          title: idea.draft,
+          draft: undefined,
+          phases: {
+            ...idea.phases,
+            refinedIdea: {
+              status: "completed",
+              output: idea.draft,
+            },
+          },
+        };
+      })
+    );
+  };
+
+  const updatePhaseOutput = (id: string, phaseKey: string, output: string) => {
+    const updated = ideas.map((idea) => {
+      if (idea.id !== id) return idea;
+      const newPhases = { ...idea.phases };
+      newPhases[phaseKey].output = output;
+      newPhases[phaseKey].status = "completed";
+
+      const next = phaseStructure.find(p => p.key === phaseKey)?.next;
+      if (next) {
+        newPhases[next].status = "in_progress";
+      }
+
+      return { ...idea, phases: newPhases };
+    });
     persistIdeas(updated);
   };
 
-  const updatePhaseOutput = (ideaIndex: number, phaseKey: string, output: string) => {
-    const updated = [...ideas];
-    updated[ideaIndex].phases[phaseKey].output = output;
-    updated[ideaIndex].phases[phaseKey].status = "completed";
-    const nextPhase = phaseStructure.find(p => p.key === phaseKey)?.next;
-    if (nextPhase) {
-      updated[ideaIndex].phases[nextPhase].status = "in_progress";
-    }
-    persistIdeas(updated);
-  };
-
-  const handleValidate = async (ideaIndex: number, idea: string) => {
-    const ideaId = btoa(idea).slice(0, 12);
+  const handleValidate = async (id: string, title: string) => {
+    const ideaId = btoa(title).slice(0, 12);
     const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idea, ideaId }),
+      body: JSON.stringify({ idea: title, ideaId }),
     });
     const data = await res.json();
-    updatePhaseOutput(ideaIndex, "validation", data.content || "Validation complete.");
+    updatePhaseOutput(id, "validation", data.content || "Validation complete.");
   };
 
   const sendMessage = async () => {
@@ -121,7 +162,9 @@ export default function ChatAssistant() {
       }
 
       if (refined) {
-        lockRefinedIdea(refined);
+        const alreadyExists = ideas.find(i => i.title === refined);
+        if (alreadyExists) return;
+        addNewIdea(refined);
       }
     } catch (err) {
       setMessages((prev) => [
@@ -135,7 +178,7 @@ export default function ChatAssistant() {
 
   return (
     <div className="flex flex-col md:flex-row gap-4 max-w-6xl mx-auto">
-      {/* Chat Window */}
+      {/* Chat */}
       <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl shadow p-4">
         <div className="space-y-4 max-h-[400px] overflow-y-auto mb-4">
           {messages.map((msg, i) => (
@@ -171,11 +214,27 @@ export default function ChatAssistant() {
         </div>
       </div>
 
-      {/* Per-Idea Wizard */}
+      {/* Ideas */}
       <div className="w-full md:w-1/3 space-y-6">
-        {ideas.map((idea, i) => (
-          <div key={i} className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl shadow">
+        {ideas.map((idea) => (
+          <div key={idea.id} className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl shadow">
             <h2 className="text-lg font-bold mb-2">{idea.title}</h2>
+
+            {/* Draft Upgrade Prompt */}
+            {idea.draft && idea.draft !== idea.title && (
+              <div className="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-100 p-2 rounded mb-3">
+                <p className="text-sm mb-2">💡 A new refinement is available:</p>
+                <p className="text-xs italic mb-2">{idea.draft}</p>
+                <button
+                  onClick={() => acceptRefinedDraft(idea.id)}
+                  className="text-sm bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                >
+                  Accept Update
+                </button>
+              </div>
+            )}
+
+            {/* Phase Wizard */}
             <div className="space-y-4">
               {phaseStructure.map((phase) => {
                 const phaseData = idea.phases[phase.key];
@@ -200,13 +259,12 @@ export default function ChatAssistant() {
                       <div className="mt-2 flex gap-2">
                         {phase.key === "validation" && (
                           <button
-                            onClick={() => handleValidate(i, idea.title)}
+                            onClick={() => handleValidate(idea.id, idea.title)}
                             className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
                           >
                             Validate
                           </button>
                         )}
-                        {/* Add buttons for other phases here */}
                       </div>
                     )}
                   </div>
