@@ -5,20 +5,15 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 export default function ChatAssistant() {
-  // State declarations
   const [ideas, setIdeas] = useState<any[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
 
-  // Refs
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Derived state
   const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
 
-  // Auto-resize textarea when editing
   useEffect(() => {
     if (activeIdea?.editing && textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -26,7 +21,6 @@ export default function ChatAssistant() {
     }
   }, [activeIdea?.editing, activeIdea?.editValue]);
 
-  // Utility functions
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
   const updateIdea = (id: string, updates: Partial<any>) => {
@@ -35,7 +29,6 @@ export default function ChatAssistant() {
     );
   };
 
-  // Core handlers
   const handleSend = async () => {
     if (!input.trim() || loading) return;
     setLoading(true);
@@ -55,7 +48,7 @@ export default function ChatAssistant() {
         editing: false,
         validation: null,
         validationError: null,
-        lastValidated: null
+        lastValidated: null,
       };
       setIdeas((prev) => [...prev, newIdea]);
       setActiveIdeaId(id);
@@ -75,7 +68,6 @@ export default function ChatAssistant() {
       const reply = data.reply || "";
       const refined = data.refinedIdea || "";
 
-      // Typing simulation
       const assistantMsg = { role: "assistant", content: "" };
       const words = reply.split(" ");
       const updatedMsgs = [...newIdea.messages, assistantMsg];
@@ -113,12 +105,12 @@ export default function ChatAssistant() {
   };
 
   const handleEdit = (id: string) => {
-    updateIdea(id, { 
-      editing: true, 
+    updateIdea(id, {
+      editing: true,
       editValue: ideas.find((i) => i.id === id)?.title,
       locked: false,
       validation: null,
-      validationError: null
+      validationError: null,
     });
   };
 
@@ -145,13 +137,13 @@ export default function ChatAssistant() {
     try {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json"
+          Accept: "application/json",
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           idea: idea.title,
-          ideaId: idea.id
+          ideaId: idea.id,
         }),
       });
 
@@ -162,16 +154,12 @@ export default function ChatAssistant() {
       }
 
       const validation = data.validation || "No validation results returned.";
+      const cleanedValidation = validation.replace(/\n{3,}/g, "\n\n").trim();
 
-      // Clean up the validation text
-      const cleanedValidation = validation
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
-
-      updateIdea(id, { 
+      updateIdea(id, {
         validation: cleanedValidation,
         validationError: null,
-        lastValidated: data.timestamp || new Date().toISOString()
+        lastValidated: data.timestamp || new Date().toISOString(),
       });
     } catch (err) {
       console.error("Validation error:", err);
@@ -182,10 +170,10 @@ export default function ChatAssistant() {
           errorMessage = "Invalid idea format - please edit and try again";
         }
       }
-      updateIdea(id, { 
+      updateIdea(id, {
         validation: null,
         validationError: errorMessage,
-        lastValidated: new Date().toISOString()
+        lastValidated: new Date().toISOString(),
       });
     } finally {
       setValidating(null);
@@ -194,7 +182,6 @@ export default function ChatAssistant() {
 
   return (
     <div className="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto">
-      {/* Chat Area */}
       <div className="flex-1 bg-white dark:bg-slate-900 border rounded-xl p-4 shadow">
         <div className="max-h-[400px] overflow-y-auto space-y-4 mb-4">
           {activeIdea?.messages?.map((msg, i) => (
@@ -206,7 +193,10 @@ export default function ChatAssistant() {
                     : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 }`}
               >
-                <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  className="prose dark:prose-invert max-w-none text-left"
+                  remarkPlugins={[() => remarkGfm]}
+                >
                   {msg.content}
                 </ReactMarkdown>
               </div>
@@ -235,7 +225,6 @@ export default function ChatAssistant() {
         </div>
       </div>
 
-      {/* Ideas Panel */}
       <div className="w-full md:w-1/3 bg-slate-100 dark:bg-slate-800 p-4 rounded-xl shadow h-fit space-y-6">
         {ideas.map((idea) => (
           <div
@@ -255,7 +244,7 @@ export default function ChatAssistant() {
                   onBlur={() => handleEditSave(idea.id)}
                   autoFocus
                   rows={1}
-                  style={{ minHeight: '44px' }}
+                  style={{ minHeight: "44px" }}
                 />
                 <div className="flex justify-end mt-2 space-x-2">
                   <button
@@ -355,17 +344,17 @@ export default function ChatAssistant() {
                       )}
                     </div>
                     <div className="bg-white dark:bg-slate-900 p-3 rounded border max-h-60 overflow-y-auto text-sm">
-                      <ReactMarkdown 
+                      <ReactMarkdown
                         className="prose dark:prose-invert max-w-none"
                         components={{
-                          h1: ({node, ...props}) => <h3 className="text-lg font-bold mt-3 mb-1" {...props} />,
-                          h2: ({node, ...props}) => <h4 className="text-md font-semibold mt-2 mb-1" {...props} />,
-                          h3: ({node, ...props}) => <h5 className="text-sm font-medium mt-2 mb-1" {...props} />,
-                          ul: ({node, ...props}) => <ul className="list-disc pl-5 space-y-1" {...props} />,
-                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
-                          a: ({node, ...props}) => <a className="text-blue-500 hover:underline" {...props} />,
+                          h1: ({ node, ...props }) => <h3 className="text-lg font-bold mt-3 mb-1" {...props} />,
+                          h2: ({ node, ...props }) => <h4 className="text-md font-semibold mt-2 mb-1" {...props} />,
+                          h3: ({ node, ...props }) => <h5 className="text-sm font-medium mt-2 mb-1" {...props} />,
+                          ul: ({ node, ...props }) => <ul className="list-disc pl-5 space-y-1" {...props} />,
+                          ol: ({ node, ...props }) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
+                          a: ({ node, ...props }) => <a className="text-blue-500 hover:underline" {...props} />,
                         }}
-                        remarkPlugins={[remarkGfm]}
+                        remarkPlugins={[() => remarkGfm]}
                       >
                         {idea.validation}
                       </ReactMarkdown>
