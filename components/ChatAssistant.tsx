@@ -51,7 +51,12 @@ export default function ChatAssistant() {
           const token = line.replace("data: ", "").trim();
           if (token === "[DONE]") continue;
 
-          buffer += token; // ⬅️ keep tokens raw
+          // ✅ Add a space if needed between words
+          const lastChar = buffer.slice(-1);
+          const needsSpace =
+            lastChar && /\w/.test(lastChar) && /^\w/.test(token);
+          buffer += needsSpace ? ` ${token}` : token;
+
           updateCount++;
 
           if (
