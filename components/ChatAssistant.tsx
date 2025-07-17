@@ -85,12 +85,7 @@ export default function ChatAssistant() {
         }
       );
 
-      let data;
-      try {
-        data = await res.json();
-      } catch {
-        throw new Error("Response was not valid JSON");
-      }
+      const data = await res.json();
 
       if (!res.ok) {
         const message = data?.error || `Server error ${res.status}`;
@@ -161,13 +156,7 @@ export default function ChatAssistant() {
         }
       );
 
-      let data;
-      try {
-        data = await res.json();
-      } catch {
-        throw new Error("Response was not valid JSON");
-      }
-
+      const data = await res.json();
       if (!res.ok)
         throw new Error(data.error || `Validation failed with status ${res.status}`);
 
@@ -203,13 +192,7 @@ export default function ChatAssistant() {
         }
       );
 
-      let data;
-      try {
-        data = await res.json();
-      } catch {
-        throw new Error("Response was not valid JSON");
-      }
-
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Brand generation failed");
 
       updateIdea(id, {
@@ -334,7 +317,8 @@ export default function ChatAssistant() {
                       <div
                         key={c}
                         className="w-6 h-6 rounded-full border"
-                        style=https://operator.chatgpt.com/c/68795ad055b48191959fdb6c71d65adb#cua_citation-%20backgroundColor:%20c%20                        title={c}
+                        style=https://operator.chatgpt.com/c/68795ad055b48191959fdb6c71d65adb#cua_citation-%20backgroundColor:%20c%20
+                        title={c}
                       />
                     ))}
                   </div>
