@@ -334,7 +334,7 @@ export default function ChatAssistant() {
                       <div
                         key={c}
                         className="w-6 h-6 rounded-full border"
-                        style=https://operator.chatgpt.com/c/68795ad055b48191959fdb6c71d65adb#cua_citation-%20backgroundColor:%20c%20
+                        style=https://operator.chatgpt.com/c/68795ad055b48191959fdb6c71d65adb#cua_citation-%20backgroundColor:%20c%20   {/* <-- FIXED */}
                         title={c}
                       />
                     ))}
