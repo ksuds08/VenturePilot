@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -39,6 +39,8 @@ export default function ChatAssistant() {
         locked: false,
         editing: false,
         validation: null,
+        validationError: null,
+        lastValidated: null
       };
       setIdeas((prev) => [...prev, newIdea]);
       setActiveIdeaId(id);
@@ -100,6 +102,8 @@ export default function ChatAssistant() {
       editing: true, 
       editValue: ideas.find((i) => i.id === id)?.title,
       locked: false,
+      validation: null,
+      validationError: null
     });
   };
 
@@ -126,22 +130,48 @@ export default function ChatAssistant() {
     try {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title }),
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({ 
+          idea: idea.title,
+          ideaId: idea.id
+        }),
       });
 
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || `Validation failed with status ${res.status}`);
+      }
+
       const validation = data.validation || "No validation results returned.";
 
       // Clean up the validation text
       const cleanedValidation = validation
-        .replace(/\n{3,}/g, "\n\n") // Replace 3+ newlines with 2
+        .replace(/\n{3,}/g, "\n\n")
         .trim();
 
-      updateIdea(id, { validation: cleanedValidation });
+      updateIdea(id, { 
+        validation: cleanedValidation,
+        validationError: null,
+        lastValidated: data.timestamp || new Date().toISOString()
+      });
     } catch (err) {
       console.error("Validation error:", err);
-      updateIdea(id, { validation: "Error during validation. Please try again." });
+      let errorMessage = "Validation failed. Please try again.";
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        if (errorMessage.includes("Missing required field")) {
+          errorMessage = "Invalid idea format - please edit and try again";
+        }
+      }
+      updateIdea(id, { 
+        validation: null,
+        validationError: errorMessage,
+        lastValidated: new Date().toISOString()
+      });
     } finally {
       setValidating(null);
     }
@@ -182,9 +212,10 @@ export default function ChatAssistant() {
           />
           <button
             onClick={handleSend}
-            className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600"
+            disabled={loading}
+            className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600 disabled:opacity-50"
           >
-            Send
+            {loading ? "Sending..." : "Send"}
           </button>
         </div>
       </div>
@@ -194,12 +225,12 @@ export default function ChatAssistant() {
         {ideas.map((idea) => (
           <div
             key={idea.id}
-            className={`border rounded-lg p-3 cursor-pointer ${
-              idea.id === activeIdeaId ? "border-blue-500 shadow-md" : "border-slate-300"
+            className={`border rounded-lg p-3 cursor-pointer transition-all ${
+              idea.id === activeIdeaId ? "border-blue-500 shadow-md" : "border-slate-300 hover:border-slate-400"
             }`}
             onClick={() => setActiveIdeaId(idea.id)}
           >
-            <div className="font-semibold text-md">
+            <div className="font-semibold text-md mb-1">
               {idea.editing ? (
                 <input
                   className="w-full p-1 rounded border dark:bg-slate-900 dark:text-white"
@@ -208,6 +239,7 @@ export default function ChatAssistant() {
                     updateIdea(idea.id, { editValue: e.target.value })
                   }
                   onBlur={() => handleEditSave(idea.id)}
+                  autoFocus
                 />
               ) : (
                 idea.title
@@ -232,7 +264,7 @@ export default function ChatAssistant() {
               </div>
             )}
 
-            <div className="flex gap-4 text-xs mt-2">
+            <div className="flex gap-4 text-xs mt-2 flex-wrap">
               <button
                 className="text-blue-500 hover:underline"
                 onClick={(e) => {
@@ -265,11 +297,38 @@ export default function ChatAssistant() {
               )}
             </div>
 
+            {idea.validationError && (
+              <div className="mt-3 animate-fade-in">
+                <div className="font-medium text-xs mb-1 text-red-500">Validation Error</div>
+                <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-800 text-sm">
+                  {idea.validationError}
+                </div>
+              </div>
+            )}
+
             {idea.validation && (
-              <div className="mt-3">
-                <div className="font-medium text-xs mb-1">Validation Result</div>
+              <div className="mt-3 animate-fade-in">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-medium text-xs">Validation Analysis</div>
+                  {idea.lastValidated && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {new Date(idea.lastValidated).toLocaleString()}
+                    </div>
+                  )}
+                </div>
                 <div className="bg-white dark:bg-slate-900 p-3 rounded border max-h-60 overflow-y-auto text-sm">
-                  <ReactMarkdown className="prose dark:prose-invert max-w-none text-justify" remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown 
+                    className="prose dark:prose-invert max-w-none"
+                    components={{
+                      h1: ({node, ...props}) => <h3 className="text-lg font-bold mt-3 mb-1" {...props} />,
+                      h2: ({node, ...props}) => <h4 className="text-md font-semibold mt-2 mb-1" {...props} />,
+                      h3: ({node, ...props}) => <h5 className="text-sm font-medium mt-2 mb-1" {...props} />,
+                      ul: ({node, ...props}) => <ul className="list-disc pl-5 space-y-1" {...props} />,
+                      ol: ({node, ...props}) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
+                      a: ({node, ...props}) => <a className="text-blue-500 hover:underline" {...props} />,
+                    }}
+                    remarkPlugins={[remarkGfm]}
+                  >
                     {idea.validation}
                   </ReactMarkdown>
                 </div>
