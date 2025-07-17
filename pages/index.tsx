@@ -38,25 +38,6 @@ export default function LandingPage() {
             <span className="text-slate-400">[Demo animation coming soon]</span>
           </div>
         </section>
-
-        {/* FAQ Section */}
-        <section className="py-12">
-          <h2 className="text-3xl font-bold mb-6 text-center">Frequently Asked Questions</h2>
-          <div className="max-w-2xl mx-auto space-y-4">
-            <div className="bg-slate-100 dark:bg-slate-800 rounded-xl px-6 py-4">
-              <p className="font-semibold">How does VenturePilot work?</p>
-              <p className="text-slate-600 dark:text-slate-400">
-                Describe your idea, and we’ll generate the plan, branding, and MVP for you.
-              </p>
-            </div>
-            <div className="bg-slate-100 dark:bg-slate-800 rounded-xl px-6 py-4">
-              <p className="font-semibold">Can I export my MVP?</p>
-              <p className="text-slate-600 dark:text-slate-400">
-                Yes! Deploy to Glide, GitHub, or Render, or download source code.
-              </p>
-            </div>
-          </div>
-        </section>
       </>
     </Layout>
   );
