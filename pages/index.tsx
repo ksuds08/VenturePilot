@@ -1,4 +1,4 @@
-import Layout from "../components/Layout";
+import Layout from "../Layout";
 import { motion } from "framer-motion";
 
 export default function LandingPage() {
