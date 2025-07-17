@@ -1,4 +1,4 @@
-import Layout from "..//ayout";
+import Layout from "../layout";
 import { motion } from "framer-motion";
 
 const startupData = {
