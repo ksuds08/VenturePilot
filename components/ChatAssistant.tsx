@@ -14,9 +14,9 @@ interface PhaseState {
 
 interface VentureIdea {
   id: string;
-  title: string;          // Locked version
-  draft?: string;         // Latest GPT suggestion
-  history: string[];      // Prior refinements
+  title: string;
+  draft?: string;
+  history: string[];
   phases: { [key: string]: PhaseState };
 }
 
@@ -35,10 +35,15 @@ export default function ChatAssistant() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [ideas, setIdeas] = useState<VentureIdea[]>([]);
+  const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("ventureIdeas-v2");
-    if (saved) setIdeas(JSON.parse(saved));
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setIdeas(parsed);
+      if (parsed.length > 0) setActiveIdeaId(parsed[0].id);
+    }
   }, []);
 
   const persistIdeas = (updated: VentureIdea[]) => {
@@ -48,7 +53,7 @@ export default function ChatAssistant() {
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-  const addNewIdea = (draft: string) => {
+  const addNewIdea = (draft: string): string => {
     const newIdea: VentureIdea = {
       id: uuidv4(),
       title: draft,
@@ -62,15 +67,16 @@ export default function ChatAssistant() {
         return acc;
       }, {} as Record<string, PhaseState>),
     };
-    persistIdeas([...ideas, newIdea]);
+    const updated = [...ideas, newIdea];
+    persistIdeas(updated);
+    setActiveIdeaId(newIdea.id);
+    return newIdea.id;
   };
 
   const updateIdeaDraft = (id: string, newDraft: string) => {
     setIdeas((prev) =>
       prev.map((idea) =>
-        idea.id === id
-          ? { ...idea, draft: newDraft }
-          : idea
+        idea.id === id ? { ...idea, draft: newDraft } : idea
       )
     );
   };
@@ -162,9 +168,12 @@ export default function ChatAssistant() {
       }
 
       if (refined) {
-        const alreadyExists = ideas.find(i => i.title === refined);
-        if (alreadyExists) return;
-        addNewIdea(refined);
+        if (activeIdeaId) {
+          updateIdeaDraft(activeIdeaId, refined);
+        } else {
+          const newId = addNewIdea(refined);
+          setActiveIdeaId(newId);
+        }
       }
     } catch (err) {
       setMessages((prev) => [
@@ -214,13 +223,27 @@ export default function ChatAssistant() {
         </div>
       </div>
 
-      {/* Ideas */}
+      {/* Ideas Panel */}
       <div className="w-full md:w-1/3 space-y-6">
         {ideas.map((idea) => (
-          <div key={idea.id} className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl shadow">
-            <h2 className="text-lg font-bold mb-2">{idea.title}</h2>
+          <div
+            key={idea.id}
+            className={`p-4 rounded-xl shadow border ${
+              idea.id === activeIdeaId ? "bg-slate-200 dark:bg-slate-700 border-blue-500" : "bg-slate-100 dark:bg-slate-800"
+            }`}
+          >
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-bold">{idea.title}</h2>
+              {idea.id !== activeIdeaId && (
+                <button
+                  onClick={() => setActiveIdeaId(idea.id)}
+                  className="text-sm text-blue-500 hover:underline"
+                >
+                  Set Active
+                </button>
+              )}
+            </div>
 
-            {/* Draft Upgrade Prompt */}
             {idea.draft && idea.draft !== idea.title && (
               <div className="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-100 p-2 rounded mb-3">
                 <p className="text-sm mb-2">💡 A new refinement is available:</p>
@@ -235,7 +258,7 @@ export default function ChatAssistant() {
             )}
 
             {/* Phase Wizard */}
-            <div className="space-y-4">
+            <div className="space-y-4 mt-2">
               {phaseStructure.map((phase) => {
                 const phaseData = idea.phases[phase.key];
                 if (!phaseData) return null;
