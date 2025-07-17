@@ -4,13 +4,18 @@
   "private": true,
   "dependencies": {
     "next": "14.2.3",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "axios": "^1.6.8"
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "axios": "1.6.8"
   },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/react": "^18.3.0",
+    "@types/node": "^20.6.0"
   }
 }
