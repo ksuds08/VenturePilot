@@ -13,14 +13,17 @@
     "react-markdown": "9.0.0",
     "remark-gfm": "3.0.1",
     "uuid": "9.0.1",
-    "@types/uuid": "9.0.7"
+    "@types/uuid": "9.0.7",
+    "zod": "3.22.4"
   },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "npm audit fix --force"
+    "postinstall": "npm audit fix --force",
+    "format": "prettier --write .",
+    "check-types": "tsc --noEmit"
   },
   "devDependencies": {
     "typescript": "5.4.0",
@@ -29,7 +32,20 @@
     "tailwindcss": "3.4.4",
     "postcss": "8.4.31",
     "autoprefixer": "10.4.16",
-    "@types/react-markdown": "8.0.0"
+    "@types/react-markdown": "8.0.0",
+    "@typescript-eslint/eslint-plugin": "7.8.0",
+    "@typescript-eslint/parser": "7.8.0",
+    "eslint": "8.57.0",
+    "eslint-config-next": "14.2.3",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-react": "7.34.1",
+    "eslint-plugin-react-hooks": "4.6.0",
+    "prettier": "3.2.5"
+  },
+  "overrides": {
+    "react-markdown": {
+      "react": "^18.2.0"
+    }
   }
 }
 
