@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global tweaks */
+body {
+  @apply bg-white text-slate-800 antialiased;
+}
