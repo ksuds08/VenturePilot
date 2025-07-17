@@ -39,44 +39,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Pricing Section */}
-        <section className="py-8">
-          <h2 className="text-3xl font-bold mb-6 text-center">Pricing Plans</h2>
-          <div className="flex flex-col md:flex-row justify-center gap-8">
-            {/* Starter Plan */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-soft p-8 flex-1">
-              <h3 className="text-xl font-semibold mb-2">Starter</h3>
-              <p className="text-3xl font-bold mb-4">
-                $0<span className="text-base font-normal">/mo</span>
-              </p>
-              <ul className="text-slate-600 dark:text-slate-400 mb-6">
-                <li>AI Business Plan</li>
-                <li>Branding Toolkit</li>
-                <li>Community Access</li>
-              </ul>
-              <button className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-3 rounded-xl font-bold hover:scale-105 transition-all">
-                Get Started
-              </button>
-            </div>
-            {/* Pro Plan */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-soft p-8 flex-1 border-2 border-blue-500">
-              <h3 className="text-xl font-semibold mb-2">Pro</h3>
-              <p className="text-3xl font-bold mb-4">
-                $39<span className="text-base font-normal">/mo</span>
-              </p>
-              <ul className="text-slate-600 dark:text-slate-400 mb-6">
-                <li>Everything in Starter</li>
-                <li>MVP Generation</li>
-                <li>Deploy to Glide/GitHub/Render</li>
-                <li>Priority Support</li>
-              </ul>
-              <button className="w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white py-3 rounded-xl font-bold hover:scale-105 transition-all">
-                Upgrade
-              </button>
-            </div>
-          </div>
-        </section>
-
         {/* FAQ Section */}
         <section className="py-12">
           <h2 className="text-3xl font-bold mb-6 text-center">Frequently Asked Questions</h2>
