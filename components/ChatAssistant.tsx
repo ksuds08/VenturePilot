@@ -9,6 +9,7 @@ export default function ChatAssistant() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [refinedIdea, setRefinedIdea] = useState<string | null>(null);
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
@@ -29,8 +30,9 @@ export default function ChatAssistant() {
 
       const data = await res.json();
       const fullText = data.reply ?? "";
+      const newRefined = data.refinedIdea ?? null;
+      if (newRefined) setRefinedIdea(newRefined);
 
-      // Typing simulation (word-by-word)
       const words = fullText.split(" ");
       let displayed = "";
       const assistantMsg = { role: "assistant", content: "" };
@@ -46,7 +48,7 @@ export default function ChatAssistant() {
           };
           return updated;
         });
-        await delay(50); // speed of typing
+        await delay(50); // Typing speed
       }
     } catch (err) {
       console.error("Typing simulation error:", err);
@@ -63,45 +65,56 @@ export default function ChatAssistant() {
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl shadow p-4 max-w-3xl mx-auto">
-      <div className="space-y-4 max-h-[400px] overflow-y-auto mb-4">
-        {messages.map((msg, i) => (
-          <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
-            <div
-              className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-                msg.role === "user"
-                  ? "bg-blue-500 text-white ml-auto"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-              }`}
-            >
-              <ReactMarkdown
-                className="prose dark:prose-invert max-w-none text-left"
-                remarkPlugins={[remarkGfm]}
+    <div className="flex flex-col md:flex-row gap-4 max-w-6xl mx-auto">
+      {/* Chat Window */}
+      <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl shadow p-4">
+        <div className="space-y-4 max-h-[400px] overflow-y-auto mb-4">
+          {messages.map((msg, i) => (
+            <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
+              <div
+                className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+                  msg.role === "user"
+                    ? "bg-blue-500 text-white ml-auto"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                }`}
               >
-                {msg.content}
-              </ReactMarkdown>
+                <ReactMarkdown
+                  className="prose dark:prose-invert max-w-none text-left"
+                  remarkPlugins={[remarkGfm]}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              </div>
             </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="text-left text-slate-400 text-sm">Assistant is typing…</div>
-        )}
+          ))}
+          {loading && (
+            <div className="text-left text-slate-400 text-sm">Assistant is typing…</div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            className="flex-1 p-2 rounded-xl border dark:bg-slate-800 dark:text-white"
+            placeholder="Describe your startup idea..."
+          />
+          <button
+            onClick={sendMessage}
+            className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600"
+          >
+            Send
+          </button>
+        </div>
       </div>
 
-      <div className="flex gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          className="flex-1 p-2 rounded-xl border dark:bg-slate-800 dark:text-white"
-          placeholder="Describe your startup idea..."
-        />
-        <button
-          onClick={sendMessage}
-          className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600"
-        >
-          Send
-        </button>
+      {/* Refined Idea Sidebar */}
+      <div className="w-full md:w-1/3 bg-slate-100 dark:bg-slate-800 p-4 rounded-xl shadow h-fit">
+        <h2 className="text-xl font-semibold mb-2">Refined Idea</h2>
+        <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+          {refinedIdea || "The assistant will summarize and refine your idea here as you chat."}
+        </p>
       </div>
     </div>
   );
