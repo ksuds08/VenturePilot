@@ -5,8 +5,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 export default function ChatAssistant() {
-  // ... (keep all existing state declarations)
+  const [ideas, setIdeas] = useState<any[]>([]);
+  const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [validating, setValidating] = useState<string | null>(null);
 
+  const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea when editing
@@ -17,38 +22,15 @@ export default function ChatAssistant() {
     }
   }, [activeIdea?.editing, activeIdea?.editValue]);
 
-  // ... (keep all existing functions until handleEdit)
+  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-  const handleEdit = (id: string) => {
-    updateIdea(id, { 
-      editing: true, 
-      editValue: ideas.find((i) => i.id === id)?.title,
-      locked: false,
-      validation: null,
-      validationError: null
-    });
+  const updateIdea = (id: string, updates: Partial<any>) => {
+    setIdeas((prev) =>
+      prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea))
+    );
   };
 
-  const handleEditSave = (id: string) => {
-    const idea = ideas.find((i) => i.id === id);
-    if (!idea) return;
-    updateIdea(id, {
-      title: idea.editValue,
-      editing: false,
-      editValue: "",
-    });
-  };
-
-  const handleEditChange = (id: string, value: string) => {
-    updateIdea(id, { editValue: value });
-    // Auto-resize
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  };
-
-  // ... (keep all other existing functions)
+  // ... (keep all other existing functions unchanged)
 
   return (
     <div className="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto">
@@ -70,7 +52,7 @@ export default function ChatAssistant() {
                   ref={textareaRef}
                   className="w-full p-2 rounded border dark:bg-slate-900 dark:text-white resize-none overflow-hidden"
                   value={idea.editValue}
-                  onChange={(e) => handleEditChange(idea.id, e.target.value)}
+                  onChange={(e) => updateIdea(idea.id, { editValue: e.target.value })}
                   onBlur={() => handleEditSave(idea.id)}
                   autoFocus
                   rows={1}
@@ -103,96 +85,7 @@ export default function ChatAssistant() {
                   {idea.title}
                 </div>
 
-                {/* Keep all existing idea card content (draft, buttons, validation) */}
-                {idea.draft && (
-                  <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                    <div className="font-medium text-xs mb-1">Refined Idea</div>
-                    <div className="bg-white dark:bg-slate-900 p-2 rounded border text-sm whitespace-pre-wrap">
-                      {idea.draft}
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAcceptDraft(idea.id);
-                      }}
-                      className="mt-2 text-sm text-green-600 hover:underline"
-                    >
-                      Accept
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex gap-4 text-xs mt-2 flex-wrap">
-                  <button
-                    className="text-blue-500 hover:underline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEdit(idea.id);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="text-red-500 hover:underline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(idea.id);
-                    }}
-                  >
-                    Delete
-                  </button>
-                  {idea.locked && (
-                    <button
-                      className="text-purple-500 hover:underline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleValidate(idea.id);
-                      }}
-                      disabled={validating === idea.id}
-                    >
-                      {validating === idea.id ? "Validating..." : "Validate"}
-                    </button>
-                  )}
-                </div>
-
-                {/* Keep existing validation display */}
-                {idea.validationError && (
-                  <div className="mt-3 animate-fade-in">
-                    <div className="font-medium text-xs mb-1 text-red-500">Validation Error</div>
-                    <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded border border-red-200 dark:border-red-800 text-sm">
-                      {idea.validationError}
-                    </div>
-                  </div>
-                )}
-
-                {idea.validation && (
-                  <div className="mt-3 animate-fade-in">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="font-medium text-xs">Validation Analysis</div>
-                      {idea.lastValidated && (
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                          {new Date(idea.lastValidated).toLocaleString()}
-                        </div>
-                      )}
-                    </div>
-                    <div className="bg-white dark:bg-slate-900 p-3 rounded border max-h-60 overflow-y-auto text-sm">
-                      <ReactMarkdown 
-                        className="prose dark:prose-invert max-w-none"
-                        components={{
-                          h1: ({node, ...props}) => <h3 className="text-lg font-bold mt-3 mb-1" {...props} />,
-                          h2: ({node, ...props}) => <h4 className="text-md font-semibold mt-2 mb-1" {...props} />,
-                          h3: ({node, ...props}) => <h5 className="text-sm font-medium mt-2 mb-1" {...props} />,
-                          ul: ({node, ...props}) => <ul className="list-disc pl-5 space-y-1" {...props} />,
-                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
-                          a: ({node, ...props}) => <a className="text-blue-500 hover:underline" {...props} />,
-                        }}
-                        remarkPlugins={[remarkGfm]}
-                      >
-                        {idea.validation}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                )}
+                {/* Rest of your existing JSX */}
               </>
             )}
           </div>
@@ -201,3 +94,4 @@ export default function ChatAssistant() {
     </div>
   );
 }
+
