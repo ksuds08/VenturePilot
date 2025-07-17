@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -10,8 +10,21 @@ export default function ChatAssistant() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [refinedIdea, setRefinedIdea] = useState<string | null>(null);
+  const [lockedIdeas, setLockedIdeas] = useState<string[]>([]);
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  // Load locked ideas on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("lockedIdeas");
+    if (saved) setLockedIdeas(JSON.parse(saved));
+  }, []);
+
+  const saveLockedIdea = (idea: string) => {
+    const updated = [...lockedIdeas, idea];
+    setLockedIdeas(updated);
+    localStorage.setItem("lockedIdeas", JSON.stringify(updated));
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -48,7 +61,7 @@ export default function ChatAssistant() {
           };
           return updated;
         });
-        await delay(50); // Typing speed
+        await delay(50);
       }
     } catch (err) {
       console.error("Typing simulation error:", err);
@@ -115,6 +128,26 @@ export default function ChatAssistant() {
         <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
           {refinedIdea || "The assistant will summarize and refine your idea here as you chat."}
         </p>
+
+        {refinedIdea && (
+          <button
+            onClick={() => saveLockedIdea(refinedIdea)}
+            className="mt-4 bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700"
+          >
+            Lock This Version
+          </button>
+        )}
+
+        {lockedIdeas.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold mb-2">Locked Ideas</h3>
+            <ul className="list-disc pl-4 space-y-2 text-slate-600 dark:text-slate-300">
+              {lockedIdeas.map((idea, i) => (
+                <li key={i} className="whitespace-pre-wrap">{idea}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
