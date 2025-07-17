@@ -305,17 +305,7 @@ export default function ChatAssistant() {
                   <strong>Tagline:</strong> {idea.branding.tagline}
                 </div>
                 <div>
-                  <strong>Colors:</strong>
-                  <div className="flex gap-2 mt-1">
-                    {idea.branding.colors.map((c) => (
-                      <div
-                        key={c}
-                        className="w-6 h-6 rounded-full border"
-                        style=https://operator.chatgpt.com/c/68795ad055b48191959fdb6c71d65adb#cua_citation-%20backgroundColor:%20c%20
-                        title={c}
-                      />
-                    ))}
-                  </div>
+                  <strong>Colors:</strong> {idea.branding.colors.join(", ")}
                 </div>
                 {idea.branding.logoDesc && (
                   <div>
