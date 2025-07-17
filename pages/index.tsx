@@ -1,6 +1,7 @@
 import Layout from "../Layout";
 import { motion } from "framer-motion";
 
+
 export default function LandingPage() {
   return (
     <Layout>
@@ -30,19 +31,6 @@ export default function LandingPage() {
       </section>
 
       {/* Testimonials, Pricing, FAQ */}
-      <section className="grid md:grid-cols-3 gap-8 py-12">
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-soft p-6">
-          <h3 className="text-lg font-bold mb-2">“Built my MVP in a day.”</h3>
-          <p className="text-slate-600 dark:text-slate-400">— Alex, Founder</p>
-        </div>
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-soft p-6">
-          <h3 className="text-lg font-bold mb-2">“Most trusted AI SaaS for startups.”</h3>
-          <p className="text-slate-600 dark:text-slate-400">— Priya, Serial Entrepreneur</p>
-        </div>
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-soft p-6">
-          <h3 className="text-lg font-bold mb-2">“Incredible support and results.”</h3>
-          <p className="text-slate-600 dark:text-slate-400">— Sam, SaaS Builder</p>
-        </div>
       </section>
 
       <section className="py-8">
