@@ -10,6 +10,8 @@ export default function ChatAssistant() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -20,7 +22,6 @@ export default function ChatAssistant() {
     setInput("");
     setLoading(true);
 
-    let assistantContent = "";
     const newAssistantMsg = { role: "assistant", content: "" };
     setMessages((prev) => [...prev, newAssistantMsg]);
 
@@ -36,6 +37,9 @@ export default function ChatAssistant() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
 
+      let buffer = "";
+      let updateCount = 0;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -47,16 +51,40 @@ export default function ChatAssistant() {
           const token = line.replace("data: ", "").trim();
           if (token === "[DONE]") continue;
 
-          assistantContent += token;
+          buffer += token.replace(/\s+/g, " ");
+          updateCount++;
 
-          setMessages((prev) => {
-            const updated = [...prev];
-            const last = updated[updated.length - 1];
-            updated[updated.length - 1] = { ...last, content: assistantContent };
-            return updated;
-          });
+          // Update every 3 tokens or after punctuation
+          if (
+            updateCount % 3 === 0 ||
+            buffer.endsWith(".") ||
+            buffer.endsWith("!") ||
+            buffer.endsWith("?") ||
+            buffer.endsWith(" ")
+          ) {
+            setMessages((prev) => {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                ...updated[updated.length - 1],
+                content: buffer,
+              };
+              return updated;
+            });
+
+            await delay(25); // Smooth animation
+          }
         }
       }
+
+      // Final cleanup update
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          content: buffer.trim(),
+        };
+        return updated;
+      });
     } catch (err) {
       console.error("Streaming error", err);
       setMessages((prev) => [
