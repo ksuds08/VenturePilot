@@ -1,18 +1,17 @@
+// ...imports
 "use client";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 export default function ChatAssistant() {
-  const [messages, setMessages] = useState([
-    { role: "assistant", content: "Hi! Ready to build your startup together?" },
-  ]);
+  const [messages, setMessages] = useState([{ role: "assistant", content: "Hi! Ready to build your startup together?" }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [refinedIdea, setRefinedIdea] = useState<string | null>(null);
   const [lockedIdeas, setLockedIdeas] = useState<string[]>([]);
-
-  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("lockedIdeas");
@@ -25,6 +24,30 @@ export default function ChatAssistant() {
     setLockedIdeas(updated);
     localStorage.setItem("lockedIdeas", JSON.stringify(updated));
   };
+
+  const deleteLockedIdea = (index: number) => {
+    const updated = [...lockedIdeas];
+    updated.splice(index, 1);
+    setLockedIdeas(updated);
+    localStorage.setItem("lockedIdeas", JSON.stringify(updated));
+  };
+
+  const handleEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditValue(lockedIdeas[index]);
+  };
+
+  const handleSave = () => {
+    if (editingIndex === null) return;
+    const updated = [...lockedIdeas];
+    updated[editingIndex] = editValue.trim();
+    setLockedIdeas(updated);
+    localStorage.setItem("lockedIdeas", JSON.stringify(updated));
+    setEditingIndex(null);
+    setEditValue("");
+  };
+
+  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -67,10 +90,7 @@ export default function ChatAssistant() {
       console.error("Typing simulation error:", err);
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content: "⚠️ Sorry, something went wrong. Please try again.",
-        },
+        { role: "assistant", content: "⚠️ Sorry, something went wrong. Please try again." },
       ]);
     }
 
@@ -79,30 +99,23 @@ export default function ChatAssistant() {
 
   return (
     <div className="flex flex-col md:flex-row gap-4 max-w-6xl mx-auto">
-      {/* Chat Window */}
+      {/* Chat */}
       <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl shadow p-4">
         <div className="space-y-4 max-h-[400px] overflow-y-auto mb-4">
           {messages.map((msg, i) => (
             <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
-              <div
-                className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-                  msg.role === "user"
-                    ? "bg-blue-500 text-white ml-auto"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                }`}
-              >
-                <ReactMarkdown
-                  className="prose dark:prose-invert max-w-none text-left"
-                  remarkPlugins={[remarkGfm]}
-                >
+              <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+                msg.role === "user"
+                  ? "bg-blue-500 text-white ml-auto"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+              }`}>
+                <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm]}>
                   {msg.content}
                 </ReactMarkdown>
               </div>
             </div>
           ))}
-          {loading && (
-            <div className="text-left text-slate-400 text-sm">Assistant is typing…</div>
-          )}
+          {loading && <div className="text-left text-slate-400 text-sm">Assistant is typing…</div>}
         </div>
 
         <div className="flex gap-2">
@@ -122,7 +135,7 @@ export default function ChatAssistant() {
         </div>
       </div>
 
-      {/* Refined Idea Sidebar */}
+      {/* Sidebar */}
       <div className="w-full md:w-1/3 bg-slate-100 dark:bg-slate-800 p-4 rounded-xl shadow h-fit">
         <h2 className="text-xl font-semibold mb-2">Refined Idea</h2>
         <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
@@ -141,9 +154,52 @@ export default function ChatAssistant() {
         {lockedIdeas.length > 0 && (
           <div className="mt-6">
             <h3 className="text-lg font-semibold mb-2">Locked Ideas</h3>
-            <ul className="list-disc pl-4 space-y-2 text-slate-600 dark:text-slate-300">
+            <ul className="space-y-4">
               {lockedIdeas.map((idea, i) => (
-                <li key={i} className="whitespace-pre-wrap">{idea}</li>
+                <li key={i} className="bg-white dark:bg-slate-900 border rounded-lg p-3">
+                  {editingIndex === i ? (
+                    <>
+                      <textarea
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-full p-2 rounded border dark:bg-slate-800 dark:text-white"
+                        rows={3}
+                      />
+                      <div className="flex justify-end gap-2 mt-2">
+                        <button
+                          onClick={handleSave}
+                          className="bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingIndex(null)}
+                          className="text-sm text-slate-500 hover:underline"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm whitespace-pre-wrap mb-2">{idea}</p>
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => handleEdit(i)}
+                          className="text-blue-500 hover:underline text-sm"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => deleteLockedIdea(i)}
+                          className="text-red-500 hover:underline text-sm"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </li>
               ))}
             </ul>
           </div>
