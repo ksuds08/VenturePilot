@@ -67,7 +67,7 @@ export default function ChatAssistant() {
         messages: [newMessage],
         locked: false,
       };
-      setIdeas((prev) => [...prev, newIdea!]);
+      setIdeas((prev) => [...prev, newIdea]);
       setActiveIdeaId(id);
     } else {
       newIdea.messages.push(newMessage);
@@ -75,11 +75,14 @@ export default function ChatAssistant() {
     }
 
     try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newIdea.messages }),
-      });
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/assistant",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: newIdea.messages }),
+        }
+      );
 
       let data;
       try {
@@ -106,7 +109,9 @@ export default function ChatAssistant() {
         streamed += word + " ";
         updateIdea(newIdea.id, {
           messages: updatedMsgs.map((m, i) =>
-            i === updatedMsgs.length - 1 ? { ...m, content: streamed.trim() } : m
+            i === updatedMsgs.length - 1
+              ? { ...m, content: streamed.trim() }
+              : m
           ),
         });
         await delay(30);
@@ -117,7 +122,11 @@ export default function ChatAssistant() {
       });
     } catch (err) {
       console.error("Assistant error:", err);
-      alert(err instanceof Error ? `Assistant failed: ${err.message}` : "Something went wrong.");
+      alert(
+        err instanceof Error
+          ? `Assistant failed: ${err.message}`
+          : "Something went wrong."
+      );
     }
 
     setLoading(false);
@@ -139,11 +148,17 @@ export default function ChatAssistant() {
     setValidating(id);
 
     try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      });
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/validate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+        }
+      );
 
       let data;
       try {
@@ -152,7 +167,8 @@ export default function ChatAssistant() {
         throw new Error("Response was not valid JSON");
       }
 
-      if (!res.ok) throw new Error(data.error || `Validation failed with status ${res.status}`);
+      if (!res.ok)
+        throw new Error(data.error || `Validation failed with status ${res.status}`);
 
       updateIdea(id, {
         validation: data.validation,
@@ -163,7 +179,8 @@ export default function ChatAssistant() {
       console.error("Validation error:", err);
       updateIdea(id, {
         validation: null,
-        validationError: err instanceof Error ? err.message : "Validation failed",
+        validationError:
+          err instanceof Error ? err.message : "Validation failed",
         lastValidated: new Date().toISOString(),
       });
     } finally {
@@ -176,11 +193,14 @@ export default function ChatAssistant() {
     if (!idea) return;
 
     try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      });
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/brand",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+        }
+      );
 
       let data;
       try {
@@ -208,8 +228,11 @@ export default function ChatAssistant() {
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-6">
       <div className="space-y-4">
-        {activeIdea?.messages?.map((msg, i) => (
-          <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
+        {(activeIdea?.messages ?? []).map((msg, i) => (
+          <div
+            key={i}
+            className={`text-${msg.role === "user" ? "right" : "left"}`}
+          >
             <div
               className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
                 msg.role === "user"
@@ -226,7 +249,9 @@ export default function ChatAssistant() {
             </div>
           </div>
         ))}
-        {loading && <div className="text-slate-400 text-sm">Assistant is typing…</div>}
+        {loading && (
+          <div className="text-slate-400 text-sm">Assistant is typing…</div>
+        )}
       </div>
 
       <div className="flex gap-2">
@@ -247,11 +272,17 @@ export default function ChatAssistant() {
       </div>
 
       {ideas.map((idea) => (
-        <div key={idea.id} className="border rounded-lg p-4 bg-white dark:bg-slate-800">
+        <div
+          key={idea.id}
+          className="border rounded-lg p-4 bg-white dark:bg-slate-800"
+        >
           <div className="flex justify-between">
             <h3 className="text-lg font-semibold">{idea.title}</h3>
             {idea.locked && !idea.validation && (
-              <button onClick={() => handleValidate(idea.id)} className="text-blue-500 text-sm">
+              <button
+                onClick={() => handleValidate(idea.id)}
+                className="text-blue-500 text-sm"
+              >
                 {validating === idea.id ? "Validating..." : "Validate"}
               </button>
             )}
@@ -270,26 +301,43 @@ export default function ChatAssistant() {
           )}
 
           {idea.locked && idea.validation && !idea.branding && (
-            <button onClick={() => handleBrand(idea.id)} className="text-indigo-600 text-sm mt-2">
+            <button
+              onClick={() => handleBrand(idea.id)}
+              className="text-indigo-600 text-sm mt-2"
+            >
               Generate Branding
             </button>
           )}
 
           {idea.branding && (
             <div className="mt-4 animate-fade-in">
-              <div className="font-medium text-xs mb-1 text-indigo-500">Branding Kit</div>
+              <div className="font-medium text-xs mb-1 text-indigo-500">
+                Branding Kit
+              </div>
               <div className="bg-white dark:bg-slate-900 p-3 rounded border text-sm space-y-2">
-                <div><strong>Name:</strong> {idea.branding.name}</div>
-                <div><strong>Tagline:</strong> {idea.branding.tagline}</div>
-                <div><strong>Colors:</strong>
+                <div>
+                  <strong>Name:</strong> {idea.branding.name}
+                </div>
+                <div>
+                  <strong>Tagline:</strong> {idea.branding.tagline}
+                </div>
+                <div>
+                  <strong>Colors:</strong>
                   <div className="flex gap-2 mt-1">
                     {idea.branding.colors.map((c) => (
-                      <div key={c} className="w-6 h-6 rounded-full border" style={{ backgroundColor: c }} title={c}></div>
+                      <div
+                        key={c}
+                        className="w-6 h-6 rounded-full border"
+                        style=https://operator.chatgpt.com/c/68795ad055b48191959fdb6c71d65adb#cua_citation-%20backgroundColor:%20c%20
+                        title={c}
+                      ></div>
                     ))}
                   </div>
                 </div>
                 {idea.branding.logoDesc && (
-                  <div><strong>Logo Prompt:</strong> {idea.branding.logoDesc}</div>
+                  <div>
+                    <strong>Logo Prompt:</strong> {idea.branding.logoDesc}
+                  </div>
                 )}
               </div>
             </div>
@@ -316,4 +364,3 @@ export default function ChatAssistant() {
     </div>
   );
 }
-
