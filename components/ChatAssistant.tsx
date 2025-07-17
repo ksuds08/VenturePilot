@@ -4,14 +4,12 @@ import { v4 as uuidv4 } from "uuid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-
 interface Branding {
   name: string;
   tagline: string;
   colors: string[];
   logoDesc?: string;
 }
-
 
 interface Idea {
   id: string;
@@ -27,7 +25,6 @@ interface Idea {
   branding?: Branding;
 }
 
-
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
@@ -35,10 +32,8 @@ export default function ChatAssistant() {
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
 
-
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
-
 
   useEffect(() => {
     if (activeIdea?.editing && textareaRef.current) {
@@ -47,9 +42,7 @@ export default function ChatAssistant() {
     }
   }, [activeIdea?.editing, activeIdea?.editValue]);
 
-
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
-
 
   const updateIdea = (id: string, updates: Partial<Idea>) => {
     setIdeas((prev) =>
@@ -57,15 +50,12 @@ export default function ChatAssistant() {
     );
   };
 
-
   const handleSend = async () => {
     if (!input.trim() || loading) return;
     setLoading(true);
 
-
     const newMessage = { role: "user", content: input.trim() };
     setInput("");
-
 
     let newIdea = activeIdea;
     if (!newIdea) {
@@ -84,14 +74,12 @@ export default function ChatAssistant() {
       updateIdea(newIdea.id, { messages: [...newIdea.messages] });
     }
 
-
     try {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: newIdea.messages }),
       });
-
 
       let data;
       try {
@@ -100,22 +88,18 @@ export default function ChatAssistant() {
         throw new Error("Response was not valid JSON");
       }
 
-
       if (!res.ok) {
         const message = data?.error || `Server error ${res.status}`;
         throw new Error(message);
       }
 
-
       const reply = data?.reply || "No reply received.";
       const refined = data?.refinedIdea || "";
-
 
       const assistantMsg = { role: "assistant", content: "" };
       const words = reply.split(" ");
       const updatedMsgs = [...newIdea.messages, assistantMsg];
       updateIdea(newIdea.id, { messages: updatedMsgs });
-
 
       let streamed = "";
       for (const word of words) {
@@ -128,7 +112,6 @@ export default function ChatAssistant() {
         await delay(30);
       }
 
-
       updateIdea(newIdea.id, {
         draft: refined,
       });
@@ -137,10 +120,8 @@ export default function ChatAssistant() {
       alert(err instanceof Error ? `Assistant failed: ${err.message}` : "Something went wrong.");
     }
 
-
     setLoading(false);
   };
-
 
   const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
@@ -152,12 +133,10 @@ export default function ChatAssistant() {
     });
   };
 
-
   const handleValidate = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
     setValidating(id);
-
 
     try {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
@@ -166,12 +145,14 @@ export default function ChatAssistant() {
         body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
       });
 
-
-      const data = await res.json();
-
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("Response was not valid JSON");
+      }
 
       if (!res.ok) throw new Error(data.error || `Validation failed with status ${res.status}`);
-
 
       updateIdea(id, {
         validation: data.validation,
@@ -190,11 +171,9 @@ export default function ChatAssistant() {
     }
   };
 
-
   const handleBrand = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
-
 
     try {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
@@ -203,10 +182,14 @@ export default function ChatAssistant() {
         body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
       });
 
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("Response was not valid JSON");
+      }
 
-      const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Brand generation failed");
-
 
       updateIdea(id, {
         branding: {
@@ -221,7 +204,6 @@ export default function ChatAssistant() {
       alert("Failed to generate branding.");
     }
   };
-
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-6">
@@ -247,7 +229,6 @@ export default function ChatAssistant() {
         {loading && <div className="text-slate-400 text-sm">Assistant is typing…</div>}
       </div>
 
-
       <div className="flex gap-2">
         <input
           value={input}
@@ -265,7 +246,6 @@ export default function ChatAssistant() {
         </button>
       </div>
 
-
       {ideas.map((idea) => (
         <div key={idea.id} className="border rounded-lg p-4 bg-white dark:bg-slate-800">
           <div className="flex justify-between">
@@ -276,7 +256,6 @@ export default function ChatAssistant() {
               </button>
             )}
           </div>
-
 
           {idea.validation && (
             <div className="mt-2 text-sm">
@@ -290,13 +269,11 @@ export default function ChatAssistant() {
             </div>
           )}
 
-
           {idea.locked && idea.validation && !idea.branding && (
             <button onClick={() => handleBrand(idea.id)} className="text-indigo-600 text-sm mt-2">
               Generate Branding
             </button>
           )}
-
 
           {idea.branding && (
             <div className="mt-4 animate-fade-in">
@@ -317,7 +294,6 @@ export default function ChatAssistant() {
               </div>
             </div>
           )}
-
 
           {!idea.locked && idea.draft && (
             <>
