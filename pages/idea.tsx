@@ -1,4 +1,4 @@
-import Layout from "../components/Layout";
+import Layout from "../Layout";
 import { useState } from "react";
 import { motion } from "framer-motion";
 
