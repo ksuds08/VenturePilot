@@ -9,6 +9,7 @@ export default function ChatAssistant() {
   const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [validating, setValidating] = useState<string | null>(null);
 
   const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
 
@@ -37,6 +38,7 @@ export default function ChatAssistant() {
         messages: [newMessage],
         locked: false,
         editing: false,
+        validation: null,
       };
       setIdeas((prev) => [...prev, newIdea]);
       setActiveIdeaId(id);
@@ -89,11 +91,16 @@ export default function ChatAssistant() {
     updateIdea(id, {
       title: idea.draft,
       draft: "",
+      locked: true,
     });
   };
 
   const handleEdit = (id: string) => {
-    updateIdea(id, { editing: true, editValue: ideas.find((i) => i.id === id)?.title });
+    updateIdea(id, { 
+      editing: true, 
+      editValue: ideas.find((i) => i.id === id)?.title,
+      locked: false,
+    });
   };
 
   const handleEditSave = (id: string) => {
@@ -109,6 +116,35 @@ export default function ChatAssistant() {
   const handleDelete = (id: string) => {
     setIdeas((prev) => prev.filter((i) => i.id !== id));
     if (activeIdeaId === id) setActiveIdeaId(null);
+  };
+
+  const handleValidate = async (id: string) => {
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea) return;
+
+    setValidating(id);
+    try {
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title }),
+      });
+
+      const data = await res.json();
+      const validation = data.validation || "No validation results returned.";
+
+      // Clean up the validation text
+      const cleanedValidation = validation
+        .replace(/\n{3,}/g, "\n\n") // Replace 3+ newlines with 2
+        .trim();
+
+      updateIdea(id, { validation: cleanedValidation });
+    } catch (err) {
+      console.error("Validation error:", err);
+      updateIdea(id, { validation: "Error during validation. Please try again." });
+    } finally {
+      setValidating(null);
+    }
   };
 
   return (
@@ -215,7 +251,30 @@ export default function ChatAssistant() {
               >
                 Delete
               </button>
+              {idea.locked && (
+                <button
+                  className="text-purple-500 hover:underline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleValidate(idea.id);
+                  }}
+                  disabled={validating === idea.id}
+                >
+                  {validating === idea.id ? "Validating..." : "Validate"}
+                </button>
+              )}
             </div>
+
+            {idea.validation && (
+              <div className="mt-3">
+                <div className="font-medium text-xs mb-1">Validation Result</div>
+                <div className="bg-white dark:bg-slate-900 p-3 rounded border max-h-60 overflow-y-auto text-sm">
+                  <ReactMarkdown className="prose dark:prose-invert max-w-none text-justify" remarkPlugins={[remarkGfm]}>
+                    {idea.validation}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
