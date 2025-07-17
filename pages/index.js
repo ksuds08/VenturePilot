@@ -27,32 +27,42 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
 
-  return (
-    <main>
+  }
+return (
+  <main className="min-h-screen bg-gray-100 py-12">
+    <div className="container mx-auto max-w-2xl p-6 bg-white rounded-lg shadow">
       <Nav />
-      <h1>VenturePilot – Idea Generator</h1>
-
+      <h1 className="text-3xl font-bold mb-4">VenturePilot – Idea Generator</h1>
       <textarea
+        className="w-full border border-gray-300 rounded p-3 mb-4"
         rows={4}
         placeholder="Describe your SaaS idea..."
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
       />
 
-      <button onClick={submit} disabled={loading}>
-        {loading ? 'Generating…' : 'Generate'}
+      <button
+        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50"
+        onClick={submit}
+        disabled={loading}
+      >
+        {loading ? 'Generating...' : 'Generate'}
       </button>
 
       {response && (
         <>
-          <pre>{JSON.stringify(response, null, 2)}</pre>
+          <pre className="whitespace-pre-wrap bg-gray-100 p-4 my-4 rounded">
+            {JSON.stringify(response, null, 2)}
+          </pre>
           <Link href="/validate">
-            <button>Next: Validate</button>
+            <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">
+              Next: Validate
+            </button>
           </Link>
         </>
       )}
-    </main>
-  );
+    </div>
+  </main>
+);
 }
