@@ -225,7 +225,7 @@ export default function ChatAssistant() {
             >
               <ReactMarkdown
                 className="prose dark:prose-invert max-w-none text-left"
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm as any]}
               >
                 {msg.content}
               </ReactMarkdown>
@@ -276,7 +276,7 @@ export default function ChatAssistant() {
               <h4 className="font-bold text-xs mb-1">Validation Report</h4>
               <ReactMarkdown
                 className="prose dark:prose-invert"
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm as any]}
               >
                 {idea.validation}
               </ReactMarkdown>
