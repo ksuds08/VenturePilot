@@ -3,75 +3,85 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+type PhaseStatus = "not_started" | "in_progress" | "completed";
+
+interface PhaseState {
+  status: PhaseStatus;
+  output?: string;
+  pendingUpdate?: string;
+}
+
+interface IdeaPhaseState {
+  title: string;
+  phases: {
+    [phaseKey: string]: PhaseState;
+  };
+}
+
+const phaseStructure = [
+  { key: "refinedIdea", label: "Refined Idea", next: "validation" },
+  { key: "validation", label: "Market Validation", next: "branding" },
+  { key: "branding", label: "Branding", next: "mvp" },
+  { key: "mvp", label: "MVP Plan", next: "formation" },
+  { key: "formation", label: "Business Formation", next: "launch" },
+  { key: "launch", label: "Launch Strategy", next: "ops" },
+  { key: "ops", label: "Ongoing Operations", next: null },
+];
+
 export default function ChatAssistant() {
   const [messages, setMessages] = useState([{ role: "assistant", content: "Hi! Ready to build your startup together?" }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [refinedIdea, setRefinedIdea] = useState<string | null>(null);
-  const [lockedIdeas, setLockedIdeas] = useState<string[]>([]);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editValue, setEditValue] = useState("");
-  const [validatedIdeas, setValidatedIdeas] = useState<Record<string, string>>({});
-  const [validationLoading, setValidationLoading] = useState<string | null>(null);
+  const [ideas, setIdeas] = useState<IdeaPhaseState[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("lockedIdeas");
-    if (saved) setLockedIdeas(JSON.parse(saved));
+    const saved = localStorage.getItem("lockedIdeasV2");
+    if (saved) setIdeas(JSON.parse(saved));
   }, []);
 
-  const saveLockedIdea = (idea: string) => {
-    if (lockedIdeas.includes(idea)) return;
-    const updated = [...lockedIdeas, idea];
-    setLockedIdeas(updated);
-    localStorage.setItem("lockedIdeas", JSON.stringify(updated));
-  };
-
-  const deleteLockedIdea = (index: number) => {
-    const updated = [...lockedIdeas];
-    const [removed] = updated.splice(index, 1);
-    const newValidations = { ...validatedIdeas };
-    delete newValidations[removed];
-    setValidatedIdeas(newValidations);
-    setLockedIdeas(updated);
-    localStorage.setItem("lockedIdeas", JSON.stringify(updated));
-  };
-
-  const handleEdit = (index: number) => {
-    setEditingIndex(index);
-    setEditValue(lockedIdeas[index]);
-  };
-
-  const handleSave = () => {
-    if (editingIndex === null) return;
-    const updated = [...lockedIdeas];
-    updated[editingIndex] = editValue.trim();
-    setLockedIdeas(updated);
-    localStorage.setItem("lockedIdeas", JSON.stringify(updated));
-    setEditingIndex(null);
-    setEditValue("");
-  };
-
-  const validateIdea = async (idea: string) => {
-    const ideaId = btoa(idea).slice(0, 12); // deterministic short ID
-    if (validatedIdeas[idea]) return; // already validated
-
-    setValidationLoading(idea);
-    try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea, ideaId }),
-      });
-
-      const data = await res.json();
-      setValidatedIdeas((prev) => ({ ...prev, [idea]: data.content || "Validation complete." }));
-    } catch (err) {
-      setValidatedIdeas((prev) => ({ ...prev, [idea]: "⚠️ Validation failed. Please try again." }));
-    }
-    setValidationLoading(null);
+  const persistIdeas = (updated: IdeaPhaseState[]) => {
+    setIdeas(updated);
+    localStorage.setItem("lockedIdeasV2", JSON.stringify(updated));
   };
 
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+  const lockRefinedIdea = (refinedIdea: string) => {
+    const newIdea: IdeaPhaseState = {
+      title: refinedIdea,
+      phases: phaseStructure.reduce((acc, phase) => {
+        acc[phase.key] = {
+          status: phase.key === "refinedIdea" ? "completed" : "not_started",
+          output: phase.key === "refinedIdea" ? refinedIdea : undefined,
+        };
+        return acc;
+      }, {} as Record<string, PhaseState>),
+    };
+    const updated = [...ideas, newIdea];
+    persistIdeas(updated);
+  };
+
+  const updatePhaseOutput = (ideaIndex: number, phaseKey: string, output: string) => {
+    const updated = [...ideas];
+    updated[ideaIndex].phases[phaseKey].output = output;
+    updated[ideaIndex].phases[phaseKey].status = "completed";
+    const nextPhase = phaseStructure.find(p => p.key === phaseKey)?.next;
+    if (nextPhase) {
+      updated[ideaIndex].phases[nextPhase].status = "in_progress";
+    }
+    persistIdeas(updated);
+  };
+
+  const handleValidate = async (ideaIndex: number, idea: string) => {
+    const ideaId = btoa(idea).slice(0, 12);
+    const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea, ideaId }),
+    });
+    const data = await res.json();
+    updatePhaseOutput(ideaIndex, "validation", data.content || "Validation complete.");
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -90,8 +100,7 @@ export default function ChatAssistant() {
 
       const data = await res.json();
       const fullText = data.reply ?? "";
-      const newRefined = data.refinedIdea ?? null;
-      if (newRefined) setRefinedIdea(newRefined);
+      const refined = data.refinedIdea ?? null;
 
       const words = fullText.split(" ");
       let displayed = "";
@@ -110,8 +119,11 @@ export default function ChatAssistant() {
         });
         await delay(50);
       }
+
+      if (refined) {
+        lockRefinedIdea(refined);
+      }
     } catch (err) {
-      console.error("Typing simulation error:", err);
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: "⚠️ Sorry, something went wrong. Please try again." },
@@ -123,7 +135,7 @@ export default function ChatAssistant() {
 
   return (
     <div className="flex flex-col md:flex-row gap-4 max-w-6xl mx-auto">
-      {/* Chat */}
+      {/* Chat Window */}
       <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl shadow p-4">
         <div className="space-y-4 max-h-[400px] overflow-y-auto mb-4">
           {messages.map((msg, i) => (
@@ -159,87 +171,50 @@ export default function ChatAssistant() {
         </div>
       </div>
 
-      {/* Sidebar */}
-      <div className="w-full md:w-1/3 bg-slate-100 dark:bg-slate-800 p-4 rounded-xl shadow h-fit">
-        <h2 className="text-xl font-semibold mb-2">Refined Idea</h2>
-        <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
-          {refinedIdea || "The assistant will summarize and refine your idea here as you chat."}
-        </p>
+      {/* Per-Idea Wizard */}
+      <div className="w-full md:w-1/3 space-y-6">
+        {ideas.map((idea, i) => (
+          <div key={i} className="bg-slate-100 dark:bg-slate-800 p-4 rounded-xl shadow">
+            <h2 className="text-lg font-bold mb-2">{idea.title}</h2>
+            <div className="space-y-4">
+              {phaseStructure.map((phase) => {
+                const phaseData = idea.phases[phase.key];
+                if (!phaseData) return null;
 
-        {refinedIdea && (
-          <button
-            onClick={() => saveLockedIdea(refinedIdea)}
-            className="mt-4 bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700"
-          >
-            Lock This Version
-          </button>
-        )}
+                return (
+                  <div key={phase.key} className="border rounded p-3 bg-white dark:bg-slate-900">
+                    <div className="flex justify-between items-center">
+                      <h3 className="font-semibold">{phase.label}</h3>
+                      <span className="text-xs text-gray-500">{phaseData.status}</span>
+                    </div>
 
-        {lockedIdeas.length > 0 && (
-          <div className="mt-6">
-            <h3 className="text-lg font-semibold mb-2">Locked Ideas</h3>
-            <ul className="space-y-4">
-              {lockedIdeas.map((idea, i) => (
-                <li key={i} className="bg-white dark:bg-slate-900 border rounded-lg p-3">
-                  {editingIndex === i ? (
-                    <>
-                      <textarea
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        className="w-full p-2 rounded border dark:bg-slate-800 dark:text-white"
-                        rows={3}
-                      />
-                      <div className="flex justify-end gap-2 mt-2">
-                        <button
-                          onClick={handleSave}
-                          className="bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditingIndex(null)}
-                          className="text-sm text-slate-500 hover:underline"
-                        >
-                          Cancel
-                        </button>
+                    {phaseData.output && (
+                      <div className="mt-2 text-sm whitespace-pre-wrap">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {phaseData.output}
+                        </ReactMarkdown>
                       </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm whitespace-pre-wrap mb-2">{idea}</p>
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => handleEdit(i)}
-                          className="text-blue-500 hover:underline text-sm"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => deleteLockedIdea(i)}
-                          className="text-red-500 hover:underline text-sm"
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={() => validateIdea(idea)}
-                          disabled={validationLoading === idea}
-                          className="text-green-600 hover:underline text-sm"
-                        >
-                          {validationLoading === idea ? "Validating..." : "Validate"}
-                        </button>
+                    )}
+
+                    {phaseData.status !== "completed" && (
+                      <div className="mt-2 flex gap-2">
+                        {phase.key === "validation" && (
+                          <button
+                            onClick={() => handleValidate(i, idea.title)}
+                            className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                          >
+                            Validate
+                          </button>
+                        )}
+                        {/* Add buttons for other phases here */}
                       </div>
-                      {validatedIdeas[idea] && (
-                        <div className="mt-2 p-2 rounded bg-slate-200 dark:bg-slate-700 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{validatedIdeas[idea]}</ReactMarkdown>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
