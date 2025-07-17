@@ -51,10 +51,9 @@ export default function ChatAssistant() {
           const token = line.replace("data: ", "").trim();
           if (token === "[DONE]") continue;
 
-          buffer += token.replace(/\s+/g, " ");
+          buffer += token; // ⬅️ keep tokens raw
           updateCount++;
 
-          // Update every 3 tokens or after punctuation
           if (
             updateCount % 3 === 0 ||
             buffer.endsWith(".") ||
@@ -71,12 +70,12 @@ export default function ChatAssistant() {
               return updated;
             });
 
-            await delay(25); // Smooth animation
+            await delay(25);
           }
         }
       }
 
-      // Final cleanup update
+      // Final flush
       setMessages((prev) => {
         const updated = [...prev];
         updated[updated.length - 1] = {
