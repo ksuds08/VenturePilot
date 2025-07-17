@@ -30,24 +30,26 @@ export default function ChatAssistant() {
       const data = await res.json();
       const fullText = data.reply ?? "";
 
-      // Typing simulation
+      // Typing simulation (word-by-word)
+      const words = fullText.split(" ");
       let displayed = "";
       const assistantMsg = { role: "assistant", content: "" };
       setMessages((prev) => [...prev, assistantMsg]);
 
-      const segments = fullText.split(/(?<=[.?!])\s+/); // sentence-by-sentence
-
-      for (const segment of segments) {
-        displayed += segment + " ";
+      for (const word of words) {
+        displayed += word + " ";
         setMessages((prev) => {
           const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: displayed.trim() };
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            content: displayed.trim(),
+          };
           return updated;
         });
-        await delay(80);
+        await delay(50); // speed of typing
       }
     } catch (err) {
-      console.error("Error fetching assistant response:", err);
+      console.error("Typing simulation error:", err);
       setMessages((prev) => [
         ...prev,
         {
