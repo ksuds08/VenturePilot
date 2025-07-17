@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useRef, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import ReactMarkdown from "react-markdown";
@@ -227,6 +228,7 @@ export default function ChatAssistant() {
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-6">
+      {/* Chat messages */}
       <div className="space-y-4">
         {(activeIdea?.messages ?? []).map((msg, i) => (
           <div
@@ -254,6 +256,7 @@ export default function ChatAssistant() {
         )}
       </div>
 
+      {/* Input */}
       <div className="flex gap-2">
         <input
           value={input}
@@ -271,6 +274,7 @@ export default function ChatAssistant() {
         </button>
       </div>
 
+      {/* Idea cards */}
       {ideas.map((idea) => (
         <div
           key={idea.id}
@@ -288,6 +292,7 @@ export default function ChatAssistant() {
             )}
           </div>
 
+          {/* Validation */}
           {idea.validation && (
             <div className="mt-2 text-sm">
               <h4 className="font-bold text-xs mb-1">Validation Report</h4>
@@ -300,6 +305,7 @@ export default function ChatAssistant() {
             </div>
           )}
 
+          {/* Branding */}
           {idea.locked && idea.validation && !idea.branding && (
             <button
               onClick={() => handleBrand(idea.id)}
@@ -330,7 +336,7 @@ export default function ChatAssistant() {
                         className="w-6 h-6 rounded-full border"
                         style=https://operator.chatgpt.com/c/68795ad055b48191959fdb6c71d65adb#cua_citation-%20backgroundColor:%20c%20
                         title={c}
-                      ></div>
+                      />
                     ))}
                   </div>
                 </div>
@@ -343,6 +349,7 @@ export default function ChatAssistant() {
             </div>
           )}
 
+          {/* Refined draft */}
           {!idea.locked && idea.draft && (
             <>
               <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
