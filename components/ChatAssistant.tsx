@@ -13,89 +13,46 @@ export default function ChatAssistant() {
   const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || loading) return;
 
     const userMsg = { role: "user", content: input };
-    const updatedMessages = [...messages, userMsg];
-
-    setMessages(updatedMessages);
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
-
-    const newAssistantMsg = { role: "assistant", content: "" };
-    setMessages((prev) => [...prev, newAssistantMsg]);
 
     try {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [...updatedMessages] }),
+        body: JSON.stringify({ messages: [...messages, userMsg] }),
       });
 
-      if (!res.ok || !res.body) throw new Error("Stream failed");
+      const data = await res.json();
+      const fullText = data.reply ?? "";
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
+      // Typing simulation
+      let displayed = "";
+      const assistantMsg = { role: "assistant", content: "" };
+      setMessages((prev) => [...prev, assistantMsg]);
 
-      let buffer = "";
-      let updateCount = 0;
+      const segments = fullText.split(/(?<=[.?!])\s+/); // sentence-by-sentence
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n").filter((line) => line.startsWith("data: "));
-
-        for (const line of lines) {
-          const token = line.replace("data: ", "").trim();
-          if (token === "[DONE]") continue;
-
-          // ✅ Add a space if needed between words
-          const lastChar = buffer.slice(-1);
-          const needsSpace =
-            lastChar && /\w/.test(lastChar) && /^\w/.test(token);
-          buffer += needsSpace ? ` ${token}` : token;
-
-          updateCount++;
-
-          if (
-            updateCount % 3 === 0 ||
-            buffer.endsWith(".") ||
-            buffer.endsWith("!") ||
-            buffer.endsWith("?") ||
-            buffer.endsWith(" ")
-          ) {
-            setMessages((prev) => {
-              const updated = [...prev];
-              updated[updated.length - 1] = {
-                ...updated[updated.length - 1],
-                content: buffer,
-              };
-              return updated;
-            });
-
-            await delay(25);
-          }
-        }
+      for (const segment of segments) {
+        displayed += segment + " ";
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: "assistant", content: displayed.trim() };
+          return updated;
+        });
+        await delay(80);
       }
-
-      // Final flush
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: buffer.trim(),
-        };
-        return updated;
-      });
     } catch (err) {
-      console.error("Streaming error", err);
+      console.error("Error fetching assistant response:", err);
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "⚠️ Sorry, there was a problem receiving the response. Please try again.",
+          content: "⚠️ Sorry, something went wrong. Please try again.",
         },
       ]);
     }
