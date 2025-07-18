@@ -2,7 +2,8 @@
 
 VenturePilot is an autonomous AI startup generator that helps users go from idea to launched microbusiness or SaaS tool with minimal human intervention.
 
-## Features
+## 
+Features
 - Idea validation and planning
 - MVP generation and deployment (Glide, Softr, GitHub + Render)
 - Branding and monetization setup (Gumroad, Stripe)
@@ -28,3 +29,4 @@ VenturePilot is an autonomous AI startup generator that helps users go from idea
 
 We’ve completed the idea validation phase (market surveys, competitor analysis, and early user interviews). We’re now focusing on branding: generating names, taglines, color palettes, and visual assets before moving on to monetization.
 *
+> **Full coverage checklist:** see [`docs/CoverageChecklist.md`](docs/CoverageChecklist.md)
