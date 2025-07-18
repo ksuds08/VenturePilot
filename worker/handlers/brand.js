@@ -28,7 +28,7 @@ Idea: ${idea}
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4o", // changed from gpt-4o-mini
         messages: [
           { role: "system", content: "You are a helpful assistant." },
           { role: "user", content: prompt },
