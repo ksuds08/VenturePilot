@@ -24,7 +24,8 @@ interface Idea {
   validationError?: string;
   lastValidated?: string;
   branding?: Branding;
-  repoUrl?: string; // <-- new property to store the repo link
+  repoUrl?: string;  // GitHub repo link
+  pagesUrl?: string; // Cloudflare Pages URL
 }
 
 export default function ChatAssistant() {
@@ -210,7 +211,7 @@ export default function ChatAssistant() {
     }
   };
 
-  // New function to create the MVP and get the repository URL
+  // Updated function to create the MVP and get both repo and Pages URLs
   const handleMVP = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -227,8 +228,8 @@ export default function ChatAssistant() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "MVP creation failed");
 
-      // Store the repository URL in the idea
-      updateIdea(id, { repoUrl: data.repoUrl });
+      // Store both repoUrl (optional) and pagesUrl
+      updateIdea(id, { repoUrl: data.repoUrl, pagesUrl: data.pagesUrl });
     } catch (err) {
       console.error("MVP error:", err);
       alert(err instanceof Error ? err.message : "MVP creation failed");
@@ -343,8 +344,8 @@ export default function ChatAssistant() {
             </div>
           )}
 
-          {/* Show the Generate MVP button if branding exists but repo has not been created */}
-          {idea.branding && !idea.repoUrl && (
+          {/* Show Generate MVP if branding exists and no Pages URL yet */}
+          {idea.branding && !idea.pagesUrl && (
             <button
               onClick={() => handleMVP(idea.id)}
               className="text-green-600 text-sm mt-2"
@@ -353,14 +354,28 @@ export default function ChatAssistant() {
             </button>
           )}
 
-          {/* Show the repository link once the MVP has been generated */}
-          {idea.repoUrl && (
+          {/* Show the deployed app link once Pages URL is available */}
+          {idea.pagesUrl && (
             <div className="mt-2 text-sm">
+              <a
+                href={idea.pagesUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-600 underline"
+              >
+                View App
+              </a>
+            </div>
+          )}
+
+          {/* Optional: show the GitHub repository link (can be removed if not needed) */}
+          {idea.pagesUrl && idea.repoUrl && (
+            <div className="mt-1 text-xs">
               <a
                 href={idea.repoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 underline"
+                className="text-gray-500 underline"
               >
                 View Repository
               </a>
