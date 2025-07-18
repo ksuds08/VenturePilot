@@ -24,6 +24,7 @@ interface Idea {
   validationError?: string;
   lastValidated?: string;
   branding?: Branding;
+  repoUrl?: string; // <-- new property to store the repo link
 }
 
 export default function ChatAssistant() {
@@ -39,7 +40,8 @@ export default function ChatAssistant() {
   useEffect(() => {
     if (activeIdea?.editing && textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      textareaRef.current.style.height =
+        `${textareaRef.current.scrollHeight}px`;
     }
   }, [activeIdea?.editing, activeIdea?.editValue]);
 
@@ -208,6 +210,31 @@ export default function ChatAssistant() {
     }
   };
 
+  // New function to create the MVP and get the repository URL
+  const handleMVP = async (id: string) => {
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea) return;
+    try {
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/mvp",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+        }
+      );
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "MVP creation failed");
+
+      // Store the repository URL in the idea
+      updateIdea(id, { repoUrl: data.repoUrl });
+    } catch (err) {
+      console.error("MVP error:", err);
+      alert(err instanceof Error ? err.message : "MVP creation failed");
+    }
+  };
+
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-6">
       <div className="space-y-4">
@@ -313,6 +340,30 @@ export default function ChatAssistant() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Show the Generate MVP button if branding exists but repo has not been created */}
+          {idea.branding && !idea.repoUrl && (
+            <button
+              onClick={() => handleMVP(idea.id)}
+              className="text-green-600 text-sm mt-2"
+            >
+              Generate MVP
+            </button>
+          )}
+
+          {/* Show the repository link once the MVP has been generated */}
+          {idea.repoUrl && (
+            <div className="mt-2 text-sm">
+              <a
+                href={idea.repoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 underline"
+              >
+                View Repository
+              </a>
             </div>
           )}
 
