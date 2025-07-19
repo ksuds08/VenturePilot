@@ -24,10 +24,21 @@ interface Idea {
   validationError?: string;
   lastValidated?: string;
   branding?: Branding;
-  repoUrl?: string;  // GitHub repo link
+  repoUrl?: string; // GitHub repo link
   pagesUrl?: string; // Cloudflare Pages URL
 }
 
+/**
+ * ChatAssistant component
+ *
+ * This component orchestrates the conversation with the AI assistant and manages
+ * the lifecycle of each business idea. It displays the conversation on the
+ * right and a series of collapsible sections on the left that elegantly
+ * present each stage of the startup journey: refined idea, validation report,
+ * branding kit, and deployment information. This provides a clearer, more
+ * organized overview of the progress for each idea compared to a single
+ * vertical flow.
+ */
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
@@ -39,10 +50,10 @@ export default function ChatAssistant() {
   const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
 
   useEffect(() => {
+    // Auto-expand the textarea when editing a refined idea
     if (activeIdea?.editing && textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height =
-        `${textareaRef.current.scrollHeight}px`;
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [activeIdea?.editing, activeIdea?.editValue]);
 
@@ -54,6 +65,11 @@ export default function ChatAssistant() {
     );
   };
 
+  /**
+   * Send a user message to the assistant and update the conversation. This
+   * handles creating a new idea if none is active, appending the message
+   * to an existing idea, and streaming back the assistant's reply.
+   */
   const handleSend = async () => {
     if (!input.trim() || loading) return;
     setLoading(true);
@@ -97,6 +113,7 @@ export default function ChatAssistant() {
       const reply = data?.reply || "No reply received.";
       const refined = data?.refinedIdea || "";
 
+      // Append a blank assistant message and stream the reply word by word
       const assistantMsg = { role: "assistant", content: "" };
       const words = reply.split(" ");
       const updatedMsgs = [...newIdea.messages, assistantMsg];
@@ -107,17 +124,13 @@ export default function ChatAssistant() {
         streamed += word + " ";
         updateIdea(newIdea.id, {
           messages: updatedMsgs.map((m, i) =>
-            i === updatedMsgs.length - 1
-              ? { ...m, content: streamed.trim() }
-              : m
+            i === updatedMsgs.length - 1 ? { ...m, content: streamed.trim() } : m
           ),
         });
         await delay(30);
       }
 
-      updateIdea(newIdea.id, {
-        draft: refined,
-      });
+      updateIdea(newIdea.id, { draft: refined });
     } catch (err) {
       console.error("Assistant error:", err);
       alert(
@@ -130,6 +143,10 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
+  /**
+   * Accept the refined idea as the final title and lock it. Once locked, the
+   * assistant will move on to validation and subsequent steps.
+   */
   const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -140,6 +157,10 @@ export default function ChatAssistant() {
     });
   };
 
+  /**
+   * Validate the business idea via the API and store the result. This is
+   * triggered for locked ideas that haven't been validated yet.
+   */
   const handleValidate = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -171,8 +192,7 @@ export default function ChatAssistant() {
       console.error("Validation error:", err);
       updateIdea(id, {
         validation: null,
-        validationError:
-          err instanceof Error ? err.message : "Validation failed",
+        validationError: err instanceof Error ? err.message : "Validation failed",
         lastValidated: new Date().toISOString(),
       });
     } finally {
@@ -180,10 +200,13 @@ export default function ChatAssistant() {
     }
   };
 
+  /**
+   * Request a branding kit from the API and store the result. Triggered
+   * after a validated idea is locked and before generating an MVP.
+   */
   const handleBrand = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
-
     try {
       const res = await fetch(
         "https://venturepilot-api.promptpulse.workers.dev/brand",
@@ -211,7 +234,10 @@ export default function ChatAssistant() {
     }
   };
 
-  // Updated function to create the MVP and get both repo and Pages URLs
+  /**
+   * Request an MVP for the idea and store the deployment URLs. Requires
+   * branding to be completed first.
+   */
   const handleMVP = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -228,7 +254,6 @@ export default function ChatAssistant() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "MVP creation failed");
 
-      // Store both repoUrl (optional) and pagesUrl
       updateIdea(id, { repoUrl: data.repoUrl, pagesUrl: data.pagesUrl });
     } catch (err) {
       console.error("MVP error:", err);
@@ -238,6 +263,7 @@ export default function ChatAssistant() {
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-6">
+      {/* Conversation area */}
       <div className="space-y-4">
         {(activeIdea?.messages ?? []).map((msg, i) => (
           <div
@@ -265,6 +291,7 @@ export default function ChatAssistant() {
         )}
       </div>
 
+      {/* Input area */}
       <div className="flex gap-2">
         <input
           value={input}
@@ -282,12 +309,14 @@ export default function ChatAssistant() {
         </button>
       </div>
 
+      {/* Idea cards with collapsible sections */}
       {ideas.map((idea) => (
         <div
           key={idea.id}
-          className="border rounded-lg p-4 bg-white dark:bg-slate-800"
+          className="border rounded-lg p-4 bg-white dark:bg-slate-800 space-y-3"
         >
-          <div className="flex justify-between">
+          {/* Header and Validate button */}
+          <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">{idea.title}</h3>
             {idea.locked && !idea.validation && (
               <button
@@ -299,33 +328,48 @@ export default function ChatAssistant() {
             )}
           </div>
 
-          {idea.validation && (
-            <div className="mt-2 text-sm">
-              <h4 className="font-bold text-xs mb-1">Validation Report</h4>
-              <ReactMarkdown
-                className="prose dark:prose-invert"
-                remarkPlugins={[remarkGfm as any]}
-              >
-                {idea.validation}
-              </ReactMarkdown>
-            </div>
-          )}
-
-          {idea.locked && idea.validation && !idea.branding && (
-            <button
-              onClick={() => handleBrand(idea.id)}
-              className="text-indigo-600 text-sm mt-2"
-            >
-              Generate Branding
-            </button>
-          )}
-
-          {idea.branding && (
-            <div className="mt-4 animate-fade-in">
-              <div className="font-medium text-xs mb-1 text-indigo-500">
-                Branding Kit
+          {/* Refined Idea section */}
+          {!idea.locked && idea.draft && (
+            <details open>
+              <summary className="cursor-pointer font-medium text-xs text-slate-700 dark:text-slate-300">
+                Refined Idea
+              </summary>
+              <div className="bg-white dark:bg-slate-900 p-2 rounded border text-sm whitespace-pre-wrap mt-2">
+                {idea.draft}
               </div>
-              <div className="bg-white dark:bg-slate-900 p-3 rounded border text-sm space-y-2">
+              <button
+                onClick={() => handleAcceptDraft(idea.id)}
+                className="mt-2 text-sm text-green-600 hover:underline"
+              >
+                Accept
+              </button>
+            </details>
+          )}
+
+          {/* Validation section */}
+          {idea.validation && (
+            <details>
+              <summary className="cursor-pointer font-medium text-xs">
+                Validation Report
+              </summary>
+              <div className="mt-2 text-sm">
+                <ReactMarkdown
+                  className="prose dark:prose-invert"
+                  remarkPlugins={[remarkGfm as any]}
+                >
+                  {idea.validation}
+                </ReactMarkdown>
+              </div>
+            </details>
+          )}
+
+          {/* Branding section */}
+          {idea.branding && (
+            <details>
+              <summary className="cursor-pointer font-medium text-xs text-indigo-500">
+                Branding Kit
+              </summary>
+              <div className="bg-white dark:bg-slate-900 p-3 rounded border text-sm space-y-2 mt-2">
                 <div>
                   <strong>Name:</strong> {idea.branding.name}
                 </div>
@@ -341,10 +385,47 @@ export default function ChatAssistant() {
                   </div>
                 )}
               </div>
-            </div>
+            </details>
           )}
 
-          {/* Show Generate MVP if branding exists and no Pages URL yet */}
+          {/* Deployment section */}
+          {idea.pagesUrl && (
+            <details>
+              <summary className="cursor-pointer font-medium text-xs text-green-600">
+                Deployment
+              </summary>
+              <div className="mt-2 text-sm space-y-1">
+                <a
+                  href={idea.pagesUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-green-600 underline"
+                >
+                  View App
+                </a>
+                {idea.repoUrl && (
+                  <a
+                    href={idea.repoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-500 underline block"
+                  >
+                    View Repository
+                  </a>
+                )}
+              </div>
+            </details>
+          )}
+
+          {/* Action buttons */}
+          {idea.locked && idea.validation && !idea.branding && (
+            <button
+              onClick={() => handleBrand(idea.id)}
+              className="text-indigo-600 text-sm mt-2"
+            >
+              Generate Branding
+            </button>
+          )}
           {idea.branding && !idea.pagesUrl && (
             <button
               onClick={() => handleMVP(idea.id)}
@@ -352,51 +433,6 @@ export default function ChatAssistant() {
             >
               Generate MVP
             </button>
-          )}
-
-          {/* Show the deployed app link once Pages URL is available */}
-          {idea.pagesUrl && (
-            <div className="mt-2 text-sm">
-              <a
-                href={idea.pagesUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-green-600 underline"
-              >
-                View App
-              </a>
-            </div>
-          )}
-
-          {/* Optional: show the GitHub repository link (can be removed if not needed) */}
-          {idea.pagesUrl && idea.repoUrl && (
-            <div className="mt-1 text-xs">
-              <a
-                href={idea.repoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gray-500 underline"
-              >
-                View Repository
-              </a>
-            </div>
-          )}
-
-          {!idea.locked && idea.draft && (
-            <>
-              <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                <div className="font-medium text-xs mb-1">Refined Idea</div>
-                <div className="bg-white dark:bg-slate-900 p-2 rounded border text-sm whitespace-pre-wrap">
-                  {idea.draft}
-                </div>
-                <button
-                  onClick={() => handleAcceptDraft(idea.id)}
-                  className="mt-2 text-sm text-green-600 hover:underline"
-                >
-                  Accept
-                </button>
-              </div>
-            </>
           )}
         </div>
       ))}
