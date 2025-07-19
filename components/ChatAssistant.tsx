@@ -1,13 +1,11 @@
 // Updated ChatAssistant.tsx for VenturePilot
 // Includes collapsible cards per stage, left-aligned sections, better spacing
 
-
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
 
 interface Branding {
   name: string;
@@ -15,7 +13,6 @@ interface Branding {
   colors: string[];
   logoDesc?: string;
 }
-
 
 interface Idea {
   id: string;
@@ -33,7 +30,6 @@ interface Idea {
   pagesUrl?: string;
 }
 
-
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
@@ -43,11 +39,9 @@ export default function ChatAssistant() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
 
-
   const updateIdea = (id: string, updates: Partial<Idea>) => {
     setIdeas((prev) => prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea)));
   };
-
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -92,13 +86,11 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
-
   const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
     updateIdea(id, { title: idea.draft || idea.title, draft: "", locked: true });
   };
-
 
   const handleValidate = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
@@ -119,7 +111,6 @@ export default function ChatAssistant() {
     }
   };
 
-
   const handleBrand = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -135,7 +126,6 @@ export default function ChatAssistant() {
       alert("Branding failed");
     }
   };
-
 
   const handleMVP = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
@@ -153,13 +143,16 @@ export default function ChatAssistant() {
     }
   };
 
-
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-6">
       <div className="space-y-4">
         {(activeIdea?.messages ?? []).map((msg, i) => (
           <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
-            <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${msg.role === "user" ? "bg-blue-500 text-white ml-auto" : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"}`}>
+            <div
+              className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+                msg.role === "user" ? "bg-blue-500 text-white ml-auto" : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+              }`}
+            >
               <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm as any]}>
                 {msg.content}
               </ReactMarkdown>
@@ -176,31 +169,37 @@ export default function ChatAssistant() {
           className="flex-1 p-2 rounded-xl border dark:bg-slate-800 dark:text-white"
           placeholder="Describe your startup idea..."
         />
-        <button
-          onClick={handleSend}
-          disabled={loading}
-          className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600 disabled:opacity-50"
-        >
+        <button onClick={handleSend} disabled={loading} className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600 disabled:opacity-50">
           {loading ? "Sending..." : "Send"}
         </button>
       </div>
       {ideas.map((idea) => (
         <div key={idea.id} className="space-y-6">
+          {/* Idea title card */}
           <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
             <h3 className="text-lg font-semibold mb-1">{idea.title}</h3>
-            {!idea.locked && idea.draft && (
+          </section>
+          {/* Refined idea card */}
+          {!idea.locked && idea.draft && (
+            <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <details open>
                 <summary className="cursor-pointer text-sm font-medium">Refined Idea</summary>
                 <div className="mt-2 text-sm whitespace-pre-wrap">{idea.draft}</div>
-                <button onClick={() => handleAcceptDraft(idea.id)} className="mt-2 text-green-600 text-sm">Accept</button>
+                <button onClick={() => handleAcceptDraft(idea.id)} className="mt-2 text-green-600 text-sm">
+                  Accept
+                </button>
               </details>
-            )}
-            {idea.locked && !idea.validation && (
+            </section>
+          )}
+          {/* Validate call card */}
+          {idea.locked && !idea.validation && (
+            <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <button onClick={() => handleValidate(idea.id)} className="text-blue-500 text-sm">
                 {validating === idea.id ? "Validating..." : "Validate"}
               </button>
-            )}
-          </section>
+            </section>
+          )}
+          {/* Validation report */}
           {idea.validation && (
             <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <details>
@@ -213,36 +212,59 @@ export default function ChatAssistant() {
               </details>
             </section>
           )}
+          {/* Branding kit */}
           {idea.branding && (
             <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <details>
                 <summary className="font-semibold text-sm cursor-pointer text-indigo-500">Branding Kit</summary>
                 <div className="space-y-1 text-sm mt-2">
-                  <div><strong>Name:</strong> {idea.branding.name}</div>
-                  <div><strong>Tagline:</strong> {idea.branding.tagline}</div>
-                  <div><strong>Colors:</strong> {idea.branding.colors.join(", ")}</div>
-                  {idea.branding.logoDesc && <div><strong>Logo Prompt:</strong> {idea.branding.logoDesc}</div>}
+                  <div>
+                    <strong>Name:</strong> {idea.branding.name}
+                  </div>
+                  <div>
+                    <strong>Tagline:</strong> {idea.branding.tagline}
+                  </div>
+                  <div>
+                    <strong>Colors:</strong> {idea.branding.colors?.join(", ")}
+                  </div>
+                  {idea.branding.logoDesc && (
+                    <div>
+                      <strong>Logo Prompt:</strong> {idea.branding.logoDesc}
+                    </div>
+                  )}
                 </div>
               </details>
             </section>
           )}
+          {/* Deployment */}
           {idea.pagesUrl && (
             <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <details>
                 <summary className="font-semibold text-sm cursor-pointer text-green-600">Deployment</summary>
                 <div className="mt-2 text-sm space-y-1">
-                  <a href={idea.pagesUrl} target="_blank" className="text-green-600 underline">View App</a>
-                  {idea.repoUrl && <a href={idea.repoUrl} target="_blank" className="text-gray-500 underline block">View Repository</a>}
+                  <a href={idea.pagesUrl} target="_blank" className="text-green-600 underline">
+                    View App
+                  </a>
+                  {idea.repoUrl && (
+                    <a href={idea.repoUrl} target="_blank" className="text-gray-500 underline block">
+                      View Repository
+                    </a>
+                  )}
                 </div>
               </details>
             </section>
           )}
+          {/* Action buttons for next steps */}
           <div className="flex gap-4">
             {idea.locked && idea.validation && !idea.branding && (
-              <button onClick={() => handleBrand(idea.id)} className="text-indigo-600 text-sm">Generate Branding</button>
+              <button onClick={() => handleBrand(idea.id)} className="text-indigo-600 text-sm">
+                Generate Branding
+              </button>
             )}
             {idea.branding && !idea.pagesUrl && (
-              <button onClick={() => handleMVP(idea.id)} className="text-green-600 text-sm">Generate MVP</button>
+              <button onClick={() => handleMVP(idea.id)} className="text-green-600 text-sm">
+                Generate MVP
+              </button>
             )}
           </div>
         </div>
@@ -250,4 +272,3 @@ export default function ChatAssistant() {
     </div>
   );
 }
-
