@@ -4,12 +4,14 @@ import { v4 as uuidv4 } from "uuid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+
 interface Branding {
   name: string;
   tagline: string;
   colors: string[];
   logoDesc?: string;
 }
+
 
 interface Takeaways {
   refinedIdea?: string;
@@ -18,11 +20,13 @@ interface Takeaways {
   brandingTagline?: string;
 }
 
+
 interface Message {
   role: string;
   content: string;
   summary?: string;
 }
+
 
 interface Idea {
   id: string;
@@ -41,6 +45,7 @@ interface Idea {
   takeaways?: Takeaways;
 }
 
+
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
@@ -50,6 +55,7 @@ export default function ChatAssistant() {
   const [expandedReplies, setExpandedReplies] = useState<Record<number, boolean>>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
+
 
   useEffect(() => {
     const stored = localStorage.getItem("vp_ideas");
@@ -63,6 +69,7 @@ export default function ChatAssistant() {
     }
   }, []);
 
+
   useEffect(() => {
     localStorage.setItem("vp_ideas", JSON.stringify(ideas));
     if (activeIdeaId) {
@@ -70,11 +77,13 @@ export default function ChatAssistant() {
     }
   }, [ideas, activeIdeaId]);
 
+
   const updateIdea = (id: string, updates: Partial<Idea>) => {
     setIdeas((prev) =>
       prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea))
     );
   };
+
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -98,13 +107,24 @@ export default function ChatAssistant() {
       newIdea.messages.push(newMessage);
       updateIdea(newIdea.id, { messages: [...newIdea.messages] });
     }
+
+
+    const systemMessage = {
+      role: "system",
+      content:
+        "You are an expert startup advisor helping a user refine their business idea. At each phase (refined idea, validation, branding, MVP), give both helpful guidance AND at least one concrete recommendation or action the user should take.",
+    };
+
+
     try {
       const res = await fetch(
         "https://venturepilot-api.promptpulse.workers.dev/assistant",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newIdea.messages }),
+          body: JSON.stringify({
+            messages: [systemMessage, ...newIdea.messages],
+          }),
         }
       );
       const data = await res.json();
@@ -136,13 +156,13 @@ export default function ChatAssistant() {
     }
     setLoading(false);
   };
-// Continued ChatAssistant.tsx (Part 2 with business plan rendering)
 
-  const handleAcceptDraft = (id: string) => {
+ const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
     updateIdea(id, { title: idea.draft || idea.title, draft: "", locked: true });
   };
+
 
   const handleValidate = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
@@ -171,6 +191,7 @@ export default function ChatAssistant() {
     }
   };
 
+
   return (
     <div className="max-w-screen-lg mx-auto p-4 h-screen overflow-hidden">
       <div className="flex flex-col lg:flex-row gap-4 h-full">
@@ -179,13 +200,24 @@ export default function ChatAssistant() {
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(activeIdea?.messages ?? []).map((msg, i) => (
               <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
-                <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${msg.role === "user" ? "bg-blue-500 text-white ml-auto" : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"}`}>
-                  <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm as any]}>
+                <div
+                  className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+                    msg.role === "user"
+                      ? "bg-blue-500 text-white ml-auto"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  }`}
+                >
+                  <ReactMarkdown
+                    className="prose dark:prose-invert max-w-none text-left"
+                    remarkPlugins={[remarkGfm as any]}
+                  >
                     {expandedReplies[i] || !msg.summary ? msg.content : msg.summary}
                   </ReactMarkdown>
                   {msg.content !== msg.summary && (
                     <button
-                      onClick={() => setExpandedReplies({ ...expandedReplies, [i]: !expandedReplies[i] })}
+                      onClick={() =>
+                        setExpandedReplies({ ...expandedReplies, [i]: !expandedReplies[i] })
+                      }
                       className="ml-2 text-xs text-blue-500 underline"
                     >
                       {expandedReplies[i] ? "Show less" : "Show more"}
@@ -213,6 +245,7 @@ export default function ChatAssistant() {
             </button>
           </div>
         </div>
+
 
         {/* Business Plan Summary Column */}
         <div className="lg:w-1/2 w-full h-full overflow-y-auto rounded-xl border border-gray-300 dark:border-slate-700 p-4 space-y-4">
@@ -246,3 +279,4 @@ export default function ChatAssistant() {
     </div>
   );
 }
+
