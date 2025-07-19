@@ -1,6 +1,3 @@
-// Updated ChatAssistant.tsx for VenturePilot
-// Adds reply summarization and collapsible sections to reduce text overload
-
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
@@ -131,13 +128,14 @@ export default function ChatAssistant() {
       });
     } catch (err) {
       updateIdea(newIdea.id, {
-        messages: [...newIdea.messages, { role: "assistant", content: "Something went wrong." }],
+        messages: [
+          ...newIdea.messages,
+          { role: "assistant", content: "Something went wrong." },
+        ],
       });
     }
     setLoading(false);
   };
-// Continued ChatAssistant.tsx (Part 2)
-
   const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -172,16 +170,23 @@ export default function ChatAssistant() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-4">
-      <div className="flex flex-col lg:flex-row gap-4">
+    <div className="max-w-screen-lg mx-auto p-4 h-screen overflow-hidden">
+      <div className="flex flex-col lg:flex-row gap-4 h-full">
         {/* Chat column */}
-        <div className="lg:w-1/2 w-full border border-gray-300 dark:border-slate-700 rounded-xl flex flex-col max-h-[80vh]">
+        <div className="lg:w-1/2 w-full border border-gray-300 dark:border-slate-700 rounded-xl flex flex-col h-full">
           {/* Scrollable message list */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(activeIdea?.messages ?? []).map((msg, i) => (
               <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
-                <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${msg.role === "user" ? "bg-blue-500 text-white ml-auto" : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"}`}>
-                  <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm as any]}>
+                <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+                  msg.role === "user"
+                    ? "bg-blue-500 text-white ml-auto"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                }`}>
+                  <ReactMarkdown
+                    className="prose dark:prose-invert max-w-none text-left"
+                    remarkPlugins={[remarkGfm as any]}
+                  >
                     {expandedReplies[i] || !msg.summary ? msg.content : msg.summary}
                   </ReactMarkdown>
                   {msg.content !== msg.summary && (
@@ -217,7 +222,10 @@ export default function ChatAssistant() {
           </div>
         </div>
 
-        {/* Plan summary or right column can follow here if needed */}
+        {/* Placeholder for plan summary/right column */}
+        <div className="lg:w-1/2 w-full h-full overflow-y-auto rounded-xl border border-gray-300 dark:border-slate-700 p-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400">(Plan summary, phases, and business plan UI goes here)</p>
+        </div>
       </div>
     </div>
   );
