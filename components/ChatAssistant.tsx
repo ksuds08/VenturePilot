@@ -1,9 +1,13 @@
-"use client";
+// Updated ChatAssistant.tsx for VenturePilot
+// Includes collapsible cards per stage, left-aligned sections, better spacing
 
+
+"use client";
 import { useState, useRef, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
 
 interface Branding {
   name: string;
@@ -11,6 +15,7 @@ interface Branding {
   colors: string[];
   logoDesc?: string;
 }
+
 
 interface Idea {
   id: string;
@@ -24,274 +29,145 @@ interface Idea {
   validationError?: string;
   lastValidated?: string;
   branding?: Branding;
-  repoUrl?: string; // GitHub repo link
-  pagesUrl?: string; // Cloudflare Pages URL
+  repoUrl?: string;
+  pagesUrl?: string;
 }
 
-/**
- * ChatAssistant component
- *
- * This component orchestrates the conversation with the AI assistant and manages
- * the lifecycle of each business idea. It displays the conversation on the
- * right and a series of collapsible sections on the left that elegantly
- * present each stage of the startup journey: refined idea, validation report,
- * branding kit, and deployment information. This provides a clearer, more
- * organized overview of the progress for each idea compared to a single
- * vertical flow.
- */
+
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
-
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
 
-  useEffect(() => {
-    // Auto-expand the textarea when editing a refined idea
-    if (activeIdea?.editing && textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [activeIdea?.editing, activeIdea?.editValue]);
-
-  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
   const updateIdea = (id: string, updates: Partial<Idea>) => {
-    setIdeas((prev) =>
-      prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea))
-    );
+    setIdeas((prev) => prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea)));
   };
 
-  /**
-   * Send a user message to the assistant and update the conversation. This
-   * handles creating a new idea if none is active, appending the message
-   * to an existing idea, and streaming back the assistant's reply.
-   */
+
   const handleSend = async () => {
     if (!input.trim() || loading) return;
     setLoading(true);
-
     const newMessage = { role: "user", content: input.trim() };
     setInput("");
-
     let newIdea = activeIdea;
     if (!newIdea) {
       const id = uuidv4();
-      newIdea = {
-        id,
-        title: input.trim(),
-        draft: "",
-        messages: [newMessage],
-        locked: false,
-      };
+      newIdea = { id, title: input.trim(), draft: "", messages: [newMessage], locked: false };
       setIdeas((prev) => [...prev, newIdea]);
       setActiveIdeaId(id);
     } else {
       newIdea.messages.push(newMessage);
       updateIdea(newIdea.id, { messages: [...newIdea.messages] });
     }
-
     try {
-      const res = await fetch(
-        "https://venturepilot-api.promptpulse.workers.dev/assistant",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: newIdea.messages }),
-        }
-      );
-
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newIdea.messages }),
+      });
       const data = await res.json();
-      if (!res.ok) {
-        const message = data?.error || `Server error ${res.status}`;
-        throw new Error(message);
-      }
-
-      const reply = data?.reply || "No reply received.";
+      const reply = data?.reply || "No reply.";
       const refined = data?.refinedIdea || "";
-
-      // Append a blank assistant message and stream the reply word by word
       const assistantMsg = { role: "assistant", content: "" };
       const words = reply.split(" ");
       const updatedMsgs = [...newIdea.messages, assistantMsg];
       updateIdea(newIdea.id, { messages: updatedMsgs });
-
       let streamed = "";
       for (const word of words) {
         streamed += word + " ";
         updateIdea(newIdea.id, {
-          messages: updatedMsgs.map((m, i) =>
-            i === updatedMsgs.length - 1 ? { ...m, content: streamed.trim() } : m
-          ),
+          messages: updatedMsgs.map((m, i) => (i === updatedMsgs.length - 1 ? { ...m, content: streamed.trim() } : m)),
         });
-        await delay(30);
+        await new Promise((r) => setTimeout(r, 25));
       }
-
       updateIdea(newIdea.id, { draft: refined });
     } catch (err) {
-      console.error("Assistant error:", err);
-      alert(
-        err instanceof Error
-          ? `Assistant failed: ${err.message}`
-          : "Something went wrong."
-      );
+      updateIdea(newIdea.id, { messages: [...newIdea.messages, { role: "assistant", content: "Something went wrong." }] });
     }
-
     setLoading(false);
   };
 
-  /**
-   * Accept the refined idea as the final title and lock it. Once locked, the
-   * assistant will move on to validation and subsequent steps.
-   */
+
   const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
-    updateIdea(id, {
-      title: idea.draft || idea.title,
-      draft: "",
-      locked: true,
-    });
+    updateIdea(id, { title: idea.draft || idea.title, draft: "", locked: true });
   };
 
-  /**
-   * Validate the business idea via the API and store the result. This is
-   * triggered for locked ideas that haven't been validated yet.
-   */
+
   const handleValidate = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
     setValidating(id);
-
     try {
-      const res = await fetch(
-        "https://venturepilot-api.promptpulse.workers.dev/validate",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-        }
-      );
-
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
       const data = await res.json();
-      if (!res.ok)
-        throw new Error(data.error || `Validation failed with status ${res.status}`);
-
-      updateIdea(id, {
-        validation: data.validation,
-        validationError: null,
-        lastValidated: data.timestamp || new Date().toISOString(),
-      });
+      updateIdea(id, { validation: data.validation, lastValidated: data.timestamp });
     } catch (err) {
-      console.error("Validation error:", err);
-      updateIdea(id, {
-        validation: null,
-        validationError: err instanceof Error ? err.message : "Validation failed",
-        lastValidated: new Date().toISOString(),
-      });
+      updateIdea(id, { validationError: "Validation failed." });
     } finally {
       setValidating(null);
     }
   };
 
-  /**
-   * Request a branding kit from the API and store the result. Triggered
-   * after a validated idea is locked and before generating an MVP.
-   */
+
   const handleBrand = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
     try {
-      const res = await fetch(
-        "https://venturepilot-api.promptpulse.workers.dev/brand",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-        }
-      );
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Brand generation failed");
-
-      updateIdea(id, {
-        branding: {
-          name: data.name,
-          tagline: data.tagline,
-          colors: data.colors,
-          logoDesc: data.logoDesc,
-        },
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
       });
+      const data = await res.json();
+      updateIdea(id, { branding: data });
     } catch (err) {
-      console.error("Branding error:", err);
-      alert("Failed to generate branding.");
+      alert("Branding failed");
     }
   };
 
-  /**
-   * Request an MVP for the idea and store the deployment URLs. Requires
-   * branding to be completed first.
-   */
+
   const handleMVP = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
     try {
-      const res = await fetch(
-        "https://venturepilot-api.promptpulse.workers.dev/mvp",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-        }
-      );
-
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "MVP creation failed");
-
       updateIdea(id, { repoUrl: data.repoUrl, pagesUrl: data.pagesUrl });
     } catch (err) {
-      console.error("MVP error:", err);
-      alert(err instanceof Error ? err.message : "MVP creation failed");
+      alert("MVP failed");
     }
   };
 
+
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-6">
-      {/* Conversation area */}
       <div className="space-y-4">
         {(activeIdea?.messages ?? []).map((msg, i) => (
-          <div
-            key={i}
-            className={`text-${msg.role === "user" ? "right" : "left"}`}
-          >
-            <div
-              className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-                msg.role === "user"
-                  ? "bg-blue-500 text-white ml-auto"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-              }`}
-            >
-              <ReactMarkdown
-                className="prose dark:prose-invert max-w-none text-left"
-                remarkPlugins={[remarkGfm as any]}
-              >
+          <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
+            <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${msg.role === "user" ? "bg-blue-500 text-white ml-auto" : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"}`}>
+              <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm as any]}>
                 {msg.content}
               </ReactMarkdown>
             </div>
           </div>
         ))}
-        {loading && (
-          <div className="text-slate-400 text-sm">Assistant is typing…</div>
-        )}
+        {loading && <div className="text-slate-400 text-sm">Assistant is typing…</div>}
       </div>
-
-      {/* Input area */}
       <div className="flex gap-2">
         <input
           value={input}
@@ -308,134 +184,70 @@ export default function ChatAssistant() {
           {loading ? "Sending..." : "Send"}
         </button>
       </div>
-
-      {/* Idea cards with collapsible sections */}
       {ideas.map((idea) => (
-        <div
-          key={idea.id}
-          className="border rounded-lg p-4 bg-white dark:bg-slate-800 space-y-3"
-        >
-          {/* Header and Validate button */}
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">{idea.title}</h3>
+        <div key={idea.id} className="space-y-6">
+          <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
+            <h3 className="text-lg font-semibold mb-1">{idea.title}</h3>
+            {!idea.locked && idea.draft && (
+              <details open>
+                <summary className="cursor-pointer text-sm font-medium">Refined Idea</summary>
+                <div className="mt-2 text-sm whitespace-pre-wrap">{idea.draft}</div>
+                <button onClick={() => handleAcceptDraft(idea.id)} className="mt-2 text-green-600 text-sm">Accept</button>
+              </details>
+            )}
             {idea.locked && !idea.validation && (
-              <button
-                onClick={() => handleValidate(idea.id)}
-                className="text-blue-500 text-sm"
-              >
+              <button onClick={() => handleValidate(idea.id)} className="text-blue-500 text-sm">
                 {validating === idea.id ? "Validating..." : "Validate"}
               </button>
             )}
-          </div>
-
-          {/* Refined Idea section */}
-          {!idea.locked && idea.draft && (
-            <details open>
-              <summary className="cursor-pointer font-medium text-xs text-slate-700 dark:text-slate-300">
-                Refined Idea
-              </summary>
-              <div className="bg-white dark:bg-slate-900 p-2 rounded border text-sm whitespace-pre-wrap mt-2">
-                {idea.draft}
-              </div>
-              <button
-                onClick={() => handleAcceptDraft(idea.id)}
-                className="mt-2 text-sm text-green-600 hover:underline"
-              >
-                Accept
-              </button>
-            </details>
-          )}
-
-          {/* Validation section */}
+          </section>
           {idea.validation && (
-            <details>
-              <summary className="cursor-pointer font-medium text-xs">
-                Validation Report
-              </summary>
-              <div className="mt-2 text-sm">
-                <ReactMarkdown
-                  className="prose dark:prose-invert"
-                  remarkPlugins={[remarkGfm as any]}
-                >
-                  {idea.validation}
-                </ReactMarkdown>
-              </div>
-            </details>
+            <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
+              <details>
+                <summary className="font-semibold text-sm cursor-pointer">Validation Report</summary>
+                <div className="mt-2 text-sm">
+                  <ReactMarkdown className="prose dark:prose-invert" remarkPlugins={[remarkGfm as any]}>
+                    {idea.validation}
+                  </ReactMarkdown>
+                </div>
+              </details>
+            </section>
           )}
-
-          {/* Branding section */}
           {idea.branding && (
-            <details>
-              <summary className="cursor-pointer font-medium text-xs text-indigo-500">
-                Branding Kit
-              </summary>
-              <div className="bg-white dark:bg-slate-900 p-3 rounded border text-sm space-y-2 mt-2">
-                <div>
-                  <strong>Name:</strong> {idea.branding.name}
+            <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
+              <details>
+                <summary className="font-semibold text-sm cursor-pointer text-indigo-500">Branding Kit</summary>
+                <div className="space-y-1 text-sm mt-2">
+                  <div><strong>Name:</strong> {idea.branding.name}</div>
+                  <div><strong>Tagline:</strong> {idea.branding.tagline}</div>
+                  <div><strong>Colors:</strong> {idea.branding.colors.join(", ")}</div>
+                  {idea.branding.logoDesc && <div><strong>Logo Prompt:</strong> {idea.branding.logoDesc}</div>}
                 </div>
-                <div>
-                  <strong>Tagline:</strong> {idea.branding.tagline}
-                </div>
-                <div>
-                  <strong>Colors:</strong> {idea.branding.colors.join(", ")}
-                </div>
-                {idea.branding.logoDesc && (
-                  <div>
-                    <strong>Logo Prompt:</strong> {idea.branding.logoDesc}
-                  </div>
-                )}
-              </div>
-            </details>
+              </details>
+            </section>
           )}
-
-          {/* Deployment section */}
           {idea.pagesUrl && (
-            <details>
-              <summary className="cursor-pointer font-medium text-xs text-green-600">
-                Deployment
-              </summary>
-              <div className="mt-2 text-sm space-y-1">
-                <a
-                  href={idea.pagesUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-green-600 underline"
-                >
-                  View App
-                </a>
-                {idea.repoUrl && (
-                  <a
-                    href={idea.repoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-500 underline block"
-                  >
-                    View Repository
-                  </a>
-                )}
-              </div>
-            </details>
+            <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
+              <details>
+                <summary className="font-semibold text-sm cursor-pointer text-green-600">Deployment</summary>
+                <div className="mt-2 text-sm space-y-1">
+                  <a href={idea.pagesUrl} target="_blank" className="text-green-600 underline">View App</a>
+                  {idea.repoUrl && <a href={idea.repoUrl} target="_blank" className="text-gray-500 underline block">View Repository</a>}
+                </div>
+              </details>
+            </section>
           )}
-
-          {/* Action buttons */}
-          {idea.locked && idea.validation && !idea.branding && (
-            <button
-              onClick={() => handleBrand(idea.id)}
-              className="text-indigo-600 text-sm mt-2"
-            >
-              Generate Branding
-            </button>
-          )}
-          {idea.branding && !idea.pagesUrl && (
-            <button
-              onClick={() => handleMVP(idea.id)}
-              className="text-green-600 text-sm mt-2"
-            >
-              Generate MVP
-            </button>
-          )}
+          <div className="flex gap-4">
+            {idea.locked && idea.validation && !idea.branding && (
+              <button onClick={() => handleBrand(idea.id)} className="text-indigo-600 text-sm">Generate Branding</button>
+            )}
+            {idea.branding && !idea.pagesUrl && (
+              <button onClick={() => handleMVP(idea.id)} className="text-green-600 text-sm">Generate MVP</button>
+            )}
+          </div>
         </div>
       ))}
     </div>
   );
 }
+
