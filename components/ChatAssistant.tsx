@@ -87,6 +87,7 @@ export default function ChatAssistant() {
     };
 
     try {
+      
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -152,7 +153,9 @@ export default function ChatAssistant() {
         lastValidated: timestamp,
         takeaways: {
           ...idea.takeaways,
+
           validationSummary: summary,
+
         },
       });
     } catch (err) {
