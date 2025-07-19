@@ -136,6 +136,8 @@ export default function ChatAssistant() {
     }
     setLoading(false);
   };
+// Continued ChatAssistant.tsx (Part 2 with business plan rendering)
+
   const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -174,19 +176,11 @@ export default function ChatAssistant() {
       <div className="flex flex-col lg:flex-row gap-4 h-full">
         {/* Chat column */}
         <div className="lg:w-1/2 w-full border border-gray-300 dark:border-slate-700 rounded-xl flex flex-col h-full">
-          {/* Scrollable message list */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(activeIdea?.messages ?? []).map((msg, i) => (
               <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
-                <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-                  msg.role === "user"
-                    ? "bg-blue-500 text-white ml-auto"
-                    : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                }`}>
-                  <ReactMarkdown
-                    className="prose dark:prose-invert max-w-none text-left"
-                    remarkPlugins={[remarkGfm as any]}
-                  >
+                <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${msg.role === "user" ? "bg-blue-500 text-white ml-auto" : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"}`}>
+                  <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm as any]}>
                     {expandedReplies[i] || !msg.summary ? msg.content : msg.summary}
                   </ReactMarkdown>
                   {msg.content !== msg.summary && (
@@ -202,8 +196,6 @@ export default function ChatAssistant() {
             ))}
             {loading && <div className="text-slate-400 text-sm">Assistant is typing…</div>}
           </div>
-
-          {/* Input area */}
           <div className="p-2 flex gap-2 border-t border-gray-200 dark:border-slate-700">
             <input
               value={input}
@@ -222,9 +214,33 @@ export default function ChatAssistant() {
           </div>
         </div>
 
-        {/* Placeholder for plan summary/right column */}
-        <div className="lg:w-1/2 w-full h-full overflow-y-auto rounded-xl border border-gray-300 dark:border-slate-700 p-4">
-          <p className="text-sm text-gray-500 dark:text-gray-400">(Plan summary, phases, and business plan UI goes here)</p>
+        {/* Business Plan Summary Column */}
+        <div className="lg:w-1/2 w-full h-full overflow-y-auto rounded-xl border border-gray-300 dark:border-slate-700 p-4 space-y-4">
+          {activeIdea?.takeaways && (
+            <div>
+              <h2 className="text-lg font-semibold mb-2">Business Plan Summary</h2>
+              <div className="text-sm text-gray-800 dark:text-gray-100 space-y-2">
+                <div>
+                  <strong>Refined Idea:</strong> {activeIdea.takeaways.refinedIdea || "—"}
+                </div>
+                {activeIdea.takeaways.validationSummary && (
+                  <div>
+                    <strong>Market Potential:</strong> {activeIdea.takeaways.validationSummary}
+                  </div>
+                )}
+                {activeIdea.takeaways.brandingName && (
+                  <div>
+                    <strong>Brand Name:</strong> {activeIdea.takeaways.brandingName}
+                  </div>
+                )}
+                {activeIdea.takeaways.brandingTagline && (
+                  <div>
+                    <strong>Tagline:</strong> {activeIdea.takeaways.brandingTagline}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
