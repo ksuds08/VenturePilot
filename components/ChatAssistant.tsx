@@ -2,7 +2,7 @@
 // Includes collapsible cards per stage, left-aligned sections, better spacing
 
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -36,11 +36,12 @@ export default function ChatAssistant() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeIdea = ideas.find((idea) => idea.id === activeIdeaId);
 
   const updateIdea = (id: string, updates: Partial<Idea>) => {
-    setIdeas((prev) => prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea)));
+    setIdeas((prev) =>
+      prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea))
+    );
   };
 
   const handleSend = async () => {
@@ -51,7 +52,13 @@ export default function ChatAssistant() {
     let newIdea = activeIdea;
     if (!newIdea) {
       const id = uuidv4();
-      newIdea = { id, title: input.trim(), draft: "", messages: [newMessage], locked: false };
+      newIdea = {
+        id,
+        title: input.trim(),
+        draft: "",
+        messages: [newMessage],
+        locked: false,
+      };
       setIdeas((prev) => [...prev, newIdea]);
       setActiveIdeaId(id);
     } else {
@@ -59,14 +66,20 @@ export default function ChatAssistant() {
       updateIdea(newIdea.id, { messages: [...newIdea.messages] });
     }
     try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newIdea.messages }),
-      });
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/assistant",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: newIdea.messages }),
+        }
+      );
       const data = await res.json();
       const reply = data?.reply || "No reply.";
-      const refined = data?.refinedIdea || "";
+      // Use the refined idea provided by the API if present; otherwise fall back to the full reply
+      // This ensures the refined idea card (and Accept button) always appears even if the backend
+      // doesn't return a separate refinedIdea field
+      const refined = data?.refinedIdea || reply;
       const assistantMsg = { role: "assistant", content: "" };
       const words = reply.split(" ");
       const updatedMsgs = [...newIdea.messages, assistantMsg];
@@ -75,13 +88,25 @@ export default function ChatAssistant() {
       for (const word of words) {
         streamed += word + " ";
         updateIdea(newIdea.id, {
-          messages: updatedMsgs.map((m, i) => (i === updatedMsgs.length - 1 ? { ...m, content: streamed.trim() } : m)),
+          messages: updatedMsgs.map((m, i) =>
+            i === updatedMsgs.length - 1
+              ? { ...m, content: streamed.trim() }
+              : m
+          ),
         });
         await new Promise((r) => setTimeout(r, 25));
       }
+      // Once streaming is complete, set the draft. The draft may be an empty string if
+      // refinedIdea is not returned and reply is empty (unlikely), but typically it's
+      // the full assistant reply. This triggers the Refined Idea card to render.
       updateIdea(newIdea.id, { draft: refined });
     } catch (err) {
-      updateIdea(newIdea.id, { messages: [...newIdea.messages, { role: "assistant", content: "Something went wrong." }] });
+      updateIdea(newIdea.id, {
+        messages: [
+          ...newIdea.messages,
+          { role: "assistant", content: "Something went wrong." },
+        ],
+      });
     }
     setLoading(false);
   };
@@ -89,7 +114,11 @@ export default function ChatAssistant() {
   const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
-    updateIdea(id, { title: idea.draft || idea.title, draft: "", locked: true });
+    updateIdea(id, {
+      title: idea.draft || idea.title,
+      draft: "",
+      locked: true,
+    });
   };
 
   const handleValidate = async (id: string) => {
@@ -97,13 +126,19 @@ export default function ChatAssistant() {
     if (!idea) return;
     setValidating(id);
     try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      });
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/validate",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+        }
+      );
       const data = await res.json();
-      updateIdea(id, { validation: data.validation, lastValidated: data.timestamp });
+      updateIdea(id, {
+        validation: data.validation,
+        lastValidated: data.timestamp,
+      });
     } catch (err) {
       updateIdea(id, { validationError: "Validation failed." });
     } finally {
@@ -115,27 +150,32 @@ export default function ChatAssistant() {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
     try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      });
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/brand",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+        }
+      );
       const data = await res.json();
       updateIdea(id, { branding: data });
     } catch (err) {
       alert("Branding failed");
     }
   };
-
   const handleMVP = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
     try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      });
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/mvp",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+        }
+      );
       const data = await res.json();
       updateIdea(id, { repoUrl: data.repoUrl, pagesUrl: data.pagesUrl });
     } catch (err) {
@@ -147,19 +187,31 @@ export default function ChatAssistant() {
     <div className="max-w-3xl mx-auto p-4 space-y-6">
       <div className="space-y-4">
         {(activeIdea?.messages ?? []).map((msg, i) => (
-          <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
+          <div
+            key={i}
+            className={`text-${msg.role === "user" ? "right" : "left"}`}
+          >
             <div
               className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-                msg.role === "user" ? "bg-blue-500 text-white ml-auto" : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                msg.role === "user"
+                  ? "bg-blue-500 text-white ml-auto"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
               }`}
             >
-              <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm as any]}>
+              <ReactMarkdown
+                className="prose dark:prose-invert max-w-none text-left"
+                remarkPlugins={[remarkGfm as any]}
+              >
                 {msg.content}
               </ReactMarkdown>
             </div>
           </div>
         ))}
-        {loading && <div className="text-slate-400 text-sm">Assistant is typing…</div>}
+        {loading && (
+          <div className="text-slate-400 text-sm">
+            Assistant is typing…
+          </div>
+        )}
       </div>
       <div className="flex gap-2">
         <input
@@ -169,7 +221,11 @@ export default function ChatAssistant() {
           className="flex-1 p-2 rounded-xl border dark:bg-slate-800 dark:text-white"
           placeholder="Describe your startup idea..."
         />
-        <button onClick={handleSend} disabled={loading} className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600 disabled:opacity-50">
+        <button
+          onClick={handleSend}
+          disabled={loading}
+          className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600 disabled:opacity-50"
+        >
           {loading ? "Sending..." : "Send"}
         </button>
       </div>
@@ -177,15 +233,24 @@ export default function ChatAssistant() {
         <div key={idea.id} className="space-y-6">
           {/* Idea title card */}
           <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
-            <h3 className="text-lg font-semibold mb-1">{idea.title}</h3>
+            <h3 className="text-lg font-semibold mb-1">
+              {idea.title}
+            </h3>
           </section>
           {/* Refined idea card */}
           {!idea.locked && idea.draft && (
             <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <details open>
-                <summary className="cursor-pointer text-sm font-medium">Refined Idea</summary>
-                <div className="mt-2 text-sm whitespace-pre-wrap">{idea.draft}</div>
-                <button onClick={() => handleAcceptDraft(idea.id)} className="mt-2 text-green-600 text-sm">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Refined Idea
+                </summary>
+                <div className="mt-2 text-sm whitespace-pre-wrap">
+                  {idea.draft}
+                </div>
+                <button
+                  onClick={() => handleAcceptDraft(idea.id)}
+                  className="mt-2 text-green-600 text-sm"
+                >
                   Accept
                 </button>
               </details>
@@ -194,7 +259,10 @@ export default function ChatAssistant() {
           {/* Validate call card */}
           {idea.locked && !idea.validation && (
             <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
-              <button onClick={() => handleValidate(idea.id)} className="text-blue-500 text-sm">
+              <button
+                onClick={() => handleValidate(idea.id)}
+                className="text-blue-500 text-sm"
+              >
                 {validating === idea.id ? "Validating..." : "Validate"}
               </button>
             </section>
@@ -203,9 +271,14 @@ export default function ChatAssistant() {
           {idea.validation && (
             <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <details>
-                <summary className="font-semibold text-sm cursor-pointer">Validation Report</summary>
+                <summary className="font-semibold text-sm cursor-pointer">
+                  Validation Report
+                </summary>
                 <div className="mt-2 text-sm">
-                  <ReactMarkdown className="prose dark:prose-invert" remarkPlugins={[remarkGfm as any]}>
+                  <ReactMarkdown
+                    className="prose dark:prose-invert"
+                    remarkPlugins={[remarkGfm as any]}
+                  >
                     {idea.validation}
                   </ReactMarkdown>
                 </div>
@@ -216,7 +289,9 @@ export default function ChatAssistant() {
           {idea.branding && (
             <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <details>
-                <summary className="font-semibold text-sm cursor-pointer text-indigo-500">Branding Kit</summary>
+                <summary className="font-semibold text-sm cursor-pointer text-indigo-500">
+                  Branding Kit
+                </summary>
                 <div className="space-y-1 text-sm mt-2">
                   <div>
                     <strong>Name:</strong> {idea.branding.name}
@@ -225,11 +300,13 @@ export default function ChatAssistant() {
                     <strong>Tagline:</strong> {idea.branding.tagline}
                   </div>
                   <div>
-                    <strong>Colors:</strong> {idea.branding.colors?.join(", ")}
+                    <strong>Colors:</strong>{" "}
+                    {idea.branding.colors?.join(", ")}
                   </div>
                   {idea.branding.logoDesc && (
                     <div>
-                      <strong>Logo Prompt:</strong> {idea.branding.logoDesc}
+                      <strong>Logo Prompt:</strong>{" "}
+                      {idea.branding.logoDesc}
                     </div>
                   )}
                 </div>
@@ -240,13 +317,23 @@ export default function ChatAssistant() {
           {idea.pagesUrl && (
             <section className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow">
               <details>
-                <summary className="font-semibold text-sm cursor-pointer text-green-600">Deployment</summary>
+                <summary className="font-semibold text-sm cursor-pointer text-green-600">
+                  Deployment
+                </summary>
                 <div className="mt-2 text-sm space-y-1">
-                  <a href={idea.pagesUrl} target="_blank" className="text-green-600 underline">
+                  <a
+                    href={idea.pagesUrl}
+                    target="_blank"
+                    className="text-green-600 underline"
+                  >
                     View App
                   </a>
                   {idea.repoUrl && (
-                    <a href={idea.repoUrl} target="_blank" className="text-gray-500 underline block">
+                    <a
+                      href={idea.repoUrl}
+                      target="_blank"
+                      className="text-gray-500 underline block"
+                    >
                       View Repository
                     </a>
                   )}
@@ -257,12 +344,18 @@ export default function ChatAssistant() {
           {/* Action buttons for next steps */}
           <div className="flex gap-4">
             {idea.locked && idea.validation && !idea.branding && (
-              <button onClick={() => handleBrand(idea.id)} className="text-indigo-600 text-sm">
+              <button
+                onClick={() => handleBrand(idea.id)}
+                className="text-indigo-600 text-sm"
+              >
                 Generate Branding
               </button>
             )}
             {idea.branding && !idea.pagesUrl && (
-              <button onClick={() => handleMVP(idea.id)} className="text-green-600 text-sm">
+              <button
+                onClick={() => handleMVP(idea.id)}
+                className="text-green-600 text-sm"
+              >
                 Generate MVP
               </button>
             )}
