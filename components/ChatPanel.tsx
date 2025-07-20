@@ -1,4 +1,4 @@
-// components/ChatPanel.tsx
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -18,7 +18,9 @@ export default function ChatPanel({ messages, onSend, loading }) {
         {messages.map((msg, i) => (
           <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
             <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-              msg.role === "user" ? "bg-blue-500 text-white ml-auto" : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+              msg.role === "user"
+                ? "bg-blue-500 text-white ml-auto"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
             }`}>
               <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm]}>
                 {msg.content}
@@ -47,3 +49,4 @@ export default function ChatPanel({ messages, onSend, loading }) {
     </div>
   );
 }
+
