@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -39,6 +39,7 @@ interface Idea {
   repoUrl?: string;
   pagesUrl?: string;
   takeaways?: Takeaways;
+  currentStage?: "ideation" | "validation" | "branding" | "mvp";
 }
 
 export default function ChatAssistant() {
@@ -53,6 +54,11 @@ export default function ChatAssistant() {
   const updateIdea = (id: string, updates: Partial<Idea>) => {
     setIdeas((prev) => prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea)));
   };
+
+  function extractConciseSummary(text: string): string {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    return lines.find((l) => l.startsWith("- ")) || lines.find((l) => l.length > 40) || text.slice(0, 160);
+  }
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -69,6 +75,7 @@ export default function ChatAssistant() {
         messages: [newMessage],
         locked: false,
         takeaways: {},
+        currentStage: "ideation",
       };
       setIdeas((prev) => [...prev, newIdea]);
       setActiveIdeaId(id);
@@ -77,12 +84,17 @@ export default function ChatAssistant() {
       updateIdea(newIdea.id, { messages: [...newIdea.messages] });
     }
 
+    const stage = newIdea.currentStage || "ideation";
+    const promptsByStage = {
+      ideation: "Help the user refine and clarify their business idea with suggestions.",
+      validation: "Help the user validate their idea: market potential, competitors, demand signals.",
+      branding: "Suggest brand names, taglines, and visual identity concepts for the idea.",
+      mvp: "Guide the user in building an MVP and defining its minimum scope.",
+    };
+
     const systemMessage: Message = {
       role: "system",
-      content:
-        "You are an expert startup advisor helping a user refine their business idea. " +
-        "At each phase (refined idea, validation, branding, MVP), give both helpful guidance AND " +
-        "at least one concrete recommendation or action the user should take.",
+      content: `You are a startup advisor. Focus on this stage: ${stage.toUpperCase()}. ${promptsByStage[stage]}`,
     };
 
     try {
@@ -98,22 +110,14 @@ export default function ChatAssistant() {
       const data = await res.json();
       const reply: string = data?.reply || "No reply.";
       const lines = reply.split("\n").map((l) => l.trim()).filter(Boolean);
-      const summary =
-        lines.find((l) => l.startsWith("- ") || l.length > 40) || reply;
+      const summary = lines.find((l) => l.startsWith("- ") || l.length > 40) || reply;
       const assistantMsg: Message = {
         role: "assistant",
         content: reply,
         summary,
       };
       const updatedMsgs = [...newIdea.messages, assistantMsg];
-
-      const fullAssistantMessages = updatedMsgs
-        .filter((m) => m.role === "assistant")
-        .map((m) => m.content)
-        .join("\n\n");
-
-      const refined = data?.refinedIdea || fullAssistantMessages;
-
+      const refined = extractConciseSummary(reply);
       updateIdea(newIdea.id, {
         messages: updatedMsgs,
         draft: refined,
@@ -129,10 +133,14 @@ export default function ChatAssistant() {
     }
     setLoading(false);
   };
-  const handleAcceptDraft = (id: string) => {
+
+  const handleAdvanceStage = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
-    updateIdea(id, { title: idea.draft || idea.title, draft: "", locked: true });
+    const stageOrder = ["ideation", "validation", "branding", "mvp"];
+    const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
+    const nextStage = stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
+    updateIdea(id, { currentStage: nextStage });
   };
 
   const handleValidate = async (id: string) => {
@@ -165,46 +173,6 @@ export default function ChatAssistant() {
       updateIdea(id, { validationError: "Validation failed." });
     } finally {
       setValidating(null);
-    }
-  };
-
-  const handleBrand = async (id: string) => {
-    const idea = ideas.find((i) => i.id === id);
-    if (!idea) return;
-    try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      });
-      const data = await res.json();
-      const brandingData = data?.branding ?? data;
-      updateIdea(id, {
-        branding: brandingData,
-        takeaways: {
-          ...idea.takeaways,
-          brandingName: brandingData?.name,
-          brandingTagline: brandingData?.tagline,
-        },
-      });
-    } catch (err) {
-      alert("Branding failed");
-    }
-  };
-
-  const handleMVP = async (id: string) => {
-    const idea = ideas.find((i) => i.id === id);
-    if (!idea) return;
-    try {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      });
-      const data = await res.json();
-      updateIdea(id, { repoUrl: data?.repoUrl, pagesUrl: data?.pagesUrl });
-    } catch (err) {
-      alert("MVP failed");
     }
   };
 
@@ -263,23 +231,16 @@ export default function ChatAssistant() {
             <div>
               <h2 className="text-lg font-semibold mb-2">Business Plan Summary</h2>
               <div className="text-sm text-gray-800 dark:text-gray-100 space-y-2">
-                <div>
-                  <strong>Refined Idea:</strong> {activeIdea.takeaways.refinedIdea || "—"}
-                </div>
+                <div><strong>Current Stage:</strong> {activeIdea.currentStage?.toUpperCase() || "IDEATION"}</div>
+                <div><strong>Refined Idea:</strong> {activeIdea.takeaways.refinedIdea || "—"}</div>
                 {activeIdea.takeaways.validationSummary && (
-                  <div>
-                    <strong>Market Potential:</strong> {activeIdea.takeaways.validationSummary}
-                  </div>
+                  <div><strong>Market Potential:</strong> {activeIdea.takeaways.validationSummary}</div>
                 )}
                 {activeIdea.takeaways.brandingName && (
-                  <div>
-                    <strong>Brand Name:</strong> {activeIdea.takeaways.brandingName}
-                  </div>
+                  <div><strong>Brand Name:</strong> {activeIdea.takeaways.brandingName}</div>
                 )}
                 {activeIdea.takeaways.brandingTagline && (
-                  <div>
-                    <strong>Tagline:</strong> {activeIdea.takeaways.brandingTagline}
-                  </div>
+                  <div><strong>Tagline:</strong> {activeIdea.takeaways.brandingTagline}</div>
                 )}
                 {activeIdea.pagesUrl && (
                   <div>
@@ -288,15 +249,16 @@ export default function ChatAssistant() {
                       View App
                     </a>
                     {activeIdea.repoUrl && (
-                      <span>
-                        ,{" "}
-                        <a href={activeIdea.repoUrl} target="_blank" className="text-gray-500 underline">
-                          Repository
-                        </a>
-                      </span>
+                      <span>, <a href={activeIdea.repoUrl} target="_blank" className="text-gray-500 underline">Repository</a></span>
                     )}
                   </div>
                 )}
+                <button
+                  onClick={() => handleAdvanceStage(activeIdea.id)}
+                  className="text-xs text-blue-500 underline mt-2"
+                >
+                  Advance to next stage
+                </button>
               </div>
             </div>
           )}
