@@ -1,8 +1,12 @@
+// Define the allowed VenturePilot assistant stages
+
+export type VentureStage = "ideation" | "validation" | "branding" | "mvp";
 import React, { useState } from "react";
 import ChatPanel from "./ChatPanel";
 import SummaryPanel from "./SummaryPanel";
 import { sendToAssistant } from "../lib/assistantClient";
 import { v4 as uuidv4 } from "uuid";
+import type { VentureStage } from "../types";
 
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
@@ -50,11 +54,31 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
-  const handleAdvanceStage = (id) => {
-    const stageOrder = ["ideation", "validation", "branding", "mvp"];
-    const current = ideas.find((i) => i.id === id);
-    const nextIndex = Math.min(stageOrder.indexOf(current.currentStage) + 1, stageOrder.length - 1);
-    updateIdea(id, { currentStage: stageOrder[nextIndex] });
+  const handleAdvanceStage = async (id) => {
+    const stageOrder: VentureStage[] = ["ideation", "validation", "branding", "mvp"];
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea) return;
+
+    const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
+    const nextStage = stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
+
+    updateIdea(id, { currentStage: nextStage });
+
+    if (nextStage === "validation") {
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
+      const data = await res.json();
+      updateIdea(id, {
+        validation: data?.validation,
+        takeaways: {
+          ...idea.takeaways,
+          validationSummary: data?.validation?.split("\n")[0] || "",
+        }
+      });
+    }
   };
 
   return (
@@ -77,4 +101,3 @@ export default function ChatAssistant() {
     </div>
   );
 }
-
