@@ -77,7 +77,6 @@ export default function ChatAssistant() {
       updateIdea(newIdea.id, { messages: [...newIdea.messages] });
     }
 
-    // System message to guide the assistant to provide recommendations
     const systemMessage: Message = {
       role: "system",
       content:
@@ -87,7 +86,6 @@ export default function ChatAssistant() {
     };
 
     try {
-      // Build sanitized messages array for API call: include only role and content.
       const messagesForApi = [
         { role: systemMessage.role, content: systemMessage.content },
         ...newIdea.messages.map(({ role, content }) => ({ role, content })),
@@ -99,7 +97,6 @@ export default function ChatAssistant() {
       });
       const data = await res.json();
       const reply: string = data?.reply || "No reply.";
-      // Derive summary: take first bullet or first long sentence
       const lines = reply.split("\n").map((l) => l.trim()).filter(Boolean);
       const summary =
         lines.find((l) => l.startsWith("- ") || l.length > 40) || reply;
@@ -109,8 +106,14 @@ export default function ChatAssistant() {
         summary,
       };
       const updatedMsgs = [...newIdea.messages, assistantMsg];
-      // Determine refined idea
-      const refined = data?.refinedIdea || summary;
+
+      const fullAssistantMessages = updatedMsgs
+        .filter((m) => m.role === "assistant")
+        .map((m) => m.content)
+        .join("\n\n");
+
+      const refined = data?.refinedIdea || fullAssistantMessages;
+
       updateIdea(newIdea.id, {
         messages: updatedMsgs,
         draft: refined,
@@ -126,7 +129,6 @@ export default function ChatAssistant() {
     }
     setLoading(false);
   };
-
   const handleAcceptDraft = (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -146,7 +148,6 @@ export default function ChatAssistant() {
       const data = await res.json();
       const validation = data?.validation;
       const timestamp = data?.timestamp;
-      // Summarize validation: first non-empty line
       let summary: string | undefined;
       if (validation) {
         const vLines = validation.split(/\r?\n/).map((l: string) => l.trim()).filter((l: string) => l);
@@ -210,9 +211,7 @@ export default function ChatAssistant() {
   return (
     <div className="max-w-screen-lg mx-auto p-4 h-screen overflow-hidden">
       <div className="flex flex-col lg:flex-row gap-4 h-full">
-        {/* Chat column */}
         <div className="lg:w-1/2 w-full border border-gray-300 dark:border-slate-700 rounded-xl flex flex-col h-full">
-          {/* Scrollable message list */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(activeIdea?.messages ?? []).map((msg, i) => (
               <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
@@ -242,7 +241,6 @@ export default function ChatAssistant() {
             ))}
             {loading && <div className="text-slate-400 text-sm">Assistant is typing…</div>}
           </div>
-          {/* Input area */}
           <div className="p-2 flex gap-2 border-t border-gray-200 dark:border-slate-700">
             <input
               value={input}
@@ -260,7 +258,6 @@ export default function ChatAssistant() {
             </button>
           </div>
         </div>
-        {/* Business Plan Summary Column */}
         <div className="lg:w-1/2 w-full h-full overflow-y-auto rounded-xl border border-gray-300 dark:border-slate-700 p-4 space-y-4">
           {activeIdea?.takeaways && (
             <div>
