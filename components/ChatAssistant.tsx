@@ -1,12 +1,9 @@
-// Define the allowed VenturePilot assistant stages
-
-export type VentureStage = "ideation" | "validation" | "branding" | "mvp";
 import React, { useState } from "react";
 import ChatPanel from "./ChatPanel";
 import SummaryPanel from "./SummaryPanel";
 import { sendToAssistant } from "../lib/assistantClient";
 import { v4 as uuidv4 } from "uuid";
-import type { VentureStage } from "../types";
+import type { VentureStage as StageType } from "../types";
 
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
@@ -28,14 +25,14 @@ export default function ChatAssistant() {
         messages: [{ role: "user", content }],
         locked: false,
         currentStage: "ideation",
-        takeaways: {}
+        takeaways: {},
       };
       setIdeas((prev) => [...prev, current]);
       setActiveIdeaId(id);
     } else {
       current = {
         ...current,
-        messages: [...current.messages, { role: "user", content }]
+        messages: [...current.messages, { role: "user", content }],
       };
       updateIdea(current.id, { messages: current.messages });
     }
@@ -47,15 +44,15 @@ export default function ChatAssistant() {
       messages: [...current.messages, { role: "assistant", content: reply }],
       takeaways: {
         ...current.takeaways,
-        refinedIdea
-      }
+        refinedIdea,
+      },
     });
 
     setLoading(false);
   };
 
   const handleAdvanceStage = async (id) => {
-    const stageOrder: VentureStage[] = ["ideation", "validation", "branding", "mvp"];
+    const stageOrder: StageType[] = ["ideation", "validation", "branding", "mvp"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
 
@@ -76,7 +73,7 @@ export default function ChatAssistant() {
         takeaways: {
           ...idea.takeaways,
           validationSummary: data?.validation?.split("\n")[0] || "",
-        }
+        },
       });
     }
   };
@@ -101,3 +98,4 @@ export default function ChatAssistant() {
     </div>
   );
 }
+
