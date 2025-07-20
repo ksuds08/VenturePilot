@@ -17,12 +17,17 @@ export default function ChatPanel({ messages, onSend, loading }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, i) => (
           <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
-            <div className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-              msg.role === "user"
-                ? "bg-blue-500 text-white ml-auto"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-            }`}>
-              <ReactMarkdown className="prose dark:prose-invert max-w-none text-left" remarkPlugins={[remarkGfm]}>
+            <div
+              className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
+                msg.role === "user"
+                  ? "bg-blue-500 text-white ml-auto"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+              }`}
+            >
+              <ReactMarkdown
+                className="prose dark:prose-invert max-w-none text-left"
+                remarkPlugins={[remarkGfm as any]}
+              >
                 {msg.content}
               </ReactMarkdown>
             </div>
