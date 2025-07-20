@@ -47,11 +47,18 @@ ${common}
 
     case "mvp":
       return `
-Help the user define the Minimum Viable Product (MVP).
+You are now helping the user define their Minimum Viable Product (MVP).
 
-Ask: what features are must-have? What can be skipped? What tools/frameworks might help?
+Important: The MVP should be simple enough to build with a static HTML + Tailwind web interface, optionally using buttons, forms, or prompts to simulate workflows.
 
-Guide them toward a buildable scope. Once confirmed, suggest generating the business plan.
+Avoid recommending anything that requires user accounts, databases, or backend APIs unless it's mocked.
+
+Ask the user:
+- What are the top 1–2 features the MVP must include?
+- What workflows should be shown, even if they're simulated?
+- Should this include forms, click buttons, or AI-generated answers?
+
+Summarize your plan, and suggest moving to the final plan generation.
 
 ${common}
 `.trim();
