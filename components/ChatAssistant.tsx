@@ -55,6 +55,7 @@ export default function ChatAssistant() {
     setIdeas((prev) => prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea)));
   };
 
+  // Fallback helper to generate a concise one-liner from a single reply
   function extractConciseSummary(text: string): string {
     const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
     return lines.find((l) => l.startsWith("- ")) || lines.find((l) => l.length > 40) || text.slice(0, 160);
@@ -67,6 +68,7 @@ export default function ChatAssistant() {
     setInput("");
     let newIdea = activeIdea;
     if (!newIdea) {
+      // Initialize a brand new idea entry
       const id = uuidv4();
       newIdea = {
         id,
@@ -84,6 +86,7 @@ export default function ChatAssistant() {
       updateIdea(newIdea.id, { messages: [...newIdea.messages] });
     }
 
+    // Stage-aware assistant system prompt
     const stage = newIdea.currentStage || "ideation";
     const promptsByStage = {
       ideation: "Help the user refine and clarify their business idea with suggestions.",
@@ -117,7 +120,8 @@ export default function ChatAssistant() {
         summary,
       };
       const updatedMsgs = [...newIdea.messages, assistantMsg];
-      const refined = extractConciseSummary(reply);
+      // Use API-generated refinedIdea if available, otherwise fall back
+      const refined = data?.refinedIdea || extractConciseSummary(reply);
       updateIdea(newIdea.id, {
         messages: updatedMsgs,
         draft: refined,
@@ -134,16 +138,23 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
- const handleAdvanceStage = (id: string) => {
-  const idea = ideas.find((i) => i.id === id);
-  if (!idea) return;
-  const stageOrder: Array<Idea["currentStage"]> = ["ideation", "validation", "branding", "mvp"];
-  const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
-  const nextStage = stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
-  updateIdea(id, { currentStage: nextStage });
-};
+  const handleAdvanceStage = async (id: string) => {
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea) return;
+    const stageOrder: Array<Idea["currentStage"]> = ["ideation", "validation", "branding", "mvp"];
+    const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
+    const nextStage = stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
+    updateIdea(id, { currentStage: nextStage });
 
-
+    // Automatically trigger the appropriate action when entering a new stage
+    if (nextStage === "validation") {
+      await handleValidate(id);
+    } else if (nextStage === "branding") {
+      await handleBrand(id);
+    } else if (nextStage === "mvp") {
+      await handleMVP(id);
+    }
+  };
 
   const handleValidate = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
@@ -178,9 +189,50 @@ export default function ChatAssistant() {
     }
   };
 
+  const handleBrand = async (id: string) => {
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea) return;
+    try {
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
+      const data = await res.json();
+      const brandingData = data?.branding ?? data;
+      updateIdea(id, {
+        branding: brandingData,
+        takeaways: {
+          ...idea.takeaways,
+          brandingName: brandingData?.name,
+          brandingTagline: brandingData?.tagline,
+        },
+      });
+    } catch (err) {
+      alert("Branding failed");
+    }
+  };
+
+  const handleMVP = async (id: string) => {
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea) return;
+    try {
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
+      const data = await res.json();
+      updateIdea(id, { repoUrl: data?.repoUrl, pagesUrl: data?.pagesUrl });
+    } catch (err) {
+      alert("MVP failed");
+    }
+  };
+
   return (
     <div className="max-w-screen-lg mx-auto p-4 h-screen overflow-hidden">
       <div className="flex flex-col lg:flex-row gap-4 h-full">
+        {/* Chat Column */}
         <div className="lg:w-1/2 w-full border border-gray-300 dark:border-slate-700 rounded-xl flex flex-col h-full">
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(activeIdea?.messages ?? []).map((msg, i) => (
@@ -211,6 +263,7 @@ export default function ChatAssistant() {
             ))}
             {loading && <div className="text-slate-400 text-sm">Assistant is typing…</div>}
           </div>
+          {/* Input area */}
           <div className="p-2 flex gap-2 border-t border-gray-200 dark:border-slate-700">
             <input
               value={input}
@@ -228,22 +281,38 @@ export default function ChatAssistant() {
             </button>
           </div>
         </div>
+        {/* Business Plan Summary Column */}
         <div className="lg:w-1/2 w-full h-full overflow-y-auto rounded-xl border border-gray-300 dark:border-slate-700 p-4 space-y-4">
-          {activeIdea?.takeaways && (
+          {activeIdea && (
             <div>
               <h2 className="text-lg font-semibold mb-2">Business Plan Summary</h2>
-              <div className="text-sm text-gray-800 dark:text-gray-100 space-y-2">
+              <div className="text-sm text-gray-800 dark:text-gray-100 space-y-3">
+                {/* Stage indicator */}
                 <div><strong>Current Stage:</strong> {activeIdea.currentStage?.toUpperCase() || "IDEATION"}</div>
-                <div><strong>Refined Idea:</strong> {activeIdea.takeaways.refinedIdea || "—"}</div>
-                {activeIdea.takeaways.validationSummary && (
-                  <div><strong>Market Potential:</strong> {activeIdea.takeaways.validationSummary}</div>
+                {/* Refined idea section */}
+                <div><strong>Refined Idea:</strong> {activeIdea.takeaways?.refinedIdea || "—"}</div>
+                {/* Validation section */}
+                {activeIdea.currentStage !== "ideation" && activeIdea.validation && (
+                  <div>
+                    <strong>Validation Results:</strong>
+                    <div className="pl-2 mt-1 whitespace-pre-wrap">{activeIdea.validation}</div>
+                  </div>
                 )}
-                {activeIdea.takeaways.brandingName && (
-                  <div><strong>Brand Name:</strong> {activeIdea.takeaways.brandingName}</div>
+                {/* Branding section */}
+                {activeIdea.currentStage !== "ideation" && activeIdea.branding && (
+                  <div>
+                    <strong>Branding:</strong>
+                    <div className="pl-2 mt-1 space-y-1">
+                      {activeIdea.branding.name && <div><strong>Name:</strong> {activeIdea.branding.name}</div>}
+                      {activeIdea.branding.tagline && <div><strong>Tagline:</strong> {activeIdea.branding.tagline}</div>}
+                      {activeIdea.branding.logoDesc && <div><strong>Logo Description:</strong> {activeIdea.branding.logoDesc}</div>}
+                      {activeIdea.branding.colors && activeIdea.branding.colors.length > 0 && (
+                        <div><strong>Colors:</strong> {activeIdea.branding.colors.join(", ")}</div>
+                      )}
+                    </div>
+                  </div>
                 )}
-                {activeIdea.takeaways.brandingTagline && (
-                  <div><strong>Tagline:</strong> {activeIdea.takeaways.brandingTagline}</div>
-                )}
+                {/* MVP deployment section */}
                 {activeIdea.pagesUrl && (
                   <div>
                     <strong>Deployment:</strong>{" "}
@@ -251,10 +320,16 @@ export default function ChatAssistant() {
                       View App
                     </a>
                     {activeIdea.repoUrl && (
-                      <span>, <a href={activeIdea.repoUrl} target="_blank" className="text-gray-500 underline">Repository</a></span>
+                      <span>
+                        ,{" "}
+                        <a href={activeIdea.repoUrl} target="_blank" className="text-gray-500 underline">
+                          Repository
+                        </a>
+                      </span>
                     )}
                   </div>
                 )}
+                {/* Advance stage button */}
                 <button
                   onClick={() => handleAdvanceStage(activeIdea.id)}
                   className="text-xs text-blue-500 underline mt-2"
@@ -269,3 +344,4 @@ export default function ChatAssistant() {
     </div>
   );
 }
+
