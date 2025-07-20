@@ -1,7 +1,10 @@
-// lib/assistantClient.ts
 import { getSystemPrompt } from "../utils/promptUtils";
+import type { VentureStage } from "../types";
 
-export async function sendToAssistant(messages, stage = "ideation") {
+export async function sendToAssistant(
+  messages: { role: string; content: string }[],
+  stage: VentureStage = "ideation"
+) {
   const systemPrompt = getSystemPrompt(stage);
   const payload = [
     { role: "system", content: systemPrompt },
