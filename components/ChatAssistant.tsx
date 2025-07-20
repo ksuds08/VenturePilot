@@ -55,10 +55,15 @@ export default function ChatAssistant() {
     setIdeas((prev) => prev.map((idea) => (idea.id === id ? { ...idea, ...updates } : idea)));
   };
 
-  // Fallback helper to generate a concise one-liner from a single reply
+  // Helper to extract a concise summary from a larger block of text
   function extractConciseSummary(text: string): string {
     const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-    return lines.find((l) => l.startsWith("- ")) || lines.find((l) => l.length > 40) || text.slice(0, 160);
+    // Try to find a bullet or a long line first
+    const keyLine = lines.find((l) => l.startsWith("- ") || l.length > 40);
+    if (keyLine) return keyLine;
+    // Fallback to the first line or first 200 characters
+    if (lines.length > 0) return lines[0].slice(0, 200);
+    return text.slice(0, 200);
   }
 
   const handleSend = async () => {
@@ -67,12 +72,12 @@ export default function ChatAssistant() {
     const newMessage: Message = { role: "user", content: input.trim() };
     setInput("");
     let newIdea = activeIdea;
+    // Initialize a new idea if one doesn't exist
     if (!newIdea) {
-      // Initialize a brand new idea entry
       const id = uuidv4();
       newIdea = {
         id,
-        title: input.trim(),
+        title: newMessage.content,
         draft: "",
         messages: [newMessage],
         locked: false,
@@ -86,14 +91,14 @@ export default function ChatAssistant() {
       updateIdea(newIdea.id, { messages: [...newIdea.messages] });
     }
 
-    // Stage-aware assistant system prompt
+    // Determine the current stage to tailor the system prompt
     const stage = newIdea.currentStage || "ideation";
     const promptsByStage = {
       ideation: "Help the user refine and clarify their business idea with suggestions.",
       validation: "Help the user validate their idea: market potential, competitors, demand signals.",
       branding: "Suggest brand names, taglines, and visual identity concepts for the idea.",
       mvp: "Guide the user in building an MVP and defining its minimum scope.",
-    };
+    } as const;
 
     const systemMessage: Message = {
       role: "system",
@@ -120,8 +125,14 @@ export default function ChatAssistant() {
         summary,
       };
       const updatedMsgs = [...newIdea.messages, assistantMsg];
-      // Use API-generated refinedIdea if available, otherwise fall back
-      const refined = data?.refinedIdea || extractConciseSummary(reply);
+
+      // Build a conversation transcript (excluding system prompt) to extract a refined idea
+      const conversation = updatedMsgs.map((msg) => msg.content).join("\n");
+      const refinedCandidate: string | undefined = data?.refinedIdea;
+      const refined = refinedCandidate && refinedCandidate.trim()
+        ? refinedCandidate
+        : extractConciseSummary(conversation);
+
       updateIdea(newIdea.id, {
         messages: updatedMsgs,
         draft: refined,
@@ -131,6 +142,7 @@ export default function ChatAssistant() {
         },
       });
     } catch (err) {
+      // In case of error, still add a placeholder assistant message
       updateIdea(newIdea!.id, {
         messages: [...newIdea!.messages, { role: "assistant", content: "Something went wrong." }],
       });
@@ -138,6 +150,7 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
+  // Advance stage and trigger appropriate actions
   const handleAdvanceStage = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -146,7 +159,7 @@ export default function ChatAssistant() {
     const nextStage = stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
     updateIdea(id, { currentStage: nextStage });
 
-    // Automatically trigger the appropriate action when entering a new stage
+    // Automatically call relevant API functions on stage change
     if (nextStage === "validation") {
       await handleValidate(id);
     } else if (nextStage === "branding") {
@@ -232,8 +245,9 @@ export default function ChatAssistant() {
   return (
     <div className="max-w-screen-lg mx-auto p-4 h-screen overflow-hidden">
       <div className="flex flex-col lg:flex-row gap-4 h-full">
-        {/* Chat Column */}
+        {/* Chat column */}
         <div className="lg:w-1/2 w-full border border-gray-300 dark:border-slate-700 rounded-xl flex flex-col h-full">
+          {/* Scrollable message list */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(activeIdea?.messages ?? []).map((msg, i) => (
               <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
@@ -287,32 +301,45 @@ export default function ChatAssistant() {
             <div>
               <h2 className="text-lg font-semibold mb-2">Business Plan Summary</h2>
               <div className="text-sm text-gray-800 dark:text-gray-100 space-y-3">
-                {/* Stage indicator */}
-                <div><strong>Current Stage:</strong> {activeIdea.currentStage?.toUpperCase() || "IDEATION"}</div>
-                {/* Refined idea section */}
-                <div><strong>Refined Idea:</strong> {activeIdea.takeaways?.refinedIdea || "—"}</div>
-                {/* Validation section */}
+                <div>
+                  <strong>Current Stage:</strong> {activeIdea.currentStage?.toUpperCase() || "IDEATION"}
+                </div>
+                <div>
+                  <strong>Refined Idea:</strong> {activeIdea.takeaways?.refinedIdea || "—"}
+                </div>
                 {activeIdea.currentStage !== "ideation" && activeIdea.validation && (
                   <div>
                     <strong>Validation Results:</strong>
                     <div className="pl-2 mt-1 whitespace-pre-wrap">{activeIdea.validation}</div>
                   </div>
                 )}
-                {/* Branding section */}
                 {activeIdea.currentStage !== "ideation" && activeIdea.branding && (
                   <div>
                     <strong>Branding:</strong>
                     <div className="pl-2 mt-1 space-y-1">
-                      {activeIdea.branding.name && <div><strong>Name:</strong> {activeIdea.branding.name}</div>}
-                      {activeIdea.branding.tagline && <div><strong>Tagline:</strong> {activeIdea.branding.tagline}</div>}
-                      {activeIdea.branding.logoDesc && <div><strong>Logo Description:</strong> {activeIdea.branding.logoDesc}</div>}
+                      {activeIdea.branding.name && (
+                        <div>
+                          <strong>Name:</strong> {activeIdea.branding.name}
+                        </div>
+                      )}
+                      {activeIdea.branding.tagline && (
+                        <div>
+                          <strong>Tagline:</strong> {activeIdea.branding.tagline}
+                        </div>
+                      )}
+                      {activeIdea.branding.logoDesc && (
+                        <div>
+                          <strong>Logo Description:</strong> {activeIdea.branding.logoDesc}
+                        </div>
+                      )}
                       {activeIdea.branding.colors && activeIdea.branding.colors.length > 0 && (
-                        <div><strong>Colors:</strong> {activeIdea.branding.colors.join(", ")}</div>
+                        <div>
+                          <strong>Colors:</strong> {activeIdea.branding.colors.join(", ")}
+                        </div>
                       )}
                     </div>
                   </div>
                 )}
-                {/* MVP deployment section */}
                 {activeIdea.pagesUrl && (
                   <div>
                     <strong>Deployment:</strong>{" "}
@@ -329,7 +356,6 @@ export default function ChatAssistant() {
                     )}
                   </div>
                 )}
-                {/* Advance stage button */}
                 <button
                   onClick={() => handleAdvanceStage(activeIdea.id)}
                   className="text-xs text-blue-500 underline mt-2"
@@ -344,4 +370,3 @@ export default function ChatAssistant() {
     </div>
   );
 }
-
