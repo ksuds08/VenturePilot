@@ -4,7 +4,12 @@ import type { VentureStage } from "../types";
 export async function sendToAssistant(
   messages: { role: string; content: string }[],
   stage: VentureStage = "ideation"
-): Promise<{ reply: string; refinedIdea: string; nextStage?: VentureStage }> {
+): Promise<{
+  reply: string;
+  refinedIdea?: string;
+  nextStage?: VentureStage;
+  plan?: string;
+}> {
   const systemPrompt = getSystemPrompt(stage);
   const payload = [
     { role: "system", content: systemPrompt },
@@ -20,18 +25,15 @@ export async function sendToAssistant(
   const data = await res.json();
   const reply: string = data?.reply || "No reply.";
 
-  const fullAssistantHistory = messages
-    .filter((m) => m.role === "assistant")
-    .map((m) => m.content)
-    .join("\n\n");
-
-  const refined = extractRefinedIdea(reply) || extractSummary(fullAssistantHistory);
+  const refinedIdea = extractRefinedIdea(reply);
+  const plan = extractFinalPlan(reply);
   const nextStage = detectNextStageSuggestion(reply);
 
   return {
     reply,
-    refinedIdea: refined,
+    refinedIdea: refinedIdea || fallbackSummary(reply),
     nextStage,
+    plan,
   };
 }
 
@@ -40,19 +42,25 @@ function extractRefinedIdea(text: string): string | undefined {
   return match ? match[1].trim() : undefined;
 }
 
-function extractSummary(text: string): string {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  return (
-    lines.find((l) => l.toLowerCase().includes("the idea is")) ||
-    lines.find((l) => l.length > 60) ||
-    text.slice(0, 200)
-  );
+function extractFinalPlan(text: string): string | undefined {
+  const match = text.match(/Business Plan:\s*\n+([\s\S]*)$/i);
+  return match ? match[1].trim() : undefined;
 }
 
 function detectNextStageSuggestion(text: string): VentureStage | undefined {
   if (/move to (the )?validation/i.test(text)) return "validation";
   if (/move to (the )?branding/i.test(text)) return "branding";
-  if (/move to (the )?mvp|start( the)? mvp/i.test(text)) return "mvp";
+  if (/start( the)? mvp|move to (the )?mvp/i.test(text)) return "mvp";
+  if (/generate( the)? business plan|final plan ready/i.test(text)) return "generatePlan";
   return undefined;
+}
+
+function fallbackSummary(text: string): string {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  return (
+    lines.find(l => l.toLowerCase().includes("the idea is")) ||
+    lines.find(l => l.length > 60) ||
+    text.slice(0, 200)
+  );
 }
 
