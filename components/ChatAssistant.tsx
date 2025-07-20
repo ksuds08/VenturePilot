@@ -83,20 +83,21 @@ export default function ChatAssistant() {
         },
       });
     }
-
-    // Extend with logic for branding and mvp if needed later
   };
 
   return (
-    <div className="max-w-screen-lg mx-auto p-4 h-screen overflow-hidden flex flex-col lg:flex-row gap-4">
-      <div className="lg:w-1/2 w-full border rounded-xl flex flex-col h-full">
+    <div className="max-w-screen-lg mx-auto p-4 h-screen space-y-4 lg:space-y-0 lg:space-x-4 lg:flex lg:flex-row">
+      {/* Chat Panel */}
+      <div className="w-full lg:w-1/2 h-[50vh] lg:h-full border rounded-xl overflow-y-auto">
         <ChatPanel
           messages={activeIdea?.messages ?? []}
           onSend={handleSend}
           loading={loading}
         />
       </div>
-      <div className="lg:w-1/2 w-full h-full overflow-y-auto rounded-xl border p-4">
+
+      {/* Summary Panel */}
+      <div className="w-full lg:w-1/2 h-[50vh] lg:h-full border rounded-xl overflow-y-auto p-4">
         {activeIdea && (
           <SummaryPanel
             idea={activeIdea}
