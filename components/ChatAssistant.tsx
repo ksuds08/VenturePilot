@@ -134,14 +134,16 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
-  const handleAdvanceStage = (id: string) => {
-    const idea = ideas.find((i) => i.id === id);
-    if (!idea) return;
-    const stageOrder = ["ideation", "validation", "branding", "mvp"];
-    const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
-    const nextStage = stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
-    updateIdea(id, { currentStage: nextStage });
-  };
+ const handleAdvanceStage = (id: string) => {
+  const idea = ideas.find((i) => i.id === id);
+  if (!idea) return;
+  const stageOrder: Array<Idea["currentStage"]> = ["ideation", "validation", "branding", "mvp"];
+  const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
+  const nextStage = stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
+  updateIdea(id, { currentStage: nextStage });
+};
+
+
 
   const handleValidate = async (id: string) => {
     const idea = ideas.find((i) => i.id === id);
