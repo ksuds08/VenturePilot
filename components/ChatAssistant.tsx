@@ -1,6 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
-import SummaryPanel from "./SummaryPanel";
 import { sendToAssistant } from "../lib/assistantClient";
 import { v4 as uuidv4 } from "uuid";
 import type { VentureStage as StageType } from "../types";
@@ -11,55 +10,70 @@ export default function ChatAssistant() {
   const [loading, setLoading] = useState(false);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
+  useEffect(() => {
+    if (!activeIdeaId && ideas.length === 0) {
+      const id = uuidv4();
+      const starter = {
+        id,
+        title: "",
+        messages: [
+          {
+            role: "assistant",
+            content:
+              "Hi! I'm your AI cofounder. Let's build something together.\n\nTo start, tell me about the startup idea you're exploring — even if it's rough.",
+          },
+        ],
+        locked: false,
+        currentStage: "ideation",
+        takeaways: {},
+      };
+      setIdeas([starter]);
+      setActiveIdeaId(id);
+    }
+  }, [activeIdeaId, ideas.length]);
+
   const updateIdea = (id, updates) => {
     setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
 
   const handleSend = async (content) => {
     let current = activeIdea;
-    if (!current) {
-      const id = uuidv4();
-      current = {
-        id,
-        title: content,
-        messages: [{ role: "user", content }],
-        locked: false,
-        currentStage: "ideation",
-        takeaways: {},
-      };
-      setIdeas((prev) => [...prev, current]);
-      setActiveIdeaId(id);
-    } else {
-      current = {
-        ...current,
-        messages: [...current.messages, { role: "user", content }],
-      };
-      updateIdea(current.id, { messages: current.messages });
-    }
+    if (!current) return;
 
+    current = {
+      ...current,
+      messages: [...current.messages, { role: "user", content }],
+    };
+    updateIdea(current.id, { messages: current.messages });
     setLoading(true);
 
-    const { reply, refinedIdea, nextStage } = await sendToAssistant(current.messages, current.currentStage);
+    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
+      current.messages,
+      current.currentStage
+    );
 
-    updateIdea(current.id, {
+    const updates = {
       messages: [...current.messages, { role: "assistant", content: reply }],
       takeaways: {
         ...current.takeaways,
-        refinedIdea,
+        refinedIdea: refinedIdea || current.takeaways.refinedIdea,
       },
-    });
+    };
+
+    if (plan) updates["finalPlan"] = plan;
+    updateIdea(current.id, updates);
 
     if (nextStage && nextStage !== current.currentStage) {
       setTimeout(() => {
         handleAdvanceStage(current.id, nextStage);
-      }, 1200);
+      }, 1000);
     }
 
     setLoading(false);
   };
 
   const handleAdvanceStage = async (id, forcedStage?: StageType) => {
-    const stageOrder: StageType[] = ["ideation", "validation", "branding", "mvp"];
+    const stageOrder: StageType[] = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
 
@@ -86,24 +100,13 @@ export default function ChatAssistant() {
   };
 
   return (
-    <div className="max-w-screen-lg mx-auto p-4 h-screen space-y-4 lg:space-y-0 lg:space-x-4 lg:flex lg:flex-row">
-      {/* Chat Panel */}
-      <div className="w-full lg:w-1/2 h-[50vh] lg:h-full border rounded-xl overflow-y-auto">
+    <div className="max-w-screen-lg mx-auto p-4 h-screen">
+      <div className="w-full h-full border rounded-xl overflow-y-auto">
         <ChatPanel
           messages={activeIdea?.messages ?? []}
           onSend={handleSend}
           loading={loading}
         />
-      </div>
-
-      {/* Summary Panel */}
-      <div className="w-full lg:w-1/2 h-[50vh] lg:h-full border rounded-xl overflow-y-auto p-4">
-        {activeIdea && (
-          <SummaryPanel
-            idea={activeIdea}
-            onAdvanceStage={() => handleAdvanceStage(activeIdea.id)}
-          />
-        )}
       </div>
     </div>
   );
