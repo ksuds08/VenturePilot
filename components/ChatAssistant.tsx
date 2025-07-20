@@ -40,20 +40,17 @@ export default function ChatAssistant() {
     let current = activeIdea;
     if (!current) return;
 
-    current = {
-      ...current,
-      messages: [...current.messages, { role: "user", content }],
-    };
-    updateIdea(current.id, { messages: current.messages });
+    const updatedMessages = [...current.messages, { role: "user", content }];
+    updateIdea(current.id, { messages: updatedMessages });
     setLoading(true);
 
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
-      current.messages,
+      updatedMessages,
       current.currentStage
     );
 
     const updates = {
-      messages: [...current.messages, { role: "assistant", content: reply }],
+      messages: [...updatedMessages, { role: "assistant", content: reply }],
       takeaways: {
         ...current.takeaways,
         refinedIdea: refinedIdea || current.takeaways.refinedIdea,
@@ -67,6 +64,15 @@ export default function ChatAssistant() {
       setTimeout(() => {
         handleAdvanceStage(current.id, nextStage);
       }, 1000);
+    }
+
+    // 🔁 Trigger MVP deploy if confirmed at generatePlan stage
+    const confirmationKeywords = ["yes", "let's do it", "build it", "go ahead", "launch it"];
+    if (
+      current.currentStage === "generatePlan" &&
+      confirmationKeywords.some((kw) => content.toLowerCase().includes(kw))
+    ) {
+      await handleConfirmBuild(current.id);
     }
 
     setLoading(false);
@@ -97,6 +103,31 @@ export default function ChatAssistant() {
         },
       });
     }
+  };
+
+  const handleConfirmBuild = async (id) => {
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea) return;
+
+    const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+    });
+
+    const data = await res.json();
+    updateIdea(id, {
+      repoUrl: data.repoUrl,
+      pagesUrl: data.pagesUrl,
+      deployed: true,
+      messages: [
+        ...idea.messages,
+        {
+          role: "assistant",
+          content: `✅ MVP deployed! You can view it here:\n\n🔗 ${data.pagesUrl}`,
+        },
+      ],
+    });
   };
 
   return (
