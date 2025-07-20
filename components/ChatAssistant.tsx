@@ -39,7 +39,8 @@ export default function ChatAssistant() {
 
     setLoading(true);
 
-    const { reply, refinedIdea } = await sendToAssistant(current.messages, current.currentStage);
+    const { reply, refinedIdea, nextStage } = await sendToAssistant(current.messages, current.currentStage);
+
     updateIdea(current.id, {
       messages: [...current.messages, { role: "assistant", content: reply }],
       takeaways: {
@@ -48,16 +49,22 @@ export default function ChatAssistant() {
       },
     });
 
+    if (nextStage && nextStage !== current.currentStage) {
+      setTimeout(() => {
+        handleAdvanceStage(current.id, nextStage);
+      }, 1200);
+    }
+
     setLoading(false);
   };
 
-  const handleAdvanceStage = async (id) => {
+  const handleAdvanceStage = async (id, forcedStage?: StageType) => {
     const stageOrder: StageType[] = ["ideation", "validation", "branding", "mvp"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
 
     const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
-    const nextStage = stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
+    const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
 
     updateIdea(id, { currentStage: nextStage });
 
@@ -76,6 +83,8 @@ export default function ChatAssistant() {
         },
       });
     }
+
+    // Extend with logic for branding and mvp if needed later
   };
 
   return (
