@@ -1,4 +1,4 @@
-import { getSystemPrompt } from "../utils/promptUtils";
+import getSystemPrompt from "../utils/promptUtils";
 import type { VentureStage } from "../types";
 
 export async function sendToAssistant(
