@@ -1,4 +1,4 @@
-import getSystemPrompt from "../utils/promptUtils";
+import { getSystemPrompt } from "../utils/promptUtils";
 import type { VentureStage } from "../types";
 
 export async function sendToAssistant(
@@ -10,7 +10,7 @@ export async function sendToAssistant(
   nextStage?: VentureStage;
   plan?: string;
 }> {
-  const systemPrompt = getSystemPrompt(); // ✅ FIXED: now called with no arguments
+  const systemPrompt = getSystemPrompt(stage); // ✅ Fixed
   const payload = [
     { role: "system", content: systemPrompt },
     ...messages.map(({ role, content }) => ({ role, content }))
@@ -35,32 +35,5 @@ export async function sendToAssistant(
     nextStage,
     plan,
   };
-}
-
-function extractRefinedIdea(text: string): string | undefined {
-  const match = text.match(/Refined Idea:\s*\n+(.+)/i);
-  return match ? match[1].trim() : undefined;
-}
-
-function extractFinalPlan(text: string): string | undefined {
-  const match = text.match(/Business Plan:\s*\n+([\s\S]*)$/i);
-  return match ? match[1].trim() : undefined;
-}
-
-function detectNextStageSuggestion(text: string): VentureStage | undefined {
-  if (/move to (the )?validation/i.test(text)) return "validation";
-  if (/move to (the )?branding/i.test(text)) return "branding";
-  if (/start( the)? mvp|move to (the )?mvp/i.test(text)) return "mvp";
-  if (/generate( the)? business plan|final plan ready/i.test(text)) return "generatePlan";
-  return undefined;
-}
-
-function fallbackSummary(text: string): string {
-  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-  return (
-    lines.find(l => l.toLowerCase().includes("the idea is")) ||
-    lines.find(l => l.length > 60) ||
-    text.slice(0, 200)
-  );
 }
 
