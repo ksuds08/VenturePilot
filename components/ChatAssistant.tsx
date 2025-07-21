@@ -6,6 +6,7 @@ import type { VentureStage as StageType } from "../types";
 import RefinedIdeaCard from "./RefinedIdeaCard";
 import ValidationSummary from "./ValidationSummary";
 import BrandingCard from "./BrandingCard";
+import MVPPreview from "./MVPPreview";
 
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
@@ -216,10 +217,21 @@ export default function ChatAssistant() {
               colors={activeIdea.takeaways.branding.colors}
               logoDesc={activeIdea.takeaways.branding.logoDesc}
               onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
-              onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
+              onRegenerate={() =>
+                handleAdvanceStage(activeIdea.id, "branding")
+              }
               onRestart={() => restartStage("ideation")}
             />
           )}
+
+        {/* 🚀 MVP Preview Card */}
+        {activeIdea?.currentStage === "mvp" && (
+          <MVPPreview
+            ideaName={activeIdea.title}
+            onDeploy={() => handleConfirmBuild(activeIdea.id)}
+            deployedUrl={activeIdea.pagesUrl}
+          />
+        )}
       </div>
     </div>
   );
