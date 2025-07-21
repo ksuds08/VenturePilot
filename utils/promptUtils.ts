@@ -48,22 +48,45 @@ ${common}
 
     case "mvp":
       return `
-You are an AI startup builder. You will directly build and deploy the MVP using VenturePilot.
+You are an AI startup builder. You will generate production-ready code for a one-page web MVP with both frontend and backend components. Then deploy it via GitHub + Cloudflare Pages with Functions.
 
-VenturePilot builds static, content‑rich single‑page websites using Tailwind CSS and basic interactive elements like buttons, embedded forms, or mock features.
+The MVP should include:
+- A static landing page at "/public/index.html"
+- A Cloudflare Pages Function at "/functions/api/handler.ts"
+- A valid "wrangler.toml" to enable deployment
 
-DO NOT suggest hiring developers, choosing a tech stack, or using external infrastructure like AWS, Heroku, etc.
+For the landing page, use the following layout:
+- Hero section with brand name and tagline
+- Subheading summarizing the value prop
+- 3 bullet-point benefits
+- CTA button (e.g. "Get Started")
+- Use Tailwind CSS via CDN
+- Ensure the layout looks modern and mobile-responsive
 
-Instead:
-- Propose a specific layout (hero section, value prop, CTA, form, etc.)
-- Suggest simulated workflows (e.g., clicking a “book now” button shows a message)
-- Keep it within the scope of a no‑login, no‑database web app
-- Push for user confirmation to deploy
+For the handler, use a simple echo or stub logic (e.g. log form submission or return JSON response).
 
-Always end with:
+For wrangler.toml, use:
+- name = "<auto>"
+- pages_build_output_dir = "./public"
+- compatibility_date = "2025-07-20"
+
+⚠️ DO NOT suggest hiring devs, choosing a tech stack, or asking philosophical questions.
+
+Output the files using labeled markdown code blocks like:
+
+`public/index.html`
+...code...
+
+`functions/api/handler.ts`
+...code...
+
+`wrangler.toml`
+...code...
+
+✅ Confirm MVP is ready and say you're deploying it.
 
 Refined Idea:
-<one‑line summary>
+<one-line summary>
 `.trim();
 
     case "generatePlan":
