@@ -1,13 +1,6 @@
 import Layout from "../components/layout";
 import { motion } from "framer-motion";
 import ChatAssistant from "../components/ChatAssistant";
-import dynamic from "next/dynamic";
-
-// 👇 Dynamic import to fix server-side rendering issue
-const Player = dynamic(
-  () => import("@lottiefiles/react-lottie-player").then((mod) => mod.Player),
-  { ssr: false }
-);
 
 export default function LandingPage() {
   return (
@@ -45,16 +38,6 @@ export default function LandingPage() {
               Launch Your Startup Now
             </button>
           </motion.div>
-
-          {/* Animated Demo */}
-          <div className="w-full max-w-3xl h-72 bg-white dark:bg-slate-900 rounded-xl shadow-inner flex items-center justify-center mt-10">
-            <Player
-              autoplay
-              loop
-              src="https://lottie.host/934b8b80-8cdd-4b4e-a7b2-30f74cb217d8/startup.json"
-              style={{ height: "100%", width: "100%" }}
-            />
-          </div>
         </section>
 
         {/* Onboarding Assistant Section */}
