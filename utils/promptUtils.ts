@@ -1,107 +1,92 @@
-import type { VentureStage } from "../types";
+// components/ChatAssistant.tsx
 
-export function getSystemPrompt(stage: VentureStage): string {
-  const common = `Always end your reply with a labeled one‑sentence summary:
-Refined Idea:
-<one‑line summary here>`;
 
-  switch (stage) {
-    case "ideation":
-      return `
-You are an AI startup operator. Your job is to help the user clarify their idea just enough to move forward to building it.
+import React, { useEffect, useState } from "react";
+import ChatPanel from "./ChatPanel";
+import SummaryPanel from "./SummaryPanel";
+import { sendToAssistant } from "../lib/assistantClient";
 
-Minimize back‑and‑forth. Focus on extracting:
-- The target user
-- The core value prop
-- The basic UX concept (if web‑based)
 
-Push forward quickly to validation or MVP planning.
+interface Message {
+  role: string;
+  content: string;
+}
 
-${common}
-`.trim();
 
-    case "validation":
-      return `
-You're validating a business idea. Quickly summarize:
-- Audience
-- Problem being solved
-- Market signal or need
+export default function ChatAssistant() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [ideaId, setIdeaId] = useState<string | null>(null);
+  const [ideaTitle, setIdeaTitle] = useState<string>("");
+  const [deployment, setDeployment] = useState<{ repoUrl: string; pagesUrl: string } | null>(null);
 
-Push forward to branding or MVP if the idea seems viable.
 
-${common}
-`.trim();
+  useEffect(() => {
+    if (messages.length === 0) {
+      // Initiate assistant conversation
+      const welcome: Message = { role: "assistant", content: "Hi! Let's turn your startup idea into a working product. What's your idea?" };
+      setMessages([welcome]);
+    }
+  }, []);
 
-    case "branding":
-      return `
-You are generating branding for a startup MVP that will be deployed shortly.
 
-Suggest:
-- A concise brand name
-- A tagline that communicates the benefit
-- Optional: colors or logo idea
+  const extractLabeledCodeBlocks = (markdown: string): Record<string, string> => {
+    const regex = /```([\w\-/\.]+)\n([\s\S]*?)```/g;
+    const files: Record<string, string> = {};
+    let match;
+    while ((match = regex.exec(markdown)) !== null) {
+      const [, filename, content] = match;
+      files[filename.trim()] = content.trim();
+    }
+    return files;
+  };
 
-Do not delay. Push forward to MVP execution next.
 
-${common}
-`.trim();
+  const handleSend = async (input: string) => {
+    const userMsg: Message = { role: "user", content: input };
+    const updated = [...messages, userMsg];
+    setMessages(updated);
+    setLoading(true);
 
-    case "mvp":
-      return `
-You are an AI startup builder. You will generate production-ready code for a one-page web MVP with both frontend and backend components. Then deploy it via GitHub + Cloudflare Pages with Functions.
 
-The MVP should include:
-- A static landing page at "/public/index.html"
-- A Cloudflare Pages Function at "/functions/api/handler.ts"
-- A valid "wrangler.toml" to enable deployment
+    const res = await sendToAssistant(updated);
+    const assistantMsg: Message = { role: "assistant", content: res.reply };
+    setMessages([...updated, assistantMsg]);
+    setLoading(false);
 
-For the landing page, use the following layout:
-- Hero section with brand name and tagline
-- Subheading summarizing the value prop
-- 3 bullet-point benefits
-- CTA button (e.g. "Get Started")
-- Use Tailwind CSS via CDN
-- Ensure the layout looks modern and mobile-responsive
 
-For the handler, use a simple echo or stub logic (e.g. log form submission or return JSON response).
+    if (!ideaId && res.refinedIdea) {
+      const id = crypto.randomUUID();
+      setIdeaId(id);
+      setIdeaTitle(res.refinedIdea);
+    }
 
-For wrangler.toml, use:
-- name = "<auto>"
-- pages_build_output_dir = "./public"
-- compatibility_date = "2025-07-20"
 
-⚠️ DO NOT suggest hiring devs, choosing a tech stack, or asking philosophical questions.
+    // Try to extract code blocks and deploy if files present
+    const files = extractLabeledCodeBlocks(res.reply);
+    if (Object.keys(files).length > 0 && ideaId) {
+      const deployRes = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: ideaTitle, ideaId, files }),
+      });
+      const data = await deployRes.json();
+      setDeployment(data);
+    }
+  };
 
-Output the files using labeled markdown code blocks like:
 
-\`public/index.html\`
-...code...
-
-\`functions/api/handler.ts\`
-...code...
-
-\`wrangler.toml\`
-...code...
-
-✅ Confirm MVP is ready and say you're deploying it.
-
-Refined Idea:
-<one-line summary>
-`.trim();
-
-    case "generatePlan":
-      return `
-Based on the full context of the conversation, generate a complete business plan.
-
-Label it:
-Business Plan:
-<entire structured content>
-
-Do not ask questions. Just deliver the plan.
-`.trim();
-
-    default:
-      return `You are an AI operator helping someone turn an idea into a working product. ${common}`;
-  }
+  return (
+    <div className="max-w-screen-lg mx-auto p-4 h-screen overflow-hidden">
+      <div className="flex flex-col md:flex-row gap-4 h-full">
+        <div className="md:w-1/2 w-full h-full border border-gray-300 dark:border-slate-700 rounded-xl flex flex-col overflow-hidden">
+          <ChatPanel messages={messages} onSend={handleSend} loading={loading} />
+        </div>
+        <div className="md:w-1/2 w-full h-full border border-gray-300 dark:border-slate-700 rounded-xl overflow-y-auto">
+          <SummaryPanel refinedIdea={ideaTitle} deployment={deployment} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
