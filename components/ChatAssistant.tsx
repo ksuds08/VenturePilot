@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Full updated version)
+// ChatAssistant.tsx (Full updated version with streaming transitions for all stages)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -131,6 +131,15 @@ export default function ChatAssistant() {
             logoDesc: data.logoDesc,
           },
         },
+      });
+    }
+
+    if (nextStage === "mvp") {
+      const reply = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
+      const messages = [...idea.messages, { role: "assistant", content: reply }];
+      updateIdea(id, {
+        messages,
+        takeaways: { ...idea.takeaways },
       });
     }
   };
