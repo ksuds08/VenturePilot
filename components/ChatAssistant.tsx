@@ -142,6 +142,8 @@ export default function ChatAssistant() {
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
 
+    updateIdea(id, { deploying: true });
+
     const res = await fetch(
       "https://venturepilot-api.promptpulse.workers.dev/mvp",
       {
@@ -152,10 +154,12 @@ export default function ChatAssistant() {
     );
 
     const data = await res.json();
+
     updateIdea(id, {
+      deploying: false,
+      deployed: true,
       repoUrl: data.repoUrl,
       pagesUrl: data.pagesUrl,
-      deployed: true,
       messages: [
         ...idea.messages,
         {
@@ -171,6 +175,10 @@ export default function ChatAssistant() {
     updateIdea(activeIdeaId, {
       currentStage: stage,
       takeaways: {},
+      deploying: false,
+      deployed: false,
+      repoUrl: null,
+      pagesUrl: null,
       messages: activeIdea?.messages || [],
     });
   };
@@ -229,6 +237,7 @@ export default function ChatAssistant() {
           <MVPPreview
             ideaName={activeIdea.title}
             onDeploy={() => handleConfirmBuild(activeIdea.id)}
+            deploying={activeIdea.deploying}
             deployedUrl={activeIdea.pagesUrl}
           />
         )}
