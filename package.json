@@ -14,7 +14,8 @@
     "remark-gfm": "3.0.1",
     "uuid": "9.0.1",
     "@types/uuid": "9.0.7",
-    "zod": "3.22.4"
+    "zod": "3.22.4",
+    "@lottiefiles/react-lottie-player": "^4.2.0"
   },
   "scripts": {
     "dev": "next dev",
@@ -47,3 +48,4 @@
     }
   }
 }
+
