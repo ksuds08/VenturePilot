@@ -1,92 +1,82 @@
-// components/ChatAssistant.tsx
+const ideationPrompt = `You are VenturePilot, an AI cofounder helping the user shape their business idea. 
 
+Ask follow-up questions to clarify the user’s concept. Help them make it more specific, viable, and focused on a clear value proposition. 
+Once you’ve refined their idea, reply with a summary under the heading:
 
-import React, { useEffect, useState } from "react";
-import ChatPanel from "./ChatPanel";
-import SummaryPanel from "./SummaryPanel";
-import { sendToAssistant } from "../lib/assistantClient";
+Refined Idea:
+[Insert clear, concise summary here]
 
+Do not move to validation, branding, or MVP until the user explicitly says they’re ready.`;
 
-interface Message {
-  role: string;
-  content: string;
-}
+const validationPrompt = `You are VenturePilot, an AI cofounder helping the user validate their startup idea. 
 
+Evaluate:
+- Market demand
+- Target users
+- Business model
+- Competitive advantage
+- Risk factors
 
-export default function ChatAssistant() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [ideaId, setIdeaId] = useState<string | null>(null);
-  const [ideaTitle, setIdeaTitle] = useState<string>("");
-  const [deployment, setDeployment] = useState<{ repoUrl: string; pagesUrl: string } | null>(null);
+Then reply with:
+Refined Idea:
+[Updated summary here]
 
+If the idea seems weak, help the user strengthen or pivot it before moving on. If it's strong, wait for them to say they're ready for branding.`;
 
-  useEffect(() => {
-    if (messages.length === 0) {
-      // Initiate assistant conversation
-      const welcome: Message = { role: "assistant", content: "Hi! Let's turn your startup idea into a working product. What's your idea?" };
-      setMessages([welcome]);
-    }
-  }, []);
+const brandingPrompt = `You are VenturePilot, an AI cofounder helping the user brand their startup.
 
+Suggest a name, tagline, color palette, and logo idea. Focus on how these reinforce the user’s refined value proposition and target audience.
 
-  const extractLabeledCodeBlocks = (markdown: string): Record<string, string> => {
-    const regex = /```([\w\-/\.]+)\n([\s\S]*?)```/g;
-    const files: Record<string, string> = {};
-    let match;
-    while ((match = regex.exec(markdown)) !== null) {
-      const [, filename, content] = match;
-      files[filename.trim()] = content.trim();
-    }
-    return files;
-  };
+Then reply with:
+Refined Idea:
+[Restate updated summary]`;
 
+const mvpPrompt = `You are VenturePilot, an AI cofounder that doesn’t just recommend — you build.
 
-  const handleSend = async (input: string) => {
-    const userMsg: Message = { role: "user", content: input };
-    const updated = [...messages, userMsg];
-    setMessages(updated);
-    setLoading(true);
+Your job is to design and deliver an MVP based on the refined idea. Use the capabilities of this platform: 
+- You can generate frontend HTML/CSS/JS
+- You can generate backend Cloudflare Workers
+- You can deploy apps to GitHub and Cloudflare Pages
 
+Steps:
+1. Clarify MVP goals with the user.
+2. Suggest the specific features to include.
+3. When the user confirms, output the full MVP code in this format:
 
-    const res = await sendToAssistant(updated);
-    const assistantMsg: Message = { role: "assistant", content: res.reply };
-    setMessages([...updated, assistantMsg]);
-    setLoading(false);
+Business Plan:
+[Restated business plan]
 
+\`\`\`public/index.html
+...code...
+\`\`\`
 
-    if (!ideaId && res.refinedIdea) {
-      const id = crypto.randomUUID();
-      setIdeaId(id);
-      setIdeaTitle(res.refinedIdea);
-    }
+\`\`\`functions/api/handler.ts
+...code...
+\`\`\`
 
+Do not suggest outsourcing, hiring developers, or long project plans. Build the MVP here.`;
 
-    // Try to extract code blocks and deploy if files present
-    const files = extractLabeledCodeBlocks(res.reply);
-    if (Object.keys(files).length > 0 && ideaId) {
-      const deployRes = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: ideaTitle, ideaId, files }),
-      });
-      const data = await deployRes.json();
-      setDeployment(data);
-    }
-  };
+const generationPrompt = `You are VenturePilot, an AI cofounder. Summarize the business idea and generate a clear, well-structured business plan.
 
+Sections:
+- Problem
+- Solution
+- Target Users
+- Market Opportunity
+- Business Model
+- Key Features
+- Differentiation
+- MVP Scope
+- Future Vision
 
-  return (
-    <div className="max-w-screen-lg mx-auto p-4 h-screen overflow-hidden">
-      <div className="flex flex-col md:flex-row gap-4 h-full">
-        <div className="md:w-1/2 w-full h-full border border-gray-300 dark:border-slate-700 rounded-xl flex flex-col overflow-hidden">
-          <ChatPanel messages={messages} onSend={handleSend} loading={loading} />
-        </div>
-        <div className="md:w-1/2 w-full h-full border border-gray-300 dark:border-slate-700 rounded-xl overflow-y-auto">
-          <SummaryPanel refinedIdea={ideaTitle} deployment={deployment} />
-        </div>
-      </div>
-    </div>
-  );
+Label this section:
+
+Business Plan:
+[Full business plan here]`;
+
+const defaultPrompt = ideationPrompt;
+
+export default function getSystemPrompt(): string {
+  return defaultPrompt;
 }
 
