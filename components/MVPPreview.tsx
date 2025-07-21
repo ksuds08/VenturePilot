@@ -7,47 +7,38 @@ interface MVPPreviewProps {
   deployedUrl?: string;
 }
 
-export default function MVPPreview({
-  ideaName,
-  onDeploy,
-  deploying,
-  deployedUrl,
-}: MVPPreviewProps) {
+export default function MVPPreview({ ideaName, onDeploy, deploying, deployedUrl }: MVPPreviewProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl p-6 shadow-md mt-6">
-      <h3 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">
-        🚀 MVP Preview
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg mt-6 max-w-3xl mx-auto">
+      <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">
+        ⚙️ MVP Ready to Deploy
       </h3>
-
-      <p className="text-gray-800 dark:text-gray-300 mb-4">
-        This MVP will bring <strong>{ideaName}</strong> to life as a working prototype, deployed instantly to the web.
+      <p className="text-lg text-slate-700 dark:text-slate-300 mb-4">
+        We've generated the MVP for <span className="font-semibold">{ideaName}</span>. Click below to deploy it as a live site.
       </p>
 
-      {deploying && (
-        <div className="text-blue-600 dark:text-blue-300 font-medium mb-4">
-          ⏳ Deploying your MVP… This may take 30–60 seconds.
-        </div>
-      )}
-
-      {!deploying && !deployedUrl && (
+      {!deployedUrl && (
         <button
           onClick={onDeploy}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+          disabled={deploying}
+          className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:scale-105 transition-transform disabled:opacity-50"
         >
-          🚀 Deploy MVP Now
+          {deploying ? "Deploying..." : "🚀 Deploy MVP Now"}
         </button>
       )}
 
-      {deployedUrl && !deploying && (
-        <div className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 p-3 rounded-lg">
-          ✅ Deployed!{" "}
+      {deployedUrl && (
+        <div className="mt-6">
+          <p className="text-green-600 dark:text-green-400 font-medium mb-2">
+            ✅ Deployment successful!
+          </p>
           <a
             href={deployedUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline font-medium"
+            className="inline-block text-blue-600 dark:text-blue-400 hover:underline break-words"
           >
-            View Your MVP
+            🔗 {deployedUrl}
           </a>
         </div>
       )}
