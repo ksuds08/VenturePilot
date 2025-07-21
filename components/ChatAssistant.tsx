@@ -107,13 +107,28 @@ export default function ChatAssistant() {
         }
       );
       const data = await res.json();
+
+      const summary = data?.validation?.split("\n")[0] || "";
+
+      const messages = [
+        ...idea.messages,
+        {
+          role: "assistant",
+          content: `✅ Validation complete. Here's what we found:\n\n${summary}`,
+        },
+      ];
+
       updateIdea(id, {
+        messages,
         validation: data?.validation,
         takeaways: {
           ...idea.takeaways,
-          validationSummary: data?.validation?.split("\n")[0] || "",
+          validationSummary: summary,
         },
       });
+
+      // Wait for stream to complete before showing validation card
+      setShowPanel(false);
     }
 
     if (nextStage === "branding") {
@@ -138,6 +153,7 @@ export default function ChatAssistant() {
           },
         },
       });
+      setShowPanel(true); // Branding doesn’t use streaming yet
     }
   };
 
@@ -171,6 +187,7 @@ export default function ChatAssistant() {
         },
       ],
     });
+    setShowPanel(false); // Let the stream complete before showing deploy card
   };
 
   const restartStage = (stage: StageType) => {
