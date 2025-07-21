@@ -25,7 +25,7 @@ export default function MVPPreview({
 
       {deploying && (
         <div className="text-blue-600 dark:text-blue-300 font-medium mb-4">
-          ⏳ Deploying your MVP… This may take 30–60 seconds. You’ll see a live link once it’s ready.
+          ⏳ Deploying your MVP… This may take 30–60 seconds.
         </div>
       )}
 
@@ -39,28 +39,16 @@ export default function MVPPreview({
       )}
 
       {deployedUrl && !deploying && (
-        <div className="space-y-4">
-          <div className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 p-3 rounded-lg">
-            ✅ Deployed!{" "}
-            <a
-              href={deployedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-medium"
-            >
-              View Your MVP
-            </a>
-          </div>
-
-          {/* Optional Preview */}
-          <div className="w-full h-96 border rounded overflow-hidden">
-            <iframe
-              src={deployedUrl}
-              title="Live MVP Preview"
-              className="w-full h-full border-0"
-              sandbox="allow-scripts allow-same-origin"
-            />
-          </div>
+        <div className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 p-3 rounded-lg">
+          ✅ Deployed!{" "}
+          <a
+            href={deployedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline font-medium"
+          >
+            View Your MVP
+          </a>
         </div>
       )}
     </div>
