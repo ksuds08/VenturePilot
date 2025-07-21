@@ -74,13 +74,13 @@ For wrangler.toml, use:
 
 Output the files using labeled markdown code blocks like:
 
-`public/index.html`
+\`public/index.html\`
 ...code...
 
-`functions/api/handler.ts`
+\`functions/api/handler.ts\`
 ...code...
 
-`wrangler.toml`
+\`wrangler.toml\`
 ...code...
 
 ✅ Confirm MVP is ready and say you're deploying it.
@@ -104,3 +104,4 @@ Do not ask questions. Just deliver the plan.
       return `You are an AI operator helping someone turn an idea into a working product. ${common}`;
   }
 }
+
