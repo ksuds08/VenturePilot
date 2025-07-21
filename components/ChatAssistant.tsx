@@ -3,6 +3,7 @@ import ChatPanel from "./ChatPanel";
 import { sendToAssistant } from "../lib/assistantClient";
 import { v4 as uuidv4 } from "uuid";
 import type { VentureStage as StageType } from "../types";
+import RefinedIdeaCard from "./RefinedIdeaCard";
 
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
@@ -50,6 +51,7 @@ export default function ChatAssistant() {
     );
 
     const updates = {
+      title: current.title || content.slice(0, 80),
       messages: [...updatedMessages, { role: "assistant", content: reply }],
       takeaways: {
         ...current.takeaways,
@@ -130,6 +132,18 @@ export default function ChatAssistant() {
     });
   };
 
+  const restartStage = (stage: StageType) => {
+    if (!activeIdeaId) return;
+    updateIdea(activeIdeaId, {
+      currentStage: stage,
+      takeaways: {
+        ...activeIdea?.takeaways,
+        refinedIdea: undefined,
+      },
+      messages: activeIdea?.messages || [],
+    });
+  };
+
   return (
     <div className="max-w-screen-lg mx-auto p-4 h-screen">
       <div className="w-full h-full border rounded-xl overflow-y-auto">
@@ -138,6 +152,17 @@ export default function ChatAssistant() {
           onSend={handleSend}
           loading={loading}
         />
+
+        {/* 🎯 Refined Idea Summary & Actions */}
+        {activeIdea?.currentStage === "ideation" &&
+          activeIdea?.takeaways?.refinedIdea && (
+            <RefinedIdeaCard
+              name={activeIdea.title || "Untitled Startup"}
+              description={activeIdea.takeaways.refinedIdea}
+              onConfirm={() => handleAdvanceStage(activeIdea.id, "validation")}
+              onEdit={() => restartStage("ideation")}
+            />
+          )}
       </div>
     </div>
   );
