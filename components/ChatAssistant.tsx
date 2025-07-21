@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { VentureStage as StageType } from "../types";
 import RefinedIdeaCard from "./RefinedIdeaCard";
 import ValidationSummary from "./ValidationSummary";
+import BrandingCard from "./BrandingCard";
 
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
@@ -110,6 +111,30 @@ export default function ChatAssistant() {
         },
       });
     }
+
+    if (nextStage === "branding") {
+      const res = await fetch(
+        "https://venturepilot-api.promptpulse.workers.dev/brand",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+        }
+      );
+      const data = await res.json();
+      updateIdea(id, {
+        branding: data,
+        takeaways: {
+          ...idea.takeaways,
+          branding: {
+            name: data.name,
+            tagline: data.tagline,
+            colors: data.colors,
+            logoDesc: data.logoDesc,
+          },
+        },
+      });
+    }
   };
 
   const handleConfirmBuild = async (id) => {
@@ -144,11 +169,7 @@ export default function ChatAssistant() {
     if (!activeIdeaId) return;
     updateIdea(activeIdeaId, {
       currentStage: stage,
-      takeaways: {
-        ...activeIdea?.takeaways,
-        refinedIdea: undefined,
-        validationSummary: undefined,
-      },
+      takeaways: {},
       messages: activeIdea?.messages || [],
     });
   };
@@ -182,6 +203,20 @@ export default function ChatAssistant() {
               summary={activeIdea.takeaways.validationSummary}
               fullText={activeIdea.validation}
               onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
+              onRestart={() => restartStage("ideation")}
+            />
+          )}
+
+        {/* 🎨 Branding Card */}
+        {activeIdea?.currentStage === "branding" &&
+          activeIdea?.takeaways?.branding && (
+            <BrandingCard
+              name={activeIdea.takeaways.branding.name}
+              tagline={activeIdea.takeaways.branding.tagline}
+              colors={activeIdea.takeaways.branding.colors}
+              logoDesc={activeIdea.takeaways.branding.logoDesc}
+              onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
+              onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
               onRestart={() => restartStage("ideation")}
             />
           )}
