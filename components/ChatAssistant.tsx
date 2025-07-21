@@ -12,6 +12,7 @@ export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
   const [activeIdeaId, setActiveIdeaId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showPanel, setShowPanel] = useState(false);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function ChatAssistant() {
     const updatedMessages = [...current.messages, { role: "user", content }];
     updateIdea(current.id, { messages: updatedMessages });
     setLoading(true);
+    setShowPanel(false);
 
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
       updatedMessages,
@@ -93,6 +95,7 @@ export default function ChatAssistant() {
       stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
 
     updateIdea(id, { currentStage: nextStage });
+    setShowPanel(false);
 
     if (nextStage === "validation") {
       const res = await fetch(
@@ -190,10 +193,10 @@ export default function ChatAssistant() {
           messages={activeIdea?.messages ?? []}
           onSend={handleSend}
           loading={loading}
+          onStreamComplete={() => setShowPanel(true)}
         />
 
-        {/* 🎯 Refined Idea Summary & Actions */}
-        {activeIdea?.currentStage === "ideation" &&
+        {showPanel && activeIdea?.currentStage === "ideation" &&
           activeIdea?.takeaways?.refinedIdea && (
             <RefinedIdeaCard
               name={activeIdea.title || "Untitled Startup"}
@@ -203,10 +206,9 @@ export default function ChatAssistant() {
               }
               onEdit={() => restartStage("ideation")}
             />
-          )}
+        )}
 
-        {/* ✅ Validation Summary Card */}
-        {activeIdea?.currentStage === "validation" &&
+        {showPanel && activeIdea?.currentStage === "validation" &&
           activeIdea?.takeaways?.validationSummary && (
             <ValidationSummary
               summary={activeIdea.takeaways.validationSummary}
@@ -214,10 +216,9 @@ export default function ChatAssistant() {
               onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
               onRestart={() => restartStage("ideation")}
             />
-          )}
+        )}
 
-        {/* 🎨 Branding Card */}
-        {activeIdea?.currentStage === "branding" &&
+        {showPanel && activeIdea?.currentStage === "branding" &&
           activeIdea?.takeaways?.branding && (
             <BrandingCard
               name={activeIdea.takeaways.branding.name}
@@ -230,10 +231,9 @@ export default function ChatAssistant() {
               }
               onRestart={() => restartStage("ideation")}
             />
-          )}
+        )}
 
-        {/* 🚀 MVP Preview Card */}
-        {activeIdea?.currentStage === "mvp" && (
+        {showPanel && activeIdea?.currentStage === "mvp" && (
           <MVPPreview
             ideaName={activeIdea.title}
             onDeploy={() => handleConfirmBuild(activeIdea.id)}
