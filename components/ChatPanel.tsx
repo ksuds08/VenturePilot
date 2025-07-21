@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-export default function ChatPanel({ messages, onSend, loading }) {
+export default function ChatPanel({ messages, onSend, loading, onStreamComplete }) {
   const [input, setInput] = useState("");
   const [streamedContent, setStreamedContent] = useState("");
   const scrollRef = useRef(null);
@@ -15,27 +15,28 @@ export default function ChatPanel({ messages, onSend, loading }) {
     }
   };
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamedContent]);
 
-  // Simulate streaming the last assistant message
+  // Simulate assistant streaming and notify when done
   useEffect(() => {
     if (!loading && messages.length > 0) {
       const last = messages[messages.length - 1];
       if (last.role === "assistant") {
         let i = 0;
         const fullText = last.content;
-        setStreamedContent(""); // reset
+        setStreamedContent("");
 
         const interval = setInterval(() => {
           i++;
           setStreamedContent(fullText.slice(0, i));
           if (i >= fullText.length) {
             clearInterval(interval);
+            onStreamComplete?.(); // ✅ Notify ChatAssistant
           }
-        }, 12); // Adjust typing speed (ms per character)
+        }, 12); // typing speed in ms
 
         return () => clearInterval(interval);
       }
