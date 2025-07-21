@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Full updated version with streaming transitions for all stages)
+// ChatAssistant.tsx (Full version with assistant typing feedback restored for all transitions)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -81,6 +81,9 @@ export default function ChatAssistant() {
   };
 
   const handleAdvanceStage = async (id, forcedStage) => {
+    setLoading(true);
+    setShowPanel(false);
+
     const stageOrder = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -89,7 +92,6 @@ export default function ChatAssistant() {
     const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
 
     updateIdea(id, { currentStage: nextStage });
-    setShowPanel(false);
 
     if (nextStage === "validation") {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
@@ -142,6 +144,8 @@ export default function ChatAssistant() {
         takeaways: { ...idea.takeaways },
       });
     }
+
+    setLoading(false);
   };
 
   const handleConfirmBuild = async (id) => {
