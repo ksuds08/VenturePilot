@@ -3,12 +3,14 @@ import React from "react";
 interface MVPPreviewProps {
   ideaName: string;
   onDeploy: () => void;
+  deploying?: boolean;
   deployedUrl?: string;
 }
 
 export default function MVPPreview({
   ideaName,
   onDeploy,
+  deploying,
   deployedUrl,
 }: MVPPreviewProps) {
   return (
@@ -21,25 +23,45 @@ export default function MVPPreview({
         This MVP will bring <strong>{ideaName}</strong> to life as a working prototype, deployed instantly to the web.
       </p>
 
-      {deployedUrl ? (
-        <div className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 p-3 rounded-lg">
-          ✅ Deployed!{" "}
-          <a
-            href={deployedUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline font-medium"
-          >
-            View Your MVP
-          </a>
+      {deploying && (
+        <div className="text-blue-600 dark:text-blue-300 font-medium mb-4">
+          ⏳ Deploying your MVP… This may take 30–60 seconds. You’ll see a live link once it’s ready.
         </div>
-      ) : (
+      )}
+
+      {!deploying && !deployedUrl && (
         <button
           onClick={onDeploy}
           className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition"
         >
           🚀 Deploy MVP Now
         </button>
+      )}
+
+      {deployedUrl && !deploying && (
+        <div className="space-y-4">
+          <div className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 p-3 rounded-lg">
+            ✅ Deployed!{" "}
+            <a
+              href={deployedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline font-medium"
+            >
+              View Your MVP
+            </a>
+          </div>
+
+          {/* Optional Preview */}
+          <div className="w-full h-96 border rounded overflow-hidden">
+            <iframe
+              src={deployedUrl}
+              title="Live MVP Preview"
+              className="w-full h-full border-0"
+              sandbox="allow-scripts allow-same-origin"
+            />
+          </div>
+        </div>
       )}
     </div>
   );
