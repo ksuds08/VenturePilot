@@ -64,10 +64,21 @@ End with: "Ready to proceed with building your MVP?"
 
 
     case "mvp":
-      return `
+  return `
 ${baseInstructions}
-You are now building the MVP for the Refined Idea. Define exactly what will be built using technology VenturePilot supports (HTML, CSS, JS, Cloudflare Workers, API integrations).
-Then generate the actual code needed, packaged into labeled markdown code blocks:
+You are now building the MVP for the Refined Idea. You must work within the technical boundaries VenturePilot supports:
+
+
+- Static websites using HTML, CSS, and JavaScript
+- Cloudflare Workers (TypeScript or JavaScript)
+- Basic API integrations
+- No backend frameworks, databases, or mobile app features
+
+
+Start by describing what will be built in a single sentence.
+
+
+Then immediately generate the actual code needed to deploy the MVP, using clearly labeled markdown code blocks like:
 
 
 \`\`\`public/index.html
@@ -76,17 +87,18 @@ Then generate the actual code needed, packaged into labeled markdown code blocks
 
 
 \`\`\`functions/api/handler.ts
-...worker code...
+...Cloudflare Worker code...
 \`\`\`
 
 
-Conclude with:
+End your response with:
 Deployable App:
-<One-line summary of what will be deployed>
+<One-line description of what will be deployed>
 
 
-End with: "Shall I deploy this to Cloudflare Pages now?"
+Prompt the user: "Shall I deploy this to Cloudflare Pages for you now?"
 `;
+
 
 
     case "generatePlan":
