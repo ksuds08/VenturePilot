@@ -1,3 +1,5 @@
+// ChatAssistant.tsx (Full updated version)
+
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
 import { sendToAssistant } from "../lib/assistantClient";
@@ -44,7 +46,7 @@ export default function ChatAssistant() {
   };
 
   const handleSend = async (content) => {
-    let current = activeIdea;
+    const current = activeIdea;
     if (!current) return;
 
     const updatedMessages = [...current.messages, { role: "user", content }];
@@ -78,46 +80,26 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
-  const handleAdvanceStage = async (id, forcedStage?: StageType) => {
-    const stageOrder: StageType[] = [
-      "ideation",
-      "validation",
-      "branding",
-      "mvp",
-      "generatePlan",
-    ];
+  const handleAdvanceStage = async (id, forcedStage) => {
+    const stageOrder = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
 
     const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
-    const nextStage =
-      forcedStage ||
-      stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
+    const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
 
     updateIdea(id, { currentStage: nextStage });
     setShowPanel(false);
 
     if (nextStage === "validation") {
-      const res = await fetch(
-        "https://venturepilot-api.promptpulse.workers.dev/validate",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-        }
-      );
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
       const data = await res.json();
-
       const summary = data?.validation?.split("\n")[0] || "";
-
-      const messages = [
-        ...idea.messages,
-        {
-          role: "assistant",
-          content: `✅ Validation complete. Here's what we found:\n\n${summary}`,
-        },
-      ];
-
+      const messages = [...idea.messages, { role: "assistant", content: `✅ Validation complete. Here's what we found:\n\n${summary}` }];
       updateIdea(id, {
         messages,
         validation: data?.validation,
@@ -126,22 +108,19 @@ export default function ChatAssistant() {
           validationSummary: summary,
         },
       });
-
-      // Wait for stream to complete before showing validation card
-      setShowPanel(false);
     }
 
     if (nextStage === "branding") {
-      const res = await fetch(
-        "https://venturepilot-api.promptpulse.workers.dev/brand",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-        }
-      );
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
       const data = await res.json();
+      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
+      const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
       updateIdea(id, {
+        messages,
         branding: data,
         takeaways: {
           ...idea.takeaways,
@@ -153,7 +132,6 @@ export default function ChatAssistant() {
           },
         },
       });
-      setShowPanel(true); // Branding doesn’t use streaming yet
     }
   };
 
@@ -163,14 +141,11 @@ export default function ChatAssistant() {
 
     updateIdea(id, { deploying: true });
 
-    const res = await fetch(
-      "https://venturepilot-api.promptpulse.workers.dev/mvp",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      }
-    );
+    const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+    });
 
     const data = await res.json();
 
@@ -181,16 +156,12 @@ export default function ChatAssistant() {
       pagesUrl: data.pagesUrl,
       messages: [
         ...idea.messages,
-        {
-          role: "assistant",
-          content: `✅ MVP deployed! You can view it here:\n\n🔗 ${data.pagesUrl}`,
-        },
+        { role: "assistant", content: `✅ MVP deployed! You can view it here:\n\n🔗 ${data.pagesUrl}` },
       ],
     });
-    setShowPanel(false); // Let the stream complete before showing deploy card
   };
 
-  const restartStage = (stage: StageType) => {
+  const restartStage = (stage) => {
     if (!activeIdeaId) return;
     updateIdea(activeIdeaId, {
       currentStage: stage,
@@ -213,41 +184,34 @@ export default function ChatAssistant() {
           onStreamComplete={() => setShowPanel(true)}
         />
 
-        {showPanel && activeIdea?.currentStage === "ideation" &&
-          activeIdea?.takeaways?.refinedIdea && (
-            <RefinedIdeaCard
-              name={activeIdea.title || "Untitled Startup"}
-              description={activeIdea.takeaways.refinedIdea}
-              onConfirm={() =>
-                handleAdvanceStage(activeIdea.id, "validation")
-              }
-              onEdit={() => restartStage("ideation")}
-            />
+        {showPanel && activeIdea?.currentStage === "ideation" && activeIdea?.takeaways?.refinedIdea && (
+          <RefinedIdeaCard
+            name={activeIdea.title || "Untitled Startup"}
+            description={activeIdea.takeaways.refinedIdea}
+            onConfirm={() => handleAdvanceStage(activeIdea.id, "validation")}
+            onEdit={() => restartStage("ideation")}
+          />
         )}
 
-        {showPanel && activeIdea?.currentStage === "validation" &&
-          activeIdea?.takeaways?.validationSummary && (
-            <ValidationSummary
-              summary={activeIdea.takeaways.validationSummary}
-              fullText={activeIdea.validation}
-              onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
-              onRestart={() => restartStage("ideation")}
-            />
+        {showPanel && activeIdea?.currentStage === "validation" && activeIdea?.takeaways?.validationSummary && (
+          <ValidationSummary
+            summary={activeIdea.takeaways.validationSummary}
+            fullText={activeIdea.validation}
+            onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
+            onRestart={() => restartStage("ideation")}
+          />
         )}
 
-        {showPanel && activeIdea?.currentStage === "branding" &&
-          activeIdea?.takeaways?.branding && (
-            <BrandingCard
-              name={activeIdea.takeaways.branding.name}
-              tagline={activeIdea.takeaways.branding.tagline}
-              colors={activeIdea.takeaways.branding.colors}
-              logoDesc={activeIdea.takeaways.branding.logoDesc}
-              onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
-              onRegenerate={() =>
-                handleAdvanceStage(activeIdea.id, "branding")
-              }
-              onRestart={() => restartStage("ideation")}
-            />
+        {showPanel && activeIdea?.currentStage === "branding" && activeIdea?.takeaways?.branding && (
+          <BrandingCard
+            name={activeIdea.takeaways.branding.name}
+            tagline={activeIdea.takeaways.branding.tagline}
+            colors={activeIdea.takeaways.branding.colors}
+            logoDesc={activeIdea.takeaways.branding.logoDesc}
+            onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
+            onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
+            onRestart={() => restartStage("ideation")}
+          />
         )}
 
         {showPanel && activeIdea?.currentStage === "mvp" && (
