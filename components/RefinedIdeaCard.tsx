@@ -14,21 +14,23 @@ export default function RefinedIdeaCard({
   onEdit,
 }: RefinedIdeaCardProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl p-6 shadow-md mt-4">
-      <h3 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg mt-6 max-w-3xl mx-auto">
+      <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-4">
         {name}
       </h3>
-      <p className="text-gray-700 dark:text-gray-300 mb-4">{description}</p>
-      <div className="flex gap-4">
+      <p className="text-slate-700 dark:text-slate-300 text-lg mb-6 whitespace-pre-wrap">
+        {description}
+      </p>
+      <div className="flex flex-wrap gap-4">
         <button
           onClick={onConfirm}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+          className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:scale-105 transition-transform"
         >
           ✅ Confirm & Continue
         </button>
         <button
           onClick={onEdit}
-          className="border border-gray-400 hover:border-gray-600 text-gray-800 dark:text-white font-medium py-2 px-4 rounded-lg transition"
+          className="border border-slate-400 text-slate-700 dark:text-white px-6 py-2 rounded-full font-medium hover:border-slate-600 hover:scale-105 transition-transform"
         >
           ✏️ Edit Idea
         </button>
@@ -36,3 +38,4 @@ export default function RefinedIdeaCard({
     </div>
   );
 }
+
