@@ -46,18 +46,19 @@ export default function ChatPanel({ messages, onSend, loading, onStreamComplete 
   const renderMessage = (msg, i) => {
     const isStreaming = i === messages.length - 1 && msg.role === "assistant";
     const content = isStreaming ? streamedContent : msg.content;
+    const isUser = msg.role === "user";
 
     return (
-      <div key={i} className={`text-${msg.role === "user" ? "right" : "left"}`}>
+      <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
         <div
-          className={`inline-block px-4 py-2 rounded-xl max-w-[80%] whitespace-pre-wrap ${
-            msg.role === "user"
-              ? "bg-blue-500 text-white ml-auto"
-              : "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+          className={`rounded-2xl px-5 py-3 max-w-[80%] whitespace-pre-wrap text-left shadow-md ${
+            isUser
+              ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white"
+              : "bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
           }`}
         >
           <ReactMarkdown
-            className="prose dark:prose-invert max-w-none text-left"
+            className="prose dark:prose-invert max-w-none"
             remarkPlugins={[remarkGfm as any]}
           >
             {content}
@@ -69,27 +70,29 @@ export default function ChatPanel({ messages, onSend, loading, onStreamComplete 
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-slate-50 dark:bg-slate-900">
         {messages.map((msg, i) => renderMessage(msg, i))}
-        {loading && <div className="text-slate-400 text-sm">Assistant is typing…</div>}
+        {loading && <div className="text-slate-400 text-sm pl-2">Assistant is typing…</div>}
         <div ref={scrollRef} />
       </div>
 
-      <div className="p-2 flex gap-2 border-t border-gray-200 dark:border-slate-700">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          className="flex-1 p-2 rounded-xl border dark:bg-slate-800 dark:text-white"
-          placeholder="Describe your startup idea..."
-        />
-        <button
-          onClick={handleSend}
-          disabled={loading}
-          className="bg-blue-500 text-white px-4 py-2 rounded-xl hover:bg-blue-600 disabled:opacity-50"
-        >
-          {loading ? "Sending..." : "Send"}
-        </button>
+      <div className="border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            className="flex-1 px-4 py-2 rounded-full border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Describe your startup idea..."
+          />
+          <button
+            onClick={handleSend}
+            disabled={loading}
+            className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-5 py-2 rounded-full shadow-md hover:scale-105 transition-transform disabled:opacity-50"
+          >
+            {loading ? "Sending..." : "Send"}
+          </button>
+        </div>
       </div>
     </div>
   );
