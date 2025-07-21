@@ -10,7 +10,7 @@ export async function sendToAssistant(
   nextStage?: VentureStage;
   plan?: string;
 }> {
-  const systemPrompt = getSystemPrompt(stage);
+  const systemPrompt = getSystemPrompt(); // ✅ FIXED: now called with no arguments
   const payload = [
     { role: "system", content: systemPrompt },
     ...messages.map(({ role, content }) => ({ role, content }))
