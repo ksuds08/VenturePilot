@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Updated to synthesize MVP from full chat thread)
+// ChatAssistant.tsx (Updated to synthesize MVP from full chat thread and log deployment trigger)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -132,14 +132,23 @@ export default function ChatAssistant() {
 
   const handleConfirmBuild = async (id) => {
     const idea = ideas.find((i) => i.id === id);
-    if (!idea || !idea.finalPlan?.mvp) return;
+    console.log("🚀 Deploy clicked with idea:", idea);
+
+    if (!idea || !idea.finalPlan?.mvp) {
+      console.warn("⚠️ Cannot deploy: missing idea or MVP plan", idea?.finalPlan);
+      return;
+    }
+
     updateIdea(id, { deploying: true });
+
     const res = await fetch("https://mvpgen.promptpulse.workers.dev", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ideaName: idea.title, mvp: idea.finalPlan.mvp }),
     });
+
     const data = await res.json();
+
     updateIdea(id, {
       deploying: false,
       deployed: true,
@@ -213,3 +222,4 @@ export default function ChatAssistant() {
     </div>
   );
 }
+
