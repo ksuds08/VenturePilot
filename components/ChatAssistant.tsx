@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Full version with assistant typing feedback + prompt persistence)
+// ChatAssistant.tsx (Updated to synthesize MVP from full chat thread)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -23,7 +23,6 @@ export default function ChatAssistant() {
       const starter = {
         id,
         title: "",
-        prompt: "",
         messages: [
           {
             role: "assistant",
@@ -41,60 +40,47 @@ export default function ChatAssistant() {
   }, [activeIdeaId, ideas.length]);
 
   const updateIdea = (id, updates) => {
-    setIdeas((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, ...updates } : i))
-    );
+    setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
 
   const handleSend = async (content) => {
     const current = activeIdea;
     if (!current) return;
-
     const updatedMessages = [...current.messages, { role: "user", content }];
     updateIdea(current.id, { messages: updatedMessages });
     setLoading(true);
     setShowPanel(false);
-
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
       updatedMessages,
       current.currentStage
     );
-
     const updates = {
       title: current.title || content.slice(0, 80),
-      prompt: current.prompt || content, // ✅ Ensure prompt is stored in KV
       messages: [...updatedMessages, { role: "assistant", content: reply }],
       takeaways: {
         ...current.takeaways,
         refinedIdea: refinedIdea || current.takeaways.refinedIdea,
       },
     };
-
     if (plan) updates["finalPlan"] = plan;
     updateIdea(current.id, updates);
-
     if (nextStage && nextStage !== current.currentStage) {
       setTimeout(() => {
         handleAdvanceStage(current.id, nextStage);
       }, 1000);
     }
-
     setLoading(false);
   };
 
   const handleAdvanceStage = async (id, forcedStage) => {
     setLoading(true);
     setShowPanel(false);
-
     const stageOrder = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
-
     const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
     const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
-
     updateIdea(id, { currentStage: nextStage });
-
     if (nextStage === "validation") {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
         method: "POST",
@@ -113,7 +99,6 @@ export default function ChatAssistant() {
         },
       });
     }
-
     if (nextStage === "branding") {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
         method: "POST",
@@ -137,33 +122,24 @@ export default function ChatAssistant() {
         },
       });
     }
-
     if (nextStage === "mvp") {
       const reply = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
       const messages = [...idea.messages, { role: "assistant", content: reply }];
-      updateIdea(id, {
-        messages,
-        takeaways: { ...idea.takeaways },
-      });
+      updateIdea(id, { messages });
     }
-
     setLoading(false);
   };
 
   const handleConfirmBuild = async (id) => {
     const idea = ideas.find((i) => i.id === id);
-    if (!idea) return;
-
+    if (!idea || !idea.finalPlan?.mvp) return;
     updateIdea(id, { deploying: true });
-
-    const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+    const res = await fetch("https://mvpgen.promptpulse.workers.dev", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      body: JSON.stringify({ ideaName: idea.title, mvp: idea.finalPlan.mvp }),
     });
-
     const data = await res.json();
-
     updateIdea(id, {
       deploying: false,
       deployed: true,
@@ -198,7 +174,6 @@ export default function ChatAssistant() {
           loading={loading}
           onStreamComplete={() => setShowPanel(true)}
         />
-
         {showPanel && activeIdea?.currentStage === "ideation" && activeIdea?.takeaways?.refinedIdea && (
           <RefinedIdeaCard
             name={activeIdea.title || "Untitled Startup"}
@@ -207,7 +182,6 @@ export default function ChatAssistant() {
             onEdit={() => restartStage("ideation")}
           />
         )}
-
         {showPanel && activeIdea?.currentStage === "validation" && activeIdea?.takeaways?.validationSummary && (
           <ValidationSummary
             summary={activeIdea.takeaways.validationSummary}
@@ -216,7 +190,6 @@ export default function ChatAssistant() {
             onRestart={() => restartStage("ideation")}
           />
         )}
-
         {showPanel && activeIdea?.currentStage === "branding" && activeIdea?.takeaways?.branding && (
           <BrandingCard
             name={activeIdea.takeaways.branding.name}
@@ -228,7 +201,6 @@ export default function ChatAssistant() {
             onRestart={() => restartStage("ideation")}
           />
         )}
-
         {showPanel && activeIdea?.currentStage === "mvp" && (
           <MVPPreview
             ideaName={activeIdea.title}
