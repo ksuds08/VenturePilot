@@ -12,7 +12,7 @@ interface MVPPreviewProps {
 export default function MVPPreview({
   ideaName,
   onDeploy,
-  deploying,
+  deploying = false,
   deployedUrl,
 }: MVPPreviewProps) {
   return (
@@ -21,31 +21,26 @@ export default function MVPPreview({
         ⚙️ MVP Ready to Deploy
       </h3>
       <p className="text-lg text-slate-700 dark:text-slate-300 mb-4">
-        We've generated the MVP for{" "}
-        <span className="font-semibold">{ideaName}</span>. Click below to deploy it as a live
-        site.
+        We’ve generated the MVP for{" "}
+        <span className="font-semibold">{ideaName}</span>. Click below to deploy
+        it as a live site.
       </p>
 
-      {!deployedUrl && (
+      {!deployedUrl ? (
         <button
-          onClick={() => {
-            console.log("🚀 Deploy button clicked");
-            alert("Deploy triggered");
-            try {
-              onDeploy();
-              console.log("✅ onDeploy executed");
-            } catch (err) {
-              console.error("❌ onDeploy threw an error", err);
-            }
-          }}
+          onClick={onDeploy}
           disabled={deploying}
-          className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:scale-105 transition-transform disabled:opacity-50"
+          className={`bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md transition-transform ${
+            deploying
+              ? "opacity-50 cursor-not-allowed"
+              : "hover:scale-105"
+          }`}
+          aria-busy={deploying}
+          aria-disabled={deploying}
         >
-          {deploying ? "Deploying..." : "🚀 Deploy MVP Now"}
+          {deploying ? "🚀 Deploying..." : "🚀 Deploy MVP Now"}
         </button>
-      )}
-
-      {deployedUrl && (
+      ) : (
         <div className="mt-6">
           <p className="text-green-600 dark:text-green-400 font-medium mb-2">
             ✅ Deployment successful!
@@ -54,7 +49,7 @@ export default function MVPPreview({
             href={deployedUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block text-blue-600 dark:text-blue-400 hover:underline break-words"
+            className="inline-block text-blue-600 dark:text-blue-400 hover:underline break-all"
           >
             🔗 {deployedUrl}
           </a>
