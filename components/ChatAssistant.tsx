@@ -61,8 +61,8 @@ export default function ChatAssistant() {
         ...current.takeaways,
         refinedIdea: refinedIdea || current.takeaways.refinedIdea,
       },
+      ...(plan && { finalPlan: plan })
     };
-    if (plan) updates["finalPlan"] = plan;
     updateIdea(current.id, updates);
     if (nextStage && nextStage !== current.currentStage) {
       setTimeout(() => {
@@ -132,45 +132,12 @@ export default function ChatAssistant() {
 
   const handleConfirmBuild = async (id) => {
     const idea = ideas.find((i) => i.id === id);
-    if (!idea) return;
+    if (!idea || !idea.finalPlan?.mvp) return;
     updateIdea(id, { deploying: true });
-
-    let mvpContent = idea.finalPlan?.mvp;
-    if (!mvpContent) {
-      try {
-        const messages = idea.messages.map((msg) => ({ role: msg.role, content: msg.content }));
-        const synthResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o",
-            temperature: 0.5,
-            messages: [
-              { role: "system", content: "You are VenturePilot, an AI startup cofounder." },
-              ...messages,
-              { role: "user", content: "Please return only the MVP portion of the final business plan." },
-            ],
-          }),
-        });
-        const result = await synthResponse.json();
-        mvpContent = result?.choices?.[0]?.message?.content || "";
-      } catch (err) {
-        console.error("❌ Failed to synthesize MVP from conversation:", err);
-        updateIdea(id, {
-          deploying: false,
-          messages: [...idea.messages, { role: "assistant", content: "⚠️ Failed to generate MVP." }],
-        });
-        return;
-      }
-    }
-
     const res = await fetch("https://mvpgen.promptpulse.workers.dev", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ideaName: idea.title, mvp: mvpContent }),
+      body: JSON.stringify({ ideaName: idea.title, mvp: idea.finalPlan.mvp }),
     });
     const data = await res.json();
     updateIdea(id, {
@@ -246,4 +213,3 @@ export default function ChatAssistant() {
     </div>
   );
 }
-
