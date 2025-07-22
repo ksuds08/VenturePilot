@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Updated to synthesize MVP from full chat thread)
+// ChatAssistant.tsx
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -43,6 +43,18 @@ export default function ChatAssistant() {
     setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
 
+  const persistFinalPlanToKV = async (ideaId, finalPlan) => {
+    try {
+      await fetch("https://venturepilot-api.promptpulse.workers.dev/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ideaId, plan: finalPlan }),
+      });
+    } catch (err) {
+      console.error("Failed to persist plan to KV:", err);
+    }
+  };
+
   const handleSend = async (content) => {
     const current = activeIdea;
     if (!current) return;
@@ -50,10 +62,7 @@ export default function ChatAssistant() {
     updateIdea(current.id, { messages: updatedMessages });
     setLoading(true);
     setShowPanel(false);
-    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
-      updatedMessages,
-      current.currentStage
-    );
+    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(updatedMessages, current.currentStage);
     const updates = {
       title: current.title || content.slice(0, 80),
       messages: [...updatedMessages, { role: "assistant", content: reply }],
@@ -62,7 +71,10 @@ export default function ChatAssistant() {
         refinedIdea: refinedIdea || current.takeaways.refinedIdea,
       },
     };
-    if (plan) updates["finalPlan"] = plan;
+    if (plan) {
+      updates["finalPlan"] = plan;
+      persistFinalPlanToKV(current.id, plan);
+    }
     updateIdea(current.id, updates);
     if (nextStage && nextStage !== current.currentStage) {
       setTimeout(() => {
@@ -81,6 +93,7 @@ export default function ChatAssistant() {
     const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
     const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
     updateIdea(id, { currentStage: nextStage });
+
     if (nextStage === "validation") {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
         method: "POST",
@@ -99,6 +112,7 @@ export default function ChatAssistant() {
         },
       });
     }
+
     if (nextStage === "branding") {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
         method: "POST",
@@ -122,11 +136,13 @@ export default function ChatAssistant() {
         },
       });
     }
+
     if (nextStage === "mvp") {
       const reply = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
       const messages = [...idea.messages, { role: "assistant", content: reply }];
       updateIdea(id, { messages });
     }
+
     setLoading(false);
   };
 
