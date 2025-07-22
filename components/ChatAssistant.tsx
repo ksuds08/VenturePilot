@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Updated to synthesize MVP from full chat thread and log deployment trigger)
+// ChatAssistant.tsx (Updated with deploy alert and logging)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -61,7 +61,7 @@ export default function ChatAssistant() {
         ...current.takeaways,
         refinedIdea: refinedIdea || current.takeaways.refinedIdea,
       },
-      ...(plan && { finalPlan: plan })
+      ...(plan && { finalPlan: plan }),
     };
     updateIdea(current.id, updates);
     if (nextStage && nextStage !== current.currentStage) {
@@ -81,6 +81,7 @@ export default function ChatAssistant() {
     const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
     const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
     updateIdea(id, { currentStage: nextStage });
+
     if (nextStage === "validation") {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
         method: "POST",
@@ -89,16 +90,17 @@ export default function ChatAssistant() {
       });
       const data = await res.json();
       const summary = data?.validation?.split("\n")[0] || "";
-      const messages = [...idea.messages, { role: "assistant", content: `✅ Validation complete. Here's what we found:\n\n${summary}` }];
+      const messages = [...idea.messages, {
+        role: "assistant",
+        content: `✅ Validation complete. Here's what we found:\n\n${summary}`,
+      }];
       updateIdea(id, {
         messages,
         validation: data?.validation,
-        takeaways: {
-          ...idea.takeaways,
-          validationSummary: summary,
-        },
+        takeaways: { ...idea.takeaways, validationSummary: summary },
       });
     }
+
     if (nextStage === "branding") {
       const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
         method: "POST",
@@ -122,16 +124,19 @@ export default function ChatAssistant() {
         },
       });
     }
+
     if (nextStage === "mvp") {
       const reply = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
       const messages = [...idea.messages, { role: "assistant", content: reply }];
       updateIdea(id, { messages });
     }
+
     setLoading(false);
   };
 
   const handleConfirmBuild = async (id) => {
     const idea = ideas.find((i) => i.id === id);
+    alert("✅ handleConfirmBuild triggered");
     console.log("🚀 Deploy clicked with idea:", idea);
 
     if (!idea || !idea.finalPlan?.mvp) {
@@ -144,7 +149,10 @@ export default function ChatAssistant() {
     const res = await fetch("https://mvpgen.promptpulse.workers.dev", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ideaName: idea.title, mvp: idea.finalPlan.mvp }),
+      body: JSON.stringify({
+        ideaName: idea.title,
+        mvp: idea.finalPlan.mvp,
+      }),
     });
 
     const data = await res.json();
@@ -183,6 +191,7 @@ export default function ChatAssistant() {
           loading={loading}
           onStreamComplete={() => setShowPanel(true)}
         />
+
         {showPanel && activeIdea?.currentStage === "ideation" && activeIdea?.takeaways?.refinedIdea && (
           <RefinedIdeaCard
             name={activeIdea.title || "Untitled Startup"}
@@ -191,6 +200,7 @@ export default function ChatAssistant() {
             onEdit={() => restartStage("ideation")}
           />
         )}
+
         {showPanel && activeIdea?.currentStage === "validation" && activeIdea?.takeaways?.validationSummary && (
           <ValidationSummary
             summary={activeIdea.takeaways.validationSummary}
@@ -199,6 +209,7 @@ export default function ChatAssistant() {
             onRestart={() => restartStage("ideation")}
           />
         )}
+
         {showPanel && activeIdea?.currentStage === "branding" && activeIdea?.takeaways?.branding && (
           <BrandingCard
             name={activeIdea.takeaways.branding.name}
@@ -210,6 +221,7 @@ export default function ChatAssistant() {
             onRestart={() => restartStage("ideation")}
           />
         )}
+
         {showPanel && activeIdea?.currentStage === "mvp" && (
           <MVPPreview
             ideaName={activeIdea.title}
