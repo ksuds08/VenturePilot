@@ -1,3 +1,5 @@
+// ChatAssistant.tsx (Full version with assistant typing feedback + prompt persistence)
+
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
 import { sendToAssistant } from "../lib/assistantClient";
@@ -21,6 +23,7 @@ export default function ChatAssistant() {
       const starter = {
         id,
         title: "",
+        prompt: "",
         messages: [
           {
             role: "assistant",
@@ -31,7 +34,6 @@ export default function ChatAssistant() {
         locked: false,
         currentStage: "ideation",
         takeaways: {},
-        storedInKV: false,
       };
       setIdeas([starter]);
       setActiveIdeaId(id);
@@ -53,16 +55,6 @@ export default function ChatAssistant() {
     setLoading(true);
     setShowPanel(false);
 
-    // ✅ Send to /idea endpoint to persist to KV
-    if (current.currentStage === "ideation" && !current.storedInKV) {
-      await fetch("https://venturepilot-api.promptpulse.workers.dev/idea", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: content, ideaId: current.id }),
-      });
-      updateIdea(current.id, { storedInKV: true });
-    }
-
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
       updatedMessages,
       current.currentStage
@@ -70,6 +62,7 @@ export default function ChatAssistant() {
 
     const updates = {
       title: current.title || content.slice(0, 80),
+      prompt: current.prompt || content, // ✅ Ensure prompt is stored in KV
       messages: [...updatedMessages, { role: "assistant", content: reply }],
       takeaways: {
         ...current.takeaways,
