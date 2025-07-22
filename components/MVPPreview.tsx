@@ -1,17 +1,60 @@
-// components/MVPPreview.tsx
-import React from "react";
+// MVPPreview.tsx
+
+import React, { useState } from "react";
 
 interface MVPPreviewProps {
   ideaName: string;
-  onDeploy: () => void;
-  deploying?: boolean;
-  deployedUrl?: string;
+  ideaId: string;
+  branding: any;
+  plan: any;
+  onDeploymentComplete: (result: { repoUrl: string; pagesUrl: string }) => void;
 }
 
-export default function MVPPreview({ ideaName, onDeploy, deploying, deployedUrl }: MVPPreviewProps) {
-  const handleClick = () => {
-    console.log("🚀 Deploy button clicked");
-    onDeploy();
+export default function MVPPreview({
+  ideaName,
+  ideaId,
+  branding,
+  plan,
+  onDeploymentComplete,
+}: MVPPreviewProps) {
+  const [deploying, setDeploying] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleDeploy = async () => {
+    setDeploying(true);
+    setError("");
+
+    try {
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idea: ideaName,
+          ideaId,
+          branding,
+          plan,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.pagesUrl) {
+        setError(data?.error || "Deployment failed");
+        setDeploying(false);
+        return;
+      }
+
+      onDeploymentComplete({
+        repoUrl: data.repoUrl,
+        pagesUrl: data.pagesUrl,
+      });
+
+      setDeploying(false);
+    } catch (err: any) {
+      console.error("Deployment error:", err);
+      setError("An unexpected error occurred.");
+      setDeploying(false);
+    }
   };
 
   return (
@@ -23,30 +66,18 @@ export default function MVPPreview({ ideaName, onDeploy, deploying, deployedUrl 
         We've generated the MVP for <span className="font-semibold">{ideaName}</span>. Click below to deploy it as a live site.
       </p>
 
-      {!deployedUrl && (
-        <button
-          onClick={handleClick}
-          disabled={deploying}
-          className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:scale-105 transition-transform disabled:opacity-50"
-        >
-          {deploying ? "Deploying..." : "🚀 Deploy MVP Now"}
-        </button>
-      )}
+      <button
+        onClick={handleDeploy}
+        disabled={deploying}
+        className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:scale-105 transition-transform disabled:opacity-50"
+      >
+        {deploying ? "Deploying..." : "🚀 Deploy MVP Now"}
+      </button>
 
-      {deployedUrl && (
-        <div className="mt-6">
-          <p className="text-green-600 dark:text-green-400 font-medium mb-2">
-            ✅ Deployment successful!
-          </p>
-          <a
-            href={deployedUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-blue-600 dark:text-blue-400 hover:underline break-words"
-          >
-            🔗 {deployedUrl}
-          </a>
-        </div>
+      {error && (
+        <p className="text-red-500 mt-4 font-medium">
+          ❌ {error}
+        </p>
       )}
     </div>
   );
