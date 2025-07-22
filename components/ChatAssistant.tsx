@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Updated to fix MVP deploy trigger by synthesizing MVP on stage transition)
+// ChatAssistant.tsx (Updated to deploy full MVP from branding + plan)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -123,14 +123,9 @@ export default function ChatAssistant() {
       });
     }
     if (nextStage === "mvp") {
-      const mvpPrep = await sendToAssistant(idea.messages, "mvp");
-      const reply = mvpPrep?.reply || "✅ You're ready to deploy your MVP!";
+      const reply = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
       const messages = [...idea.messages, { role: "assistant", content: reply }];
-      updateIdea(id, {
-        messages,
-        takeaways: { ...idea.takeaways },
-        finalPlan: mvpPrep?.plan || {},
-      });
+      updateIdea(id, { messages });
     }
     setLoading(false);
   };
@@ -139,31 +134,40 @@ export default function ChatAssistant() {
     const idea = ideas.find((i) => i.id === id);
     console.log("🚀 Deploy clicked with idea:", idea);
 
-    if (!idea || !idea.finalPlan?.mvp) {
-      console.warn("⚠️ Cannot deploy: missing idea or MVP plan", idea?.finalPlan);
+    if (!idea || !idea.finalPlan || !idea.takeaways?.branding) {
+      console.warn("⚠️ Cannot deploy: missing plan or branding", idea);
       return;
     }
 
     updateIdea(id, { deploying: true });
 
-    const res = await fetch("https://mvpgen.promptpulse.workers.dev", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ideaName: idea.title, mvp: idea.finalPlan.mvp }),
-    });
+    try {
+      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ideaId: id,
+          branding: idea.takeaways.branding,
+          plan: idea.finalPlan,
+        }),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    updateIdea(id, {
-      deploying: false,
-      deployed: true,
-      repoUrl: data.repoUrl,
-      pagesUrl: data.pagesUrl,
-      messages: [
-        ...idea.messages,
-        { role: "assistant", content: `✅ MVP deployed! You can view it here:\n\n🔗 ${data.pagesUrl}` },
-      ],
-    });
+      updateIdea(id, {
+        deploying: false,
+        deployed: true,
+        repoUrl: data.repoUrl,
+        pagesUrl: data.pagesUrl,
+        messages: [
+          ...idea.messages,
+          { role: "assistant", content: `✅ MVP deployed! You can view it here:\n\n🔗 ${data.pagesUrl}` },
+        ],
+      });
+    } catch (err) {
+      console.error("🚨 Deployment failed:", err);
+      updateIdea(id, { deploying: false });
+    }
   };
 
   const restartStage = (stage) => {
