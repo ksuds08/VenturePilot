@@ -1,5 +1,3 @@
-// ChatAssistant.tsx (Full version with assistant typing feedback restored for all transitions)
-
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
 import { sendToAssistant } from "../lib/assistantClient";
@@ -33,6 +31,7 @@ export default function ChatAssistant() {
         locked: false,
         currentStage: "ideation",
         takeaways: {},
+        storedInKV: false,
       };
       setIdeas([starter]);
       setActiveIdeaId(id);
@@ -53,6 +52,16 @@ export default function ChatAssistant() {
     updateIdea(current.id, { messages: updatedMessages });
     setLoading(true);
     setShowPanel(false);
+
+    // ✅ Send to /idea endpoint to persist to KV
+    if (current.currentStage === "ideation" && !current.storedInKV) {
+      await fetch("https://venturepilot-api.promptpulse.workers.dev/idea", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: content, ideaId: current.id }),
+      });
+      updateIdea(current.id, { storedInKV: true });
+    }
 
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
       updatedMessages,
