@@ -106,28 +106,32 @@ export default function ChatAssistant() {
       });
     }
     if (nextStage === "branding") {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-      });
-      const data = await res.json();
-      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
-      const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
-      updateIdea(id, {
-        messages,
-        branding: data,
-        takeaways: {
-          ...idea.takeaways,
-          branding: {
-            name: data.name,
-            tagline: data.tagline,
-            colors: data.colors,
-            logoDesc: data.logoDesc,
-          },
-        },
-      });
-    }
+  const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+  });
+  const data = await res.json();
+
+  const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
+  const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
+
+  updateIdea(id, {
+    messages,
+    branding: data,
+    takeaways: {
+      ...idea.takeaways,
+      branding: {
+        name: data.name,
+        tagline: data.tagline,
+        colors: data.colors,
+        logoDesc: data.logoDesc,
+        logoUrl: data.logoUrl || "", // Include logoUrl from backend
+      },
+    },
+  });
+}
+
     if (nextStage === "mvp") {
       const reply = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
       const messages = [...idea.messages, { role: "assistant", content: reply }];
