@@ -5,75 +5,77 @@ interface BrandingCardProps {
   tagline: string;
   colors: string[];
   logoDesc: string;
-  logoUrl?: string; // ✅ Add this line
+  logoUrl?: string;
   onAccept: () => void;
   onRegenerate: () => void;
   onRestart: () => void;
 }
-
 
 export default function BrandingCard({
   name,
   tagline,
   colors,
   logoDesc,
+  logoUrl,
   onAccept,
   onRegenerate,
   onRestart,
 }: BrandingCardProps) {
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg mt-6 max-w-3xl mx-auto">
-      <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2">
-        🎨 Branding Ready
-      </h3>
-      <p className="text-lg text-slate-700 dark:text-slate-300 mb-4">
-        Here's the branding we generated for your startup:
-      </p>
-
-      <div className="space-y-2 mb-6">
-        <p className="text-xl font-semibold text-slate-800 dark:text-white">Name:</p>
-        <p className="text-slate-700 dark:text-slate-300">{name}</p>
-
-        <p className="text-xl font-semibold text-slate-800 dark:text-white mt-4">Tagline:</p>
-        <p className="text-slate-700 dark:text-slate-300">{tagline}</p>
-
-        <p className="text-xl font-semibold text-slate-800 dark:text-white mt-4">Brand Colors:</p>
-        <div className="flex gap-3 mt-1">
-          {colors.map((color, i) => (
-            <div
-              key={i}
-              className="w-10 h-10 rounded-full border border-slate-300"
-              style={{ backgroundColor: color }}
-              title={color}
-            />
-          ))}
-        </div>
-
-        <p className="text-xl font-semibold text-slate-800 dark:text-white mt-4">Logo Description:</p>
-        <p className="text-slate-700 dark:text-slate-300">{logoDesc}</p>
+      <div className="text-center mb-6">
+        {logoUrl && (
+          <img
+            src={logoUrl}
+            alt="Generated logo"
+            className="w-32 h-32 object-contain mx-auto rounded-xl shadow mb-4"
+          />
+        )}
+        <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white">
+          {name}
+        </h3>
+        <p className="text-lg text-slate-600 dark:text-slate-300 mt-2">{tagline}</p>
       </div>
 
-      <div className="flex flex-wrap gap-4">
+      <div className="mb-4">
+        <h4 className="font-semibold text-slate-800 dark:text-white mb-1">Colors:</h4>
+        <div className="flex gap-2">
+          {colors.map((color, idx) => (
+            <div
+              key={idx}
+              className="w-6 h-6 rounded-full border"
+              style={{ backgroundColor: color }}
+              title={color}
+            ></div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <h4 className="font-semibold text-slate-800 dark:text-white mb-1">Logo Concept:</h4>
+        <p className="text-slate-700 dark:text-slate-300 text-sm">{logoDesc}</p>
+      </div>
+
+      <div className="flex flex-wrap gap-4 justify-center">
         <button
           onClick={onAccept}
-          className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:scale-105 transition-transform"
+          className="bg-blue-600 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:bg-blue-700 transition"
         >
-          ✅ Accept & Build MVP
+          ✅ Accept & Build
         </button>
         <button
           onClick={onRegenerate}
-          className="border border-slate-400 text-slate-700 dark:text-white px-6 py-2 rounded-full font-medium hover:border-slate-600 hover:scale-105 transition-transform"
+          className="border border-slate-400 text-slate-700 dark:text-white px-6 py-2 rounded-full font-medium hover:border-slate-600 hover:scale-105 transition"
         >
-          🔁 Regenerate Branding
+          🔁 Regenerate
         </button>
         <button
           onClick={onRestart}
-          className="border border-red-400 text-red-600 dark:text-red-400 px-6 py-2 rounded-full font-medium hover:border-red-600 hover:scale-105 transition-transform"
+          className="text-red-600 dark:text-red-400 font-medium hover:underline"
         >
-          🔄 Rethink Idea
+          🔙 Restart
         </button>
       </div>
     </div>
   );
 }
-
