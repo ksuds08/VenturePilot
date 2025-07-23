@@ -5,10 +5,12 @@ interface BrandingCardProps {
   tagline: string;
   colors: string[];
   logoDesc: string;
+  logoUrl?: string; // ✅ Add this line
   onAccept: () => void;
   onRegenerate: () => void;
   onRestart: () => void;
 }
+
 
 export default function BrandingCard({
   name,
