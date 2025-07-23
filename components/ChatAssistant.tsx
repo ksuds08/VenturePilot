@@ -228,14 +228,16 @@ export default function ChatAssistant() {
         )}
         {showPanel && activeIdea?.currentStage === "branding" && activeIdea?.takeaways?.branding && (
           <BrandingCard
-            name={activeIdea.takeaways.branding.name}
-            tagline={activeIdea.takeaways.branding.tagline}
-            colors={activeIdea.takeaways.branding.colors}
-            logoDesc={activeIdea.takeaways.branding.logoDesc}
-            onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
-            onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
-            onRestart={() => restartStage("ideation")}
-          />
+  name={activeIdea.takeaways.branding.name}
+  tagline={activeIdea.takeaways.branding.tagline}
+  colors={activeIdea.takeaways.branding.colors}
+  logoDesc={activeIdea.takeaways.branding.logoDesc}
+  logoUrl={activeIdea.takeaways.branding.logoUrl} // ✅ Add this line
+  onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
+  onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
+  onRestart={() => restartStage("ideation")}
+/>
+
         )}
         {showPanel && activeIdea?.currentStage === "mvp" && (
           <MVPPreview
