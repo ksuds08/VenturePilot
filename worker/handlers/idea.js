@@ -1,94 +1,48 @@
 // SPDX-License-Identifier: MIT
-// Updated idea handler for VenturePilot
-//
-// This handler takes a user's raw idea prompt and returns both a list of
-// micro‑business suggestions and a structured "Business Idea Canvas".  The
-// canvas includes a one‑paragraph summary of the idea, a set of elaborated
-// requirements, and clarifying questions to ask the founder.  This makes it
-// easier for downstream front‑end components to display a rich, multi‑step
-// representation of the idea instead of a single paragraph summary.
+// Handler for the `/idea` endpoint.  Generates multiple micro‑business
+// suggestions as well as a structured business canvas from a user‑supplied
+// prompt.  The canvas consists of a summary, a list of elaborated
+// requirements and a set of clarifying questions.  The full canvas
+// is stored in the bound KV namespace keyed by a generated idea ID.
+
+import { jsonResponse, safeJson } from '../utils/response.js';
+import { openaiChat } from '../utils/openai.js';
 
 export async function ideaHandler(request, env) {
-  // Parse JSON body. Expect a "prompt" property containing the user idea.
-  const { prompt } = await request.json();
-
-  // Safety: ensure a prompt was provided
-  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-    return new Response(
-      JSON.stringify({ error: 'Missing or invalid prompt' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } }
-    );
+  const body = await safeJson(request);
+  if (!body?.prompt) {
+    return jsonResponse({ error: 'Missing required field: prompt' }, 400);
   }
-
-  // Helper to call OpenAI's chat completions API
-  async function callOpenAI(messages, model = 'gpt-4o') {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.7,
-        max_tokens: 512
-      })
-    });
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`OpenAI call failed: ${errorText}`);
-    }
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content?.trim();
-  }
-
+  const ideaId = crypto.randomUUID();
+  // First, generate a handful of AI‑enabled micro‑business ideas
+  const microIdeasRes = await openaiChat(env.OPENAI_API_KEY, [
+    { role: 'system', content: 'You are VenturePilot, an AI startup co‑pilot.' },
+    { role: 'user', content: `Generate 5 AI‑enabled micro‑business ideas based on: ${body.prompt}` },
+  ], 'gpt-4o-mini');
+  // Next, request a structured canvas.  We ask the model to return
+  // valid JSON so that it can be parsed reliably.  If parsing fails we
+  // fall back to a minimal canvas containing just the summary.
+  const canvasRes = await openaiChat(env.OPENAI_API_KEY, [
+    { role: 'system', content: 'You are VenturePilot, an AI startup co‑pilot.' },
+    { role: 'user', content: `Return JSON with summary (string), requirements (string[]), questions (string[]) for: ${body.prompt}` },
+  ]);
+  let canvas = {};
   try {
-    // First, generate a few high‑level micro‑business ideas from the prompt.  We
-    // continue to return this string field for backward compatibility with
-    // existing callers that expect the prior behaviour.
-    const ideasPrompt = [
-      { role: 'system', content: 'You are VenturePilot, an AI startup co‑pilot.' },
-      { role: 'user',   content: `Generate 5 AI‑enabled micro‑business ideas based on: ${prompt}` }
-    ];
-    const ideasContent = await callOpenAI(ideasPrompt, 'gpt-4o-mini');
-
-    // Next, create the structured canvas: summary, requirements and questions.  We
-    // ask OpenAI to respond in strict JSON format so that we can parse the
-    // response reliably.
-    const canvasPrompt = [
-      { role: 'system', content: 'You are VenturePilot, an AI startup co‑pilot.' },
-      { role: 'user',   content: `For the following business idea, produce a JSON object with these keys:\n\n` +
-        `summary: a one‑paragraph summary of the idea (string);\n` +
-        `requirements: an array of at least three elaborated requirements describing the major functional modules or tasks needed to build the product (array of strings);\n` +
-        `questions: an array of clarifying questions to ask the founder in order to better define the scope and constraints (array of strings).\n\n` +
-        `Respond ONLY with valid JSON. Do not include any other text.\n\n` +
-        `Idea: ${prompt}` }
-    ];
-    const canvasContent = await callOpenAI(canvasPrompt, 'gpt-4o');
-    let canvas = {};
-    try {
-      canvas = JSON.parse(canvasContent || '{}');
-    } catch (_) {
-      // If parsing fails, fallback to a minimal canvas containing just the
-      // summary text.  This prevents the entire request from failing if
-      // OpenAI returns malformed JSON.
-      canvas = { summary: canvasContent || '' };
-    }
-
-    return new Response(
-      JSON.stringify({
-        ideas: ideasContent || '',
-        summary: canvas.summary || '',
-        requirements: Array.isArray(canvas.requirements) ? canvas.requirements : [],
-        questions: Array.isArray(canvas.questions) ? canvas.questions : []
-      }),
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err.message || 'Unexpected error' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    canvas = JSON.parse(canvasRes.choices?.[0]?.message?.content || '{}');
+  } catch (_) {
+    canvas = { summary: canvasRes.choices?.[0]?.message?.content || '' };
   }
+  // Persist canvas to KV for later retrieval
+  try {
+    await env.KV.put(`idea:${ideaId}`, JSON.stringify({ prompt: body.prompt, canvas }));
+  } catch (_) {
+    // Ignore if KV is not bound
+  }
+  return jsonResponse({
+    ideaId,
+    ideas: microIdeasRes.choices?.[0]?.message?.content || '',
+    summary: canvas.summary || '',
+    requirements: Array.isArray(canvas.requirements) ? canvas.requirements : [],
+    questions: Array.isArray(canvas.questions) ? canvas.questions : [],
+  });
 }
