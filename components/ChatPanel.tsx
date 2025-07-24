@@ -2,6 +2,22 @@ import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+interface ChatMessage {
+  role: "user" | "assistant" | string;
+  content: string;
+}
+
+interface ChatPanelProps {
+  messages: ChatMessage[];
+  onSend: (content: string) => void;
+  loading: boolean;
+  onStreamComplete?: (content: string) => void;
+  idea: any;
+  isActive: boolean;
+  onClick: () => void;
+  disabled: boolean;
+}
+
 export default function ChatPanel({
   messages,
   onSend,
@@ -11,10 +27,10 @@ export default function ChatPanel({
   isActive,
   onClick,
   disabled,
-}) {
+}: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [streamedContent, setStreamedContent] = useState("");
-  const scrollRef = useRef(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const handleSend = () => {
     if (input.trim() === "") return;
@@ -35,7 +51,12 @@ export default function ChatPanel({
   }, [streamedContent, onStreamComplete]);
 
   return (
-    <div className="rounded-xl border border-gray-200 p-4 shadow-sm">
+    <div
+      className={`rounded-xl border border-gray-200 p-4 shadow-sm ${
+        isActive ? "ring-2 ring-blue-500" : ""
+      }`}
+      onClick={onClick}
+    >
       <div
         ref={scrollRef}
         className="max-h-64 overflow-y-auto rounded bg-gray-50 p-2 text-sm"
