@@ -1,3 +1,22 @@
 name = "venturepilot-api"
 main = "worker/index.js"
 compatibility_date = "2025-07-15"
+workers_dev = true
+
+account_id = "6ec57290cbb52c27cda0bd089bae05a0"  # Replace or inject via env if needed
+
+[[kv_namespaces]]
+binding = "THREAD_KV"
+id = "cac0ef385d8e4be49b9cc014e23bbd4c"
+
+[[kv_namespaces]]
+binding = "USER_STATUS_KV"
+id = "1d6d263d66a2425e836028e6fd95ef47"
+
+[[kv_namespaces]]
+binding = "ASSISTANT_KV"
+id = "9657bb9052234e70a2c9e5f59554f185"
+
+[[kv_namespaces]]
+binding = "GITHUB_KEYS_KV"
+id = "321cb5c5f8824536aab90293d7ed127e"
