@@ -182,16 +182,26 @@ export default function ChatAssistant() {
           {ideas.map((idea) => (
             <div key={idea.id} className="mb-6">
               <ChatPanel
-                idea={idea}
-                isActive={idea.id === activeIdeaId}
-                onClick={() => {
-                  setActiveIdeaId(idea.id);
-                  setShowPanel(true);
-                }}
-                onSend={handleSend}
-                loading={loading && idea.id === activeIdeaId}
-                disabled={idea.locked}
-              />
+  messages={idea.messages}
+  onSend={(content) => {
+    setActiveIdeaId(idea.id);
+    setShowPanel(false);
+    handleSend(content);
+  }}
+  loading={loading && idea.id === activeIdeaId}
+  onStreamComplete={(streamed) => {
+    const updated = [...idea.messages, { role: "assistant", content: streamed }];
+    updateIdea(idea.id, { messages: updated });
+  }}
+  idea={idea}
+  isActive={idea.id === activeIdeaId}
+  onClick={() => {
+    setActiveIdeaId(idea.id);
+    setShowPanel(true);
+  }}
+  disabled={idea.locked}
+/>
+
             </div>
           ))}
         </div>
