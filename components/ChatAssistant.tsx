@@ -1,6 +1,5 @@
 // ChatAssistant.tsx (Updated to send full messages + branding to /mvp)
 
-
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
 import { sendToAssistant } from "../lib/assistantClient";
@@ -11,6 +10,11 @@ import ValidationSummary from "./ValidationSummary";
 import BrandingCard from "./BrandingCard";
 import MVPPreview from "./MVPPreview";
 
+// Base URL and endpoint constants to allow flexible API routing
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://venturepilot-api.promptpulse.workers.dev";
+const validateUrl = `${baseUrl}/validate`;
+const brandUrl = `${baseUrl}/brand`;
+const mvpUrl = `${baseUrl}/mvp`;
 
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
@@ -18,7 +22,6 @@ export default function ChatAssistant() {
   const [loading, setLoading] = useState(false);
   const [showPanel, setShowPanel] = useState(false);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
-
 
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
@@ -42,11 +45,9 @@ export default function ChatAssistant() {
     }
   }, [activeIdeaId, ideas.length]);
 
-
   const updateIdea = (id, updates) => {
     setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
-
 
   const handleSend = async (content) => {
     const current = activeIdea;
@@ -66,7 +67,7 @@ export default function ChatAssistant() {
         ...current.takeaways,
         refinedIdea: refinedIdea || current.takeaways.refinedIdea,
       },
-      ...(plan && { finalPlan: plan })
+      ...(plan && { finalPlan: plan }),
     };
     updateIdea(current.id, updates);
     if (nextStage && nextStage !== current.currentStage) {
@@ -76,7 +77,6 @@ export default function ChatAssistant() {
     }
     setLoading(false);
   };
-
 
   const handleAdvanceStage = async (id, forcedStage) => {
     setLoading(true);
@@ -88,14 +88,17 @@ export default function ChatAssistant() {
     const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
     updateIdea(id, { currentStage: nextStage });
     if (nextStage === "validation") {
-      const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/validate", {
+      const res = await fetch(validateUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
       });
       const data = await res.json();
       const summary = data?.validation?.split("\n")[0] || "";
-      const messages = [...idea.messages, { role: "assistant", content: `✅ Validation complete. Here's what we found:\n\n${summary}` }];
+      const messages = [
+        ...idea.messages,
+        { role: "assistant", content: `✅ Validation complete. Here's what we found:\n\n${summary}` },
+      ];
       updateIdea(id, {
         messages,
         validation: data?.validation,
@@ -106,32 +109,29 @@ export default function ChatAssistant() {
       });
     }
     if (nextStage === "branding") {
-  const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/brand", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
-  });
-  const data = await res.json();
-
-  const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
-  const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
-
-  updateIdea(id, {
-    messages,
-    branding: data,
-    takeaways: {
-      ...idea.takeaways,
-      branding: {
-        name: data.name,
-        tagline: data.tagline,
-        colors: data.colors,
-        logoDesc: data.logoDesc,
-        logoUrl: data.logoUrl || "", // Include logoUrl from backend
-      },
-    },
-  });
-}
-
+      const res = await fetch(brandUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
+      const data = await res.json();
+      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
+      const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
+      updateIdea(id, {
+        messages,
+        branding: data,
+        takeaways: {
+          ...idea.takeaways,
+          branding: {
+            name: data.name,
+            tagline: data.tagline,
+            colors: data.colors,
+            logoDesc: data.logoDesc,
+            logoUrl: data.logoUrl || "", // Include logoUrl from backend
+          },
+        },
+      });
+    }
     if (nextStage === "mvp") {
       const reply = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
       const messages = [...idea.messages, { role: "assistant", content: reply }];
@@ -139,7 +139,6 @@ export default function ChatAssistant() {
     }
     setLoading(false);
   };
-
 
   const handleConfirmBuild = async (id) => {
     const idea = ideas.find((i) => i.id === id);
@@ -152,12 +151,8 @@ export default function ChatAssistant() {
       updateIdea(id, { deployError: "Missing ideaId, branding, or messages" });
       return;
     }
-
-
     updateIdea(id, { deploying: true });
-
-
-    const res = await fetch("https://venturepilot-api.promptpulse.workers.dev/mvp", {
+    const res = await fetch(mvpUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -166,94 +161,68 @@ export default function ChatAssistant() {
         messages: idea.messages,
       }),
     });
-
-
     const data = await res.json();
-
-
     if (!res.ok) {
       console.error("❌ Deployment failed", data);
       updateIdea(id, { deploying: false, deployError: data.error || "Unknown error" });
       return;
     }
-
-
     updateIdea(id, {
       deploying: false,
       deployed: true,
       repoUrl: data.repoUrl,
       pagesUrl: data.pagesUrl,
-      messages: [
-        ...idea.messages,
-        { role: "assistant", content: `✅ MVP deployed! You can view it here:\n\n🔗 ${data.pagesUrl}` },
-      ],
     });
   };
-
-
-  const restartStage = (stage) => {
-    if (!activeIdeaId) return;
-    updateIdea(activeIdeaId, {
-      currentStage: stage,
-      takeaways: {},
-      deploying: false,
-      deployed: false,
-      repoUrl: null,
-      pagesUrl: null,
-      messages: activeIdea?.messages || [],
-    });
-  };
-
 
   return (
-    <div className="max-w-screen-lg mx-auto p-4 h-screen">
-      <div className="w-full h-full border rounded-xl overflow-y-auto">
-        <ChatPanel
-          messages={activeIdea?.messages ?? []}
-          onSend={handleSend}
-          loading={loading}
-          onStreamComplete={() => setShowPanel(true)}
-        />
-        {showPanel && activeIdea?.currentStage === "ideation" && activeIdea?.takeaways?.refinedIdea && (
-          <RefinedIdeaCard
-            name={activeIdea.title || "Untitled Startup"}
-            description={activeIdea.takeaways.refinedIdea}
-            onConfirm={() => handleAdvanceStage(activeIdea.id, "validation")}
-            onEdit={() => restartStage("ideation")}
-          />
-        )}
-        {showPanel && activeIdea?.currentStage === "validation" && activeIdea?.takeaways?.validationSummary && (
-          <ValidationSummary
-            summary={activeIdea.takeaways.validationSummary}
-            fullText={activeIdea.validation}
-            onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
-            onRestart={() => restartStage("ideation")}
-          />
-        )}
-        {showPanel && activeIdea?.currentStage === "branding" && activeIdea?.takeaways?.branding && (
-          <BrandingCard
-  name={activeIdea.takeaways.branding.name}
-  tagline={activeIdea.takeaways.branding.tagline}
-  colors={activeIdea.takeaways.branding.colors}
-  logoDesc={activeIdea.takeaways.branding.logoDesc}
-  logoUrl={activeIdea.takeaways.branding.logoUrl} // ✅ Add this line
-  onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
-  onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
-  onRestart={() => restartStage("ideation")}
-/>
-
-        )}
-        {showPanel && activeIdea?.currentStage === "mvp" && (
-          <MVPPreview
-            ideaName={activeIdea.title}
-            onDeploy={() => handleConfirmBuild(activeIdea.id)}
-            deploying={activeIdea.deploying}
-            deployedUrl={activeIdea.pagesUrl}
-            deployError={activeIdea.deployError}
-          />
-        )}
+    <>
+      <div className="flex flex-col lg:flex-row gap-8 lg:mt-0 mt-6">
+        <div className="flex flex-col w-full lg:w-7/12 px-2 lg:px-0">
+          {ideas.map((idea) => (
+            <div key={idea.id} className="mb-6">
+              <ChatPanel
+                idea={idea}
+                isActive={idea.id === activeIdeaId}
+                onClick={() => {
+                  setActiveIdeaId(idea.id);
+                  setShowPanel(true);
+                }}
+                onSend={handleSend}
+                loading={loading && idea.id === activeIdeaId}
+                disabled={idea.locked}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col w-full lg:w-5/12">
+          {activeIdea && (
+            <>
+              {activeIdea.takeaways?.refinedIdea && (
+                <RefinedIdeaCard refinedIdea={activeIdea.takeaways.refinedIdea} />
+              )}
+              {activeIdea.takeaways?.validationSummary && (
+                <ValidationSummary summary={activeIdea.takeaways.validationSummary} />
+              )}
+              {activeIdea.takeaways?.branding && (
+                <BrandingCard branding={activeIdea.takeaways.branding} />
+              )}
+              {activeIdea.finalPlan && (
+                <MVPPreview
+                  plan={activeIdea.finalPlan}
+                  branding={activeIdea.takeaways.branding}
+                  onConfirm={() => handleConfirmBuild(activeIdea.id)}
+                  deploying={activeIdea.deploying}
+                  deployed={activeIdea.deployed}
+                  deployError={activeIdea.deployError}
+                  pagesUrl={activeIdea.pagesUrl}
+                  repoUrl={activeIdea.repoUrl}
+                />
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
-
