@@ -2,99 +2,93 @@ import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-export default function ChatPanel({ messages, onSend, loading, onStreamComplete }) {
+export default function ChatPanel({
+  messages,
+  onSend,
+  loading,
+  onStreamComplete,
+  idea,
+  isActive,
+  onClick,
+  disabled,
+}) {
   const [input, setInput] = useState("");
   const [streamedContent, setStreamedContent] = useState("");
   const scrollRef = useRef(null);
 
   const handleSend = () => {
-    if (input.trim()) {
-      onSend(input.trim());
-      setInput("");
-      setStreamedContent(""); // reset streaming state
-    }
+    if (input.trim() === "") return;
+    onSend(input);
+    setInput("");
   };
 
-  // Auto-scroll to bottom
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
   }, [messages, streamedContent]);
 
-  // Simulate assistant streaming and notify when done
   useEffect(() => {
-    if (!loading && messages.length > 0) {
-      const last = messages[messages.length - 1];
-      if (last.role === "assistant") {
-        let i = 0;
-        const fullText = last.content;
-        setStreamedContent("");
-
-        const interval = setInterval(() => {
-          i++;
-          setStreamedContent(fullText.slice(0, i));
-          if (i >= fullText.length) {
-            clearInterval(interval);
-            onStreamComplete?.(); // ✅ Notify ChatAssistant
-          }
-        }, 12); // typing speed in ms
-
-        return () => clearInterval(interval);
-      }
+    if (onStreamComplete && streamedContent !== "") {
+      onStreamComplete(streamedContent);
     }
-  }, [loading, messages]);
-
-  const renderMessage = (msg, i) => {
-    const isStreaming = i === messages.length - 1 && msg.role === "assistant";
-    const content = isStreaming ? streamedContent : msg.content;
-    const isUser = msg.role === "user";
-
-    return (
-      <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-        <div
-          className={`rounded-2xl px-5 py-3 max-w-[80%] whitespace-pre-wrap text-left shadow-md ${
-            isUser
-              ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white"
-              : "bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-          }`}
-        >
-          <ReactMarkdown
-            className="prose dark:prose-invert max-w-none"
-            remarkPlugins={[remarkGfm as any]}
-          >
-            {content}
-          </ReactMarkdown>
-        </div>
-      </div>
-    );
-  };
+  }, [streamedContent, onStreamComplete]);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 bg-slate-50 dark:bg-slate-900">
-        {messages.map((msg, i) => renderMessage(msg, i))}
-        {loading && <div className="text-slate-400 text-sm pl-2">Assistant is typing…</div>}
-        <div ref={scrollRef} />
-      </div>
-
-      <div className="border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            className="flex-1 px-4 py-2 rounded-full border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Describe your startup idea..."
-          />
-          <button
-            onClick={handleSend}
-            disabled={loading}
-            className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-5 py-2 rounded-full shadow-md hover:scale-105 transition-transform disabled:opacity-50"
+    <div className="rounded-xl border border-gray-200 p-4 shadow-sm">
+      <div
+        ref={scrollRef}
+        className="max-h-64 overflow-y-auto rounded bg-gray-50 p-2 text-sm"
+      >
+        {messages.map((msg, index) => (
+          <div
+            key={index}
+            className={`mb-2 ${
+              msg.role === "user" ? "text-right text-blue-700" : "text-left text-gray-800"
+            }`}
           >
-            {loading ? "Sending..." : "Send"}
-          </button>
-        </div>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              className="prose prose-sm"
+            >
+              {msg.content}
+            </ReactMarkdown>
+          </div>
+        ))}
+        {loading && (
+          <div className="italic text-gray-500 animate-pulse">Thinking...</div>
+        )}
+        {streamedContent && (
+          <div className="text-left text-gray-800">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              className="prose prose-sm"
+            >
+              {streamedContent}
+            </ReactMarkdown>
+          </div>
+        )}
+      </div>
+      <div className="mt-4 flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="Type your message..."
+          className="flex-1 rounded border border-gray-300 p-2 text-sm"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSend();
+          }}
+          disabled={disabled}
+        />
+        <button
+          onClick={handleSend}
+          className="rounded bg-blue-600 px-4 py-2 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
+          disabled={disabled || input.trim() === ""}
+        >
+          Send
+        </button>
       </div>
     </div>
   );
 }
-
