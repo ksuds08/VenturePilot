@@ -1,71 +1,59 @@
-export async function handler(request, env) {
-  try {
-    const { idea, ideaId } = await request.json();
+// SPDX-License-Identifier: MIT
+// Handler for the `/brand` endpoint.  Generates a branding kit for a
+// given idea and stores the result in KV.  The returned JSON includes
+// a name, tagline, array of colours and a logo description.  If a
+// logo prompt is provided it calls OpenAI's image generation API to
+// produce a URL for a generated logo and includes it in the response.
 
-    if (!idea) {
-      return new Response(JSON.stringify({ error: "Missing idea" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+import { jsonResponse, safeJson } from '../utils/response.js';
+import { openaiChat } from '../utils/openai.js';
 
-    const prompt = `
-You are VenturePilot, an AI startup co‑pilot.
-Generate a concise branding kit in JSON format with the following keys:
-name  - a catchy brand name (string)
-tagline - a short tagline (string)
-colors - an array of exactly 3 hex color codes (array)
-logoDesc - a brief logo design prompt (string)
-
-Respond ONLY with valid JSON.
-Idea: ${idea}
-`;
-
-    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o", // changed from gpt-4o-mini
-        messages: [
-          { role: "system", content: "You are a helpful assistant." },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 400,
-      }),
-    });
-
-    if (!openaiRes.ok) {
-      const text = await openaiRes.text();
-      return new Response(JSON.stringify({ error: text }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const openaiData = await openaiRes.json();
-    const content = openaiData.choices?.[0]?.message?.content?.trim() || "";
-
-    let branding;
-    try {
-      branding = JSON.parse(content);
-    } catch (err) {
-      return new Response(
-        JSON.stringify({ error: "Failed to parse branding JSON" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    return new Response(JSON.stringify(branding), {
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message || "Error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+export async function brandHandler(request, env) {
+  const body = await safeJson(request);
+  if (!body?.idea) {
+    return jsonResponse({ error: 'Missing idea' }, 400);
   }
+  const ideaId = body.ideaId || crypto.randomUUID();
+  const idea = body.idea;
+  // Ask OpenAI to produce a branding kit in JSON form
+  const res = await openaiChat(env.OPENAI_API_KEY, [
+    { role: 'system', content: 'Return JSON: name, tagline, colors[], logoDesc' },
+    { role: 'user', content: `Create branding for: ${idea}` },
+  ]);
+  const raw = res.choices?.[0]?.message?.content || '{}';
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = { error: 'Could not parse JSON', raw };
+  }
+  let logoUrl = null;
+  if (parsed.logoDesc) {
+    // Use DALL·E 3 to generate a logo image.  We ignore errors from this
+    // call so that a missing image does not fail the entire request.
+    try {
+      const imgRes = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: 'dall-e-3', prompt: parsed.logoDesc, n: 1, size: '1024x1024' }),
+      });
+      const imgJson = await imgRes.json();
+      if (imgJson?.data?.[0]?.url) {
+        logoUrl = imgJson.data[0].url;
+        parsed.logoUrl = logoUrl;
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to generate logo image:', err);
+    }
+  }
+  // Persist the branding kit keyed by idea
+  try {
+    await env.KV.put(`brand:${ideaId}`, JSON.stringify(parsed));
+  } catch (_) {
+    // KV is optional; ignore if not bound
+  }
+  return jsonResponse({ ...parsed, ideaId });
 }
