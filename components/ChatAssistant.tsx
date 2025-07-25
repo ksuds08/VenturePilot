@@ -62,7 +62,7 @@ export default function ChatAssistant() {
     setLoading(true);
     setStreamedContent("");
 
-    // Accumulate streamed chunks and surface the "reply" field if JSON
+    // Stream the assistant response and surface only the "reply"
     let streamedRaw = "";
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
       updatedMessages,
@@ -246,7 +246,8 @@ export default function ChatAssistant() {
                 onRestart={() => setActiveIdeaId(activeIdea.id)}
               />
             )}
-            {activeIdea.currentStage === "mvp" && activeIdea.finalPlan && (
+            {/* Once we reach the MVP stage, show the deploy preview without requiring finalPlan */}
+            {activeIdea.currentStage === "mvp" && (
               <MVPPreview
                 ideaName={activeIdea.title || "Your Idea"}
                 onDeploy={() => handleConfirmBuild(activeIdea.id)}
