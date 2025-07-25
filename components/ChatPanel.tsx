@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-const remarkGfm = require("remark-gfm");
+import remarkGfm from "remark-gfm";
 
 interface ChatMessage {
   role: "user" | "assistant" | string;
