@@ -10,7 +10,8 @@ import ValidationSummary from "./ValidationSummary";
 import BrandingCard from "./BrandingCard";
 import MVPPreview from "./MVPPreview";
 
-const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://venturepilot-api.promptpulse.workers.dev";
+const baseUrl =
+  process.env.NEXT_PUBLIC_API_URL || "https://venturepilot-api.promptpulse.workers.dev";
 const validateUrl = `${baseUrl}/validate`;
 const brandUrl = `${baseUrl}/brand`;
 const mvpUrl = `${baseUrl}/mvp`;
@@ -55,7 +56,7 @@ export default function ChatAssistant() {
     setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
 
-  const handleSend = async (content) => {
+  const handleSend = async (content: string) => {
     const current = activeIdea;
     if (!current) return;
     const updatedMessages = [...current.messages, { role: "user", content }];
@@ -63,15 +64,26 @@ export default function ChatAssistant() {
     setLoading(true);
     setStreamedContent("");
 
-    let fullResponse = "";
-    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(updatedMessages, current.currentStage, (chunk) => {
-      fullResponse += chunk;
-      setStreamedContent(fullResponse);
-    });
+    // Accumulate streamed chunks and try to surface the "reply" field if JSON
+    let streamedRaw = "";
+    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
+      updatedMessages,
+      current.currentStage,
+      (chunk: string) => {
+        streamedRaw += chunk;
+        try {
+          const partial = JSON.parse(streamedRaw);
+          setStreamedContent(partial?.reply ?? streamedRaw);
+        } catch {
+          setStreamedContent(streamedRaw);
+        }
+      }
+    );
 
     const updates = {
       title: current.title || content.slice(0, 80),
-      messages: [...updatedMessages, { role: "assistant", content: fullResponse }],
+      // Use the parsed reply instead of the raw JSON
+      messages: [...updatedMessages, { role: "assistant", content: reply }],
       takeaways: {
         ...current.takeaways,
         refinedIdea: refinedIdea || current.takeaways.refinedIdea,
@@ -87,7 +99,7 @@ export default function ChatAssistant() {
     }
   };
 
-  const handleAdvanceStage = async (id, forcedStage) => {
+  const handleAdvanceStage = async (id: any, forcedStage?: StageType) => {
     setLoading(true);
     const stageOrder = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
@@ -104,7 +116,10 @@ export default function ChatAssistant() {
       });
       const data = await res.json();
       const summary = data?.validation?.split("\n")[0] || "";
-      const messages = [...idea.messages, { role: "assistant", content: `✅ Validation complete. Here's what we found:\n\n${summary}` }];
+      const messages = [
+        ...idea.messages,
+        { role: "assistant", content: `✅ Validation complete. Here's what we found:\n\n${summary}` },
+      ];
       updateIdea(id, {
         messages,
         validation: data?.validation,
@@ -122,7 +137,9 @@ export default function ChatAssistant() {
         body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
       });
       const data = await res.json();
-      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
+      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(
+        ", "
+      )}\n• Logo: ${data.logoDesc}`;
       const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
       updateIdea(id, {
         messages,
@@ -141,15 +158,15 @@ export default function ChatAssistant() {
     }
 
     if (nextStage === "mvp") {
-      const reply = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
-      const messages = [...idea.messages, { role: "assistant", content: reply }];
+      const replyText = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
+      const messages = [...idea.messages, { role: "assistant", content: replyText }];
       updateIdea(id, { messages });
     }
 
     setLoading(false);
   };
 
-  const handleConfirmBuild = async (id) => {
+  const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
       updateIdea(id, { deployError: "Missing ideaId, branding, or messages" });
@@ -246,4 +263,3 @@ export default function ChatAssistant() {
     </div>
   );
 }
-
