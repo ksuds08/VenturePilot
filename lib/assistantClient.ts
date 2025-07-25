@@ -3,7 +3,8 @@ import type { VentureStage } from "../types";
 
 export async function sendToAssistant(
   messages: { role: string; content: string }[],
-  stage: VentureStage = "ideation"
+  stage: VentureStage = "ideation",
+  onChunk?: (chunk: string) => void
 ): Promise<{
   reply: string;
   refinedIdea?: string;
@@ -22,9 +23,31 @@ export async function sendToAssistant(
     body: JSON.stringify({ messages: payload }),
   });
 
-  const data = await res.json();
-  const reply: string = data?.reply || "No reply.";
+  // Streaming support
+  const reader = res.body?.getReader();
+  const decoder = new TextDecoder();
+  let fullResponse = "";
 
+  if (reader) {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      fullResponse += chunk;
+      if (onChunk) onChunk(chunk);
+    }
+  } else {
+    fullResponse = await res.text(); // fallback if not streamed
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(fullResponse);
+  } catch {
+    parsed = { reply: fullResponse };
+  }
+
+  const reply: string = parsed?.reply || "No reply.";
   const refinedIdea = extractRefinedIdea(reply);
   const plan = extractFinalPlan(reply);
   const nextStage = detectNextStageSuggestion(reply);
