@@ -2,21 +2,12 @@ name = "venturepilot-api"
 main = "worker/index.js"
 compatibility_date = "2025-07-15"
 workers_dev = true
-# wrangler.toml (wrangler v3.88.0^)
-[observability.logs]
-enabled = true
-
-
-
-
 
 account_id = "6ec57290cbb52c27cda0bd089bae05a0"
 
-# Optional: Explicitly define the environment if you use staging/production splits
-# [env.production]
-# route = "https://api.venturepilot.io/*"
+[observability.logs]
+enabled = true
 
-# Key-Value namespaces
 [[kv_namespaces]]
 binding = "THREAD_KV"
 id = "cac0ef385d8e4be49b9cc014e23bbd4c"
@@ -33,5 +24,6 @@ id = "9657bb9052234e70a2c9e5f59554f185"
 binding = "GITHUB_KEYS_KV"
 id = "321cb5c5f8824536aab90293d7ed127e"
 
-# Enable Tail Logging: No change needed here — just use `wrangler tail` in your CLI
-# See: https://developers.cloudflare.com/workers/wrangler/commands/#tail
+[vars]
+OPENAI_API_KEY = "${OPENAI_API_KEY}"
+PAT_GITHUB = "${PAT_GITHUB}"
