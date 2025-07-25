@@ -1,5 +1,5 @@
 
-🚀 VenturePilot
+VenturePilot
 VenturePilot is an AI-first startup cofounder that helps creators and solopreneurs go from idea to launch — validating concepts, generating MVPs, building brands, and deploying apps with minimal effort.
 “Give it your idea, and VenturePilot returns your startup.”
 
