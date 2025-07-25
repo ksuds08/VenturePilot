@@ -1,5 +1,3 @@
-// ChatAssistant.tsx (Simulated streaming + dynamic panel rendering)
-
 import React, { useState, useEffect, useRef } from "react";
 import ChatPanel from "./ChatPanel";
 import { sendToAssistant } from "../lib/assistantClient";
@@ -64,7 +62,7 @@ export default function ChatAssistant() {
     setLoading(true);
     setStreamedContent("");
 
-    // Accumulate streamed chunks and try to surface the "reply" field if JSON
+    // Accumulate streamed chunks and surface the "reply" field if JSON
     let streamedRaw = "";
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
       updatedMessages,
@@ -82,7 +80,6 @@ export default function ChatAssistant() {
 
     const updates = {
       title: current.title || content.slice(0, 80),
-      // Use the parsed reply instead of the raw JSON
       messages: [...updatedMessages, { role: "assistant", content: reply }],
       takeaways: {
         ...current.takeaways,
@@ -232,6 +229,7 @@ export default function ChatAssistant() {
             {activeIdea.currentStage === "validation" && activeIdea.takeaways?.validationSummary && (
               <ValidationSummary
                 summary={activeIdea.takeaways.validationSummary}
+                fullText={activeIdea.validation}
                 onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
                 onRestart={() => setActiveIdeaId(activeIdea.id)}
               />
