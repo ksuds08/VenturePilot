@@ -5,6 +5,9 @@ workers_dev = true
 
 account_id = "6ec57290cbb52c27cda0bd089bae05a0"
 
+# Keep dashboard-defined variables on deploy
+keep_vars = true
+
 [observability.logs]
 enabled = true
 
@@ -23,4 +26,3 @@ id = "9657bb9052234e70a2c9e5f59554f185"
 [[kv_namespaces]]
 binding = "GITHUB_KEYS_KV"
 id = "321cb5c5f8824536aab90293d7ed127e"
-
