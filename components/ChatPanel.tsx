@@ -1,6 +1,8 @@
+// ChatPanel.tsx (Quick fix for remark-gfm vfile version conflict)
+
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+const remarkGfm = require("remark-gfm");
 
 interface ChatMessage {
   role: "user" | "assistant" | string;
@@ -69,7 +71,7 @@ export default function ChatPanel({
             }`}
           >
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm.default || remarkGfm]}
               className="prose prose-sm"
             >
               {msg.content}
@@ -82,7 +84,7 @@ export default function ChatPanel({
         {streamedContent && (
           <div className="text-left text-gray-800">
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm.default || remarkGfm]}
               className="prose prose-sm"
             >
               {streamedContent}
