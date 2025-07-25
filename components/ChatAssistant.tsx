@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Finalized with typed prop fixes for ChatPanel, RefinedIdeaCard, and ValidationSummary)
+// ChatAssistant.tsx (Finalized with all typed props for ChatPanel, RefinedIdeaCard, ValidationSummary, and BrandingCard)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -218,13 +218,18 @@ export default function ChatAssistant() {
             )}
             {activeIdea.takeaways?.branding && (
               <BrandingCard
-  name={activeIdea.takeaways.branding.name}
-  tagline={activeIdea.takeaways.branding.tagline}
-  colors={activeIdea.takeaways.branding.colors}
-  logoDesc={activeIdea.takeaways.branding.logoDesc}
-  logoUrl={activeIdea.takeaways.branding.logoUrl}
-/>
-
+                name={activeIdea.takeaways.branding.name}
+                tagline={activeIdea.takeaways.branding.tagline}
+                colors={activeIdea.takeaways.branding.colors}
+                logoDesc={activeIdea.takeaways.branding.logoDesc}
+                logoUrl={activeIdea.takeaways.branding.logoUrl}
+                onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
+                onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
+                onRestart={() => {
+                  setShowPanel(true);
+                  setActiveIdeaId(activeIdea.id);
+                }}
+              />
             )}
             {activeIdea.finalPlan && (
               <MVPPreview
