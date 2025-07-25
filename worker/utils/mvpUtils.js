@@ -46,7 +46,7 @@ You MUST return ONLY valid JSON in this format:
 }
 
 Strict rules:
-- DO NOT include markdown code fences like ```
+- DO NOT include markdown code fences like ``
 - DO NOT include commentary, explanations, or extra keys`.trim(),
     },
     {
