@@ -13,21 +13,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Install Wrangler
         run: npm install -g wrangler
 
-      - name: Push Secrets to Cloudflare
+      - name: Publish Worker with Vars
         run: |
-          echo "${{ secrets.OPENAI_API_KEY }}" | wrangler secret put OPENAI_API_KEY --yes
-          echo "${{ secrets.PAT_GITHUB }}" | wrangler secret put PAT_GITHUB --yes
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-
-      - name: Publish Worker
-        run: wrangler publish
+          wrangler publish \
+            --var OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --var PAT_GITHUB="${{ secrets.PAT_GITHUB }}"
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
