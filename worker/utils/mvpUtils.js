@@ -131,7 +131,7 @@ Branding:
 - Logo: ${branding.logoDesc}
 - Logo URL: ${logoUrl || 'none'}
 
-When relevant, include frontend wiring to call a backend API at `/functions/api/handler.ts`.
+      When relevant, include frontend wiring to call a backend API at /functions/api/handler.ts.
         `.trim(),
     },
   ];
