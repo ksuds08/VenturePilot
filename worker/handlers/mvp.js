@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
-// Handler for the `/mvp` endpoint.  This handler takes an idea
-// identifier, a branding kit and a list of chat messages representing
-// the product discussion, and synthesises a minimum viable product
-// (MVP) specification.  It then scaffolds a basic frontend using
-// Tailwind CSS, stubs out backend API handlers based on the plan's
-// backend endpoints, generates a router file for Cloudflare Pages
-// Functions and pushes all files into a new GitHub repository.  Finally
-// it provisions a Cloudflare Pages project backed by that repository
-// and triggers a deployment.
+// Improved handler for the `/mvp` endpoint.  This version includes
+// error checking on all external API calls (GitHub and Cloudflare).
+// It returns an error response if any step fails rather than
+// unconditionally claiming success.  It also avoids generating
+// sub-files to keep the number of subrequests under Cloudflare’s
+// per-request limit.
 
 import { jsonResponse, safeJson } from '../utils/response.js';
 import { openaiChat } from '../utils/openai.js';
@@ -15,23 +12,10 @@ import {
   decomposePlanToComponents,
   generateComponentWithRetry,
   generateFrontendFiles,
-  // generateComponentSubFiles, // removed to reduce subrequests
+  // generateComponentSubFiles,
   generateRouterFile,
 } from '../utils/mvpUtils.js';
 
-/**
- * Helper to generate stub backend files for each API endpoint described
- * in the MVP plan.  Because the original Cloudflare Worker code
- * referenced a `generateBackend` function that was not defined, this
- * implementation creates a simple handler for each endpoint that
- * returns a JSON payload stating that the endpoint is not yet
- * implemented.  The file names are derived from the endpoint path by
- * removing leading slashes and replacing additional slashes with
- * hyphens.  All handlers are placed under `functions/api`.
- *
- * @param {Object} plan â the parsed MVP plan containing a `backendEndpoints` array
- * @returns {Object} â map of filenames to file contents
- */
 function generateBackendStubs(plan) {
   const files = {};
   const endpoints = Array.isArray(plan.backendEndpoints) ? plan.backendEndpoints : [];
@@ -58,7 +42,7 @@ export async function mvpHandler(request, env) {
   if (!ideaId || !branding || !messages) {
     return jsonResponse({ error: 'Missing ideaId, branding, or messages' }, 400);
   }
-  // Step 1: synthesise the MVP plan from the chat history
+  // Build MVP plan
   const planPrompt = [
     {
       role: 'system',
@@ -68,30 +52,13 @@ export async function mvpHandler(request, env) {
         `2. A list of backend API endpoints required to implement the MVP\n\n` +
         `Guidelines:\n` +
         `- Be concise and specific\n` +
-        `- Avoid vague names like "MyApp" or "CoolTool" â infer a meaningful product name if not given\n` +
+        `- Avoid vague names like "MyApp" or "CoolTool" — infer a meaningful product name if not given\n` +
         `- Infer technology stack (e.g., React, TypeScript, Cloudflare Workers) if not stated\n` +
         `- backendEndpoints should cover all dynamic functionality the MVP requires\n\n` +
         `Output valid JSON ONLY in this exact structure:\n\n` +
         `{\n` +
-        `  "mvp": {\n` +
-        `    "name": string,\n` +
-        `    "description": string,\n` +
-        `    "features": [{ "feature": string, "description": string }],\n` +
-        `    "technology": string,\n` +
-        `    "targetAudience": string,\n` +
-        `    "businessModel": string,\n` +
-        `    "launchPlan": string,\n` +
-        `    "visualStyle": string,\n` +
-        `    "userFlow": string,\n` +
-        `    "dataFlow": string,\n` +
-        `    "keyComponents": [string],\n` +
-        `    "exampleInteractions": [string]\n` +
-        `  },\n` +
-        `  "backendEndpoints": [\n` +
-        `    { "path": string, "method": string, "description": string }\n` +
-        `  ]\n` +
-        `}\n\n` +
-        `DO NOT include markdown. Output only pure JSON.`,
+        `  "mvp": { ... },\n  "backendEndpoints": [ ... ]\n}` +
+        `\n\nDO NOT include markdown. Output only pure JSON.`,
     },
     {
       role: 'user',
@@ -105,17 +72,14 @@ export async function mvpHandler(request, env) {
   try {
     plan = JSON.parse(planText);
   } catch (err) {
-    console.error('â Could not parse MVP from planText:', planText);
     return jsonResponse({ error: 'Failed to parse plan from thread', raw: planText }, 500);
   }
   if (!plan?.mvp?.name || !plan?.mvp?.description || !plan?.mvp?.technology || !Array.isArray(plan.mvp.features) || plan.mvp.features.length === 0) {
-    console.error('â Invalid MVP plan structure:', plan);
     return jsonResponse({ error: 'MVP plan missing required fields', plan }, 500);
   }
-  // Step 2: decompose the plan into components
+  // Decompose plan
   const components = await decomposePlanToComponents(plan, env);
   const allComponentFiles = {};
-  // Step 3: generate backend component files using the helper
   for (const component of components) {
     if (component.type === 'backend') {
       const result = await generateComponentWithRetry(component, plan, env);
@@ -124,43 +88,49 @@ export async function mvpHandler(request, env) {
           allComponentFiles[filename] = content;
         }
       }
-      // Skipping generateComponentSubFiles to reduce subrequests per request
     }
   }
-  // Step 4: generate router index.ts for the backend components
+  // Router
   const { indexFile } = generateRouterFile(allComponentFiles);
   allComponentFiles['functions/api/index.ts'] = indexFile;
-  // Step 5: generate frontend files
+  // Frontend
   const frontendFiles = await generateFrontendFiles(plan, branding, logoUrl, env);
-  // Step 6: generate backend stubs for endpoints
+  // Backend stubs
   const backendStubFiles = generateBackendStubs(plan);
   const siteFiles = { ...frontendFiles, ...backendStubFiles, ...allComponentFiles };
-  // Step 7: create a new GitHub repository
+  // Create repo
   const repoName = `${ideaId}-app`;
-  const token = env.GITHUB_PAT;
-  await fetch('https://api.github.com/user/repos', {
+  const createRepoRes = await fetch('https://api.github.com/user/repos', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${env.GITHUB_PAT}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ name: repoName, private: false }),
   });
-  // Step 8: push files to the repository
+  if (!createRepoRes.ok) {
+    const errMsg = await createRepoRes.text();
+    return jsonResponse({ error: 'Failed to create GitHub repo', details: errMsg }, 500);
+  }
+  // Upload files one by one and bail on first failure
   for (const [path, content] of Object.entries(siteFiles)) {
     const encoded = btoa(unescape(encodeURIComponent(content)));
-    await fetch(`https://api.github.com/repos/${env.GITHUB_USERNAME}/${repoName}/contents/${path}`, {
+    const uploadRes = await fetch(`https://api.github.com/repos/${env.GITHUB_USERNAME}/${repoName}/contents/${path}`, {
       method: 'PUT',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${env.GITHUB_PAT}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ message: `Add ${path}`, content: encoded, branch: 'main' }),
     });
+    if (!uploadRes.ok) {
+      const errMsg = await uploadRes.text();
+      return jsonResponse({ error: `Failed to upload ${path} to GitHub`, details: errMsg }, 500);
+    }
   }
-  // Step 9: create the Cloudflare Pages project
+  // Create Cloudflare Pages project
   const projectName = `app-${ideaId}`;
-  await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects`, {
+  const createProjectRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${env.CF_API_TOKEN}`,
@@ -180,14 +150,23 @@ export async function mvpHandler(request, env) {
       },
     }),
   });
-  // Step 10: trigger deployment
+  if (!createProjectRes.ok) {
+    const errMsg = await createProjectRes.text();
+    return jsonResponse({ error: 'Failed to create Cloudflare Pages project', details: errMsg }, 500);
+  }
+  // Trigger deployment
   const formData = new FormData();
   formData.append('branch', 'main');
-  await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects/${projectName}/deployments`, {
+  const deployRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects/${projectName}/deployments`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
     body: formData,
   });
+  if (!deployRes.ok) {
+    const errMsg = await deployRes.text();
+    return jsonResponse({ error: 'Failed to trigger deployment', details: errMsg }, 500);
+  }
+  // Return final URLs
   return jsonResponse({
     ideaId,
     repoUrl: `https://github.com/${env.GITHUB_USERNAME}/${repoName}`,
