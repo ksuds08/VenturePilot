@@ -71,7 +71,7 @@ export default function ChatPanel({
             }`}
           >
             <ReactMarkdown
-              remarkPlugins={[remarkGfm.default || remarkGfm]}
+             remarkPlugis={[remarkGfm]}
               className="prose prose-sm"
             >
               {msg.content}
@@ -84,8 +84,8 @@ export default function ChatPanel({
         {streamedContent && (
           <div className="text-left text-gray-800">
             <ReactMarkdown
-              remarkPlugins={[remarkGfm.default || remarkGfm]}
-              className="prose prose-sm"
+             remarkPlugis={[remarkGfm]}
+             className="prose prose-sm"
             >
               {streamedContent}
             </ReactMarkdown>
