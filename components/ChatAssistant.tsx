@@ -1,6 +1,6 @@
-// ChatAssistant.tsx (Finalized with correct MVPPreview props)
+// ChatAssistant.tsx (Simulated streaming + dynamic panel rendering)
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import ChatPanel from "./ChatPanel";
 import { sendToAssistant } from "../lib/assistantClient";
 import { v4 as uuidv4 } from "uuid";
@@ -19,7 +19,8 @@ export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
   const [activeIdeaId, setActiveIdeaId] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [showPanel, setShowPanel] = useState(false);
+  const [streamedContent, setStreamedContent] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
   useEffect(() => {
@@ -44,6 +45,12 @@ export default function ChatAssistant() {
     }
   }, [activeIdeaId, ideas.length]);
 
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [ideas, streamedContent]);
+
   const updateIdea = (id, updates) => {
     setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
@@ -54,11 +61,17 @@ export default function ChatAssistant() {
     const updatedMessages = [...current.messages, { role: "user", content }];
     updateIdea(current.id, { messages: updatedMessages });
     setLoading(true);
-    setShowPanel(false);
-    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(updatedMessages, current.currentStage);
+    setStreamedContent("");
+
+    let fullResponse = "";
+    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(updatedMessages, current.currentStage, (chunk) => {
+      fullResponse += chunk;
+      setStreamedContent(fullResponse);
+    });
+
     const updates = {
       title: current.title || content.slice(0, 80),
-      messages: [...updatedMessages, { role: "assistant", content: reply }],
+      messages: [...updatedMessages, { role: "assistant", content: fullResponse }],
       takeaways: {
         ...current.takeaways,
         refinedIdea: refinedIdea || current.takeaways.refinedIdea,
@@ -66,15 +79,16 @@ export default function ChatAssistant() {
       ...(plan && { finalPlan: plan }),
     };
     updateIdea(current.id, updates);
+    setStreamedContent("");
+    setLoading(false);
+
     if (nextStage && nextStage !== current.currentStage) {
       setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
     }
-    setLoading(false);
   };
 
   const handleAdvanceStage = async (id, forcedStage) => {
     setLoading(true);
-    setShowPanel(false);
     const stageOrder = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -173,50 +187,39 @@ export default function ChatAssistant() {
               messages={idea.messages}
               onSend={(content) => {
                 setActiveIdeaId(idea.id);
-                setShowPanel(false);
                 handleSend(content);
               }}
               loading={loading && idea.id === activeIdeaId}
-              onStreamComplete={(streamed) => {
-                const updated = [...idea.messages, { role: "assistant", content: streamed }];
-                updateIdea(idea.id, { messages: updated });
-              }}
               idea={idea}
               isActive={idea.id === activeIdeaId}
               onClick={() => {
                 setActiveIdeaId(idea.id);
-                setShowPanel(true);
               }}
               disabled={idea.locked}
             />
           </div>
         ))}
+        <div ref={scrollRef} />
       </div>
       <div className="flex flex-col w-full lg:w-5/12">
         {activeIdea && (
           <>
-            {activeIdea.takeaways?.refinedIdea && (
+            {activeIdea.currentStage === "ideation" && activeIdea.takeaways?.refinedIdea && (
               <RefinedIdeaCard
                 name={activeIdea.takeaways.refinedIdea.name}
                 description={activeIdea.takeaways.refinedIdea.description}
                 onConfirm={() => handleAdvanceStage(activeIdea.id, "validation")}
-                onEdit={() => {
-                  setShowPanel(true);
-                  setActiveIdeaId(activeIdea.id);
-                }}
+                onEdit={() => setActiveIdeaId(activeIdea.id)}
               />
             )}
-            {activeIdea.takeaways?.validationSummary && (
+            {activeIdea.currentStage === "validation" && activeIdea.takeaways?.validationSummary && (
               <ValidationSummary
                 summary={activeIdea.takeaways.validationSummary}
                 onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
-                onRestart={() => {
-                  setShowPanel(true);
-                  setActiveIdeaId(activeIdea.id);
-                }}
+                onRestart={() => setActiveIdeaId(activeIdea.id)}
               />
             )}
-            {activeIdea.takeaways?.branding && (
+            {activeIdea.currentStage === "branding" && activeIdea.takeaways?.branding && (
               <BrandingCard
                 name={activeIdea.takeaways.branding.name}
                 tagline={activeIdea.takeaways.branding.tagline}
@@ -225,13 +228,10 @@ export default function ChatAssistant() {
                 logoUrl={activeIdea.takeaways.branding.logoUrl}
                 onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
                 onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
-                onRestart={() => {
-                  setShowPanel(true);
-                  setActiveIdeaId(activeIdea.id);
-                }}
+                onRestart={() => setActiveIdeaId(activeIdea.id)}
               />
             )}
-            {activeIdea.finalPlan && (
+            {activeIdea.currentStage === "mvp" && activeIdea.finalPlan && (
               <MVPPreview
                 ideaName={activeIdea.title || "Your Idea"}
                 onDeploy={() => handleConfirmBuild(activeIdea.id)}
@@ -246,3 +246,4 @@ export default function ChatAssistant() {
     </div>
   );
 }
+
