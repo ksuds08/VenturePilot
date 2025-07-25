@@ -22,7 +22,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "npm audit fix --force",
     "format": "prettier --write .",
     "check-types": "tsc --noEmit"
   },
