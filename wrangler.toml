@@ -2,7 +2,13 @@ name = "venturepilot-api"
 main = "worker/index.js"
 compatibility_date = "2025-07-15"
 workers_dev = true
-logpush = true  # Optional: Enables support for Logpush in some contexts (must be configured in Cloudflare dashboard)
+# wrangler.toml (wrangler v3.88.0^)
+[observability.logs]
+enabled = true
+
+
+
+
 
 account_id = "6ec57290cbb52c27cda0bd089bae05a0"
 
