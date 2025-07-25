@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Finalized with all typed props for ChatPanel, RefinedIdeaCard, ValidationSummary, and BrandingCard)
+// ChatAssistant.tsx (Finalized with correct MVPPreview props)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -233,8 +233,7 @@ export default function ChatAssistant() {
             )}
             {activeIdea.finalPlan && (
               <MVPPreview
-                plan={activeIdea.finalPlan}
-                branding={activeIdea.takeaways.branding}
+                idea={activeIdea}
                 onConfirm={() => handleConfirmBuild(activeIdea.id)}
                 deploying={activeIdea.deploying}
                 deployed={activeIdea.deployed}
