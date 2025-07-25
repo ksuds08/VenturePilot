@@ -1,8 +1,13 @@
-// ChatPanel.tsx (Quick fix for remark-gfm vfile version conflict)
+// ChatPanel.tsx (Final fix for remark-gfm + Vite/Vercel ESM compat)
 
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+
+// Lazy load remark-gfm with dynamic import for compatibility
+const loadRemarkGfm = async () => {
+  const mod = await import("remark-gfm");
+  return mod.default || mod;
+};
 
 interface ChatMessage {
   role: "user" | "assistant" | string;
@@ -33,6 +38,13 @@ export default function ChatPanel({
   const [input, setInput] = useState("");
   const [streamedContent, setStreamedContent] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [remarkPlugins, setRemarkPlugins] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadRemarkGfm().then((plugin) => {
+      setRemarkPlugins([plugin]);
+    });
+  }, []);
 
   const handleSend = () => {
     if (input.trim() === "") return;
@@ -71,7 +83,7 @@ export default function ChatPanel({
             }`}
           >
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={remarkPlugins}
               className="prose prose-sm"
             >
               {msg.content}
@@ -84,7 +96,7 @@ export default function ChatPanel({
         {streamedContent && (
           <div className="text-left text-gray-800">
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={remarkPlugins}
               className="prose prose-sm"
             >
               {streamedContent}
