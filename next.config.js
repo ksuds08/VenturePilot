@@ -7,7 +7,7 @@ const nextConfig = {
   },
   // Add these optimizations for Cloudflare Pages
   experimental: {
-    optimizeackageImports: ['react-markdown', 'remark-gfm', 'uuid'],
+    optimizePackageImports: ['react-markdown', 'remark-gfm', 'uuid'],
     optimizeServerReact: true,
         esmExternals: "loose",
   },
