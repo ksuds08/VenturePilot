@@ -233,13 +233,11 @@ export default function ChatAssistant() {
             )}
             {activeIdea.finalPlan && (
               <MVPPreview
-                idea={activeIdea}
-                onConfirm={() => handleConfirmBuild(activeIdea.id)}
+                ideaName={activeIdea.title || "Your Idea"}
+                onDeploy={() => handleConfirmBuild(activeIdea.id)}
                 deploying={activeIdea.deploying}
-                deployed={activeIdea.deployed}
+                deployedUrl={activeIdea.pagesUrl}
                 deployError={activeIdea.deployError}
-                pagesUrl={activeIdea.pagesUrl}
-                repoUrl={activeIdea.repoUrl}
               />
             )}
           </>
