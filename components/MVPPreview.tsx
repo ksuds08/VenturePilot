@@ -1,5 +1,4 @@
 // MVPPreview.tsx
-
 import React from "react";
 
 interface MVPPreviewProps {
@@ -29,13 +28,30 @@ export default function MVPPreview({
       </p>
 
       {!deployedUrl && (
-        <button
-          onClick={onDeploy}
-          disabled={deploying}
-          className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:scale-105 transition-transform disabled:opacity-50"
-        >
-          {deploying ? "Deploying..." : "🚀 Deploy MVP Now"}
-        </button>
+        <div className="mt-4">
+          {deploying ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-2">
+                {/* Simple spinner */}
+                <span className="inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+                <span className="text-slate-700 dark:text-slate-300 font-medium">
+                  Deploying your MVP...
+                </span>
+              </div>
+              <p className="text-sm text-slate-500 dark:text-slate-400 text-center">
+                This may take a few minutes. Hang tight while we set up your site.
+              </p>
+            </div>
+          ) : (
+            <button
+              onClick={onDeploy}
+              disabled={deploying}
+              className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-semibold px-6 py-2 rounded-full shadow-md hover:scale-105 transition-transform disabled:opacity-50"
+            >
+              Deploy MVP Now
+            </button>
+          )}
+        </div>
       )}
 
       {deployedUrl && (
@@ -49,7 +65,7 @@ export default function MVPPreview({
             rel="noopener noreferrer"
             className="inline-block text-blue-600 dark:text-blue-400 hover:underline break-words"
           >
-            🔗 {deployedUrl}
+            {deployedUrl}
           </a>
         </div>
       )}
@@ -62,4 +78,3 @@ export default function MVPPreview({
     </div>
   );
 }
-
