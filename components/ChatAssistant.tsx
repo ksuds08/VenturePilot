@@ -18,10 +18,10 @@ export default function ChatAssistant() {
   const [ideas, setIdeas] = useState([]);
   const [activeIdeaId, setActiveIdeaId] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [streamedContent, setStreamedContent] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
+  // Initialize a starter idea
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
       const id = uuidv4();
@@ -36,7 +36,7 @@ export default function ChatAssistant() {
           },
         ],
         locked: false,
-        currentStage: "ideation",
+        currentStage: "ideation" as StageType,
         takeaways: {},
       };
       setIdeas([starter]);
@@ -44,64 +44,76 @@ export default function ChatAssistant() {
     }
   }, [activeIdeaId, ideas.length]);
 
+  // Auto-scroll when messages change
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [ideas, streamedContent]);
+  }, [ideas]);
 
-  const updateIdea = (id, updates) => {
+  const updateIdea = (id: any, updates: any) => {
     setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
 
+  // Handle sending a user message with simulated streaming
   const handleSend = async (content: string) => {
     const current = activeIdea;
     if (!current) return;
-    const updatedMessages = [...current.messages, { role: "user", content }];
-    updateIdea(current.id, { messages: updatedMessages });
-    setLoading(true);
-    setStreamedContent("");
 
-    // Stream the assistant response and surface only the "reply"
-    let streamedRaw = "";
+    // Insert the user's message and an empty assistant placeholder
+    const userMsg = { role: "user", content };
+    const placeholder = { role: "assistant", content: "" };
+    const baseMessages = [...current.messages, userMsg, placeholder];
+    updateIdea(current.id, { messages: baseMessages });
+    setLoading(true);
+
+    // Fetch the assistant's full reply (no streaming API)
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
-      updatedMessages,
-      current.currentStage,
-      (chunk: string) => {
-        streamedRaw += chunk;
-        try {
-          const partial = JSON.parse(streamedRaw);
-          setStreamedContent(partial?.reply ?? streamedRaw);
-        } catch {
-          setStreamedContent(streamedRaw);
-        }
-      }
+      [...current.messages, userMsg],
+      current.currentStage
     );
 
-    const updates = {
-      title: current.title || content.slice(0, 80),
-      messages: [...updatedMessages, { role: "assistant", content: reply }],
-      takeaways: {
-        ...current.takeaways,
-        refinedIdea: refinedIdea || current.takeaways.refinedIdea,
-      },
-      ...(plan && { finalPlan: plan }),
-    };
-    updateIdea(current.id, updates);
-    setStreamedContent("");
-    setLoading(false);
+    // Simulated typing: gradually reveal the reply
+    const reveal = (index: number, msgs: any[]) => {
+      // Update last message content up to the current index
+      const updatedMsgs = msgs.map((m, i) =>
+        i === msgs.length - 1 ? { ...m, content: reply.slice(0, index) } : m
+      );
+      updateIdea(current.id, { messages: updatedMsgs });
 
-    if (nextStage && nextStage !== current.currentStage) {
-      setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
-    }
+      if (index <= reply.length) {
+        // Continue revealing one character at a time
+        setTimeout(() => reveal(index + 1, updatedMsgs), 20);
+      } else {
+        // Streaming complete: commit the final reply and takeaways
+        updateIdea(current.id, {
+          title: current.title || content.slice(0, 80),
+          messages: updatedMsgs,
+          takeaways: {
+            ...current.takeaways,
+            refinedIdea: refinedIdea || current.takeaways.refinedIdea,
+          },
+          ...(plan && { finalPlan: plan }),
+        });
+        setLoading(false);
+
+        // Move to the next stage if suggested
+        if (nextStage && nextStage !== current.currentStage) {
+          setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
+        }
+      }
+    };
+
+    reveal(1, baseMessages);
   };
 
+  // Advance to the next stage (validation → branding → mvp, etc.)
   const handleAdvanceStage = async (id: any, forcedStage?: StageType) => {
     setLoading(true);
-    const stageOrder = ["ideation", "validation", "branding", "mvp", "generatePlan"];
+    const stageOrder: StageType[] = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
-    const currentIndex = stageOrder.indexOf(idea.currentStage || "ideation");
+    const currentIndex = stageOrder.indexOf(idea.currentStage || ("ideation" as StageType));
     const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
     updateIdea(id, { currentStage: nextStage });
 
@@ -163,6 +175,7 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
+  // Kick off the build and deploy the generated MVP
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -199,16 +212,14 @@ export default function ChatAssistant() {
           <div key={idea.id} className="mb-6">
             <ChatPanel
               messages={idea.messages}
-              onSend={(content) => {
+              onSend={(msg) => {
                 setActiveIdeaId(idea.id);
-                handleSend(content);
+                handleSend(msg);
               }}
               loading={loading && idea.id === activeIdeaId}
               idea={idea}
               isActive={idea.id === activeIdeaId}
-              onClick={() => {
-                setActiveIdeaId(idea.id);
-              }}
+              onClick={() => setActiveIdeaId(idea.id)}
               disabled={idea.locked}
             />
           </div>
@@ -246,7 +257,7 @@ export default function ChatAssistant() {
                 onRestart={() => setActiveIdeaId(activeIdea.id)}
               />
             )}
-            {/* Once we reach the MVP stage, show the deploy preview without requiring finalPlan */}
+            {/* Show the deploy panel as soon as we're in the mvp stage */}
             {activeIdea.currentStage === "mvp" && (
               <MVPPreview
                 ideaName={activeIdea.title || "Your Idea"}
