@@ -15,7 +15,7 @@ import {
   decomposePlanToComponents,
   generateComponentWithRetry,
   generateFrontendFiles,
-  generateComponentSubFiles,
+  // generateComponentSubFiles, // removed to reduce subrequests
   generateRouterFile,
 } from '../utils/mvpUtils.js';
 
@@ -29,17 +29,18 @@ import {
  * removing leading slashes and replacing additional slashes with
  * hyphens.  All handlers are placed under `functions/api`.
  *
- * @param {Object} plan – the parsed MVP plan containing a `backendEndpoints` array
- * @returns {Object} – map of filenames to file contents
+ * @param {Object} plan â the parsed MVP plan containing a `backendEndpoints` array
+ * @returns {Object} â map of filenames to file contents
  */
 function generateBackendStubs(plan) {
   const files = {};
   const endpoints = Array.isArray(plan.backendEndpoints) ? plan.backendEndpoints : [];
   for (const ep of endpoints) {
     if (!ep?.path) continue;
-    // Derive a safe filename from the path: remove leading slashes and replace
-    // remaining slashes with hyphens.  E.g. `/api/user/login` → `api-user-login`.
-    const safeName = ep.path.replace(/^\/+/,'').replace(/\//g,'-').replace(/[^A-Za-z0-9_-]/g,'');
+    const safeName = ep.path
+      .replace(/^\/+/, '')
+      .replace(/\//g, '-')
+      .replace(/[^A-Za-z0-9_-]/g, '');
     const handlerName = `${safeName}Handler`;
     const description = ep.description || 'Not implemented';
     const code = `export async function ${handlerName}(req: Request): Promise<Response> {\n` +
@@ -61,12 +62,13 @@ export async function mvpHandler(request, env) {
   const planPrompt = [
     {
       role: 'system',
-      content: `You are a startup cofounder assistant AI. From the following chat history, extract:\n\n` +
+      content:
+        `You are a startup cofounder assistant AI. From the following chat history, extract:\n\n` +
         `1. A complete and structured MVP plan\n` +
         `2. A list of backend API endpoints required to implement the MVP\n\n` +
         `Guidelines:\n` +
         `- Be concise and specific\n` +
-        `- Avoid vague names like "MyApp" or "CoolTool" — infer a meaningful product name if not given\n` +
+        `- Avoid vague names like "MyApp" or "CoolTool" â infer a meaningful product name if not given\n` +
         `- Infer technology stack (e.g., React, TypeScript, Cloudflare Workers) if not stated\n` +
         `- backendEndpoints should cover all dynamic functionality the MVP requires\n\n` +
         `Output valid JSON ONLY in this exact structure:\n\n` +
@@ -98,26 +100,22 @@ export async function mvpHandler(request, env) {
   ];
   const planRes = await openaiChat(env.OPENAI_API_KEY, planPrompt);
   let planText = planRes.choices?.[0]?.message?.content?.trim() || '';
-  planText = planText.replace(/^```json/,'').replace(/```$/,'');
+  planText = planText.replace(/^```json/, '').replace(/```$/, '');
   let plan;
   try {
     plan = JSON.parse(planText);
   } catch (err) {
-    console.error('❌ Could not parse MVP from planText:', planText);
+    console.error('â Could not parse MVP from planText:', planText);
     return jsonResponse({ error: 'Failed to parse plan from thread', raw: planText }, 500);
   }
-  // Sanity check the plan
   if (!plan?.mvp?.name || !plan?.mvp?.description || !plan?.mvp?.technology || !Array.isArray(plan.mvp.features) || plan.mvp.features.length === 0) {
-    console.error('❌ Invalid MVP plan structure:', plan);
+    console.error('â Invalid MVP plan structure:', plan);
     return jsonResponse({ error: 'MVP plan missing required fields', plan }, 500);
   }
-  // Step 2: decompose plan into components.  Backend components will be
-  // generated individually; frontend generation happens separately.
+  // Step 2: decompose the plan into components
   const components = await decomposePlanToComponents(plan, env);
   const allComponentFiles = {};
-  // Generate backend component files using the helper; frontend components
-  // are not individually generated as the full frontend is scaffolded
-  // later by generateFrontendFiles.
+  // Step 3: generate backend component files using the helper
   for (const component of components) {
     if (component.type === 'backend') {
       const result = await generateComponentWithRetry(component, plan, env);
@@ -126,30 +124,20 @@ export async function mvpHandler(request, env) {
           allComponentFiles[filename] = content;
         }
       }
-    }
-    // For backend components that require sub‑files, generate them via
-    // generateComponentSubFiles (optional).  This ensures that any
-    // additional helper files are included.
-    if (component.type === 'backend') {
-      const subFiles = await generateComponentSubFiles(component, plan, env);
-      for (const [filename, content] of Object.entries(subFiles)) {
-        allComponentFiles[filename] = content;
-      }
+      // Skipping generateComponentSubFiles to reduce subrequests per request
     }
   }
-  // Step 3: generate router index.ts for the backend components
+  // Step 4: generate router index.ts for the backend components
   const { indexFile } = generateRouterFile(allComponentFiles);
   allComponentFiles['functions/api/index.ts'] = indexFile;
-  // Step 4: generate frontend files using branding and logo
+  // Step 5: generate frontend files
   const frontendFiles = await generateFrontendFiles(plan, branding, logoUrl, env);
-  // Step 5: generate backend stubs for plan.backendEndpoints
+  // Step 6: generate backend stubs for endpoints
   const backendStubFiles = generateBackendStubs(plan);
-  // Assemble all files into a single object
   const siteFiles = { ...frontendFiles, ...backendStubFiles, ...allComponentFiles };
-  // Step 6: create a new GitHub repository for this MVP
+  // Step 7: create a new GitHub repository
   const repoName = `${ideaId}-app`;
   const token = env.GITHUB_PAT;
-  // Create repository
   await fetch('https://api.github.com/user/repos', {
     method: 'POST',
     headers: {
@@ -158,7 +146,7 @@ export async function mvpHandler(request, env) {
     },
     body: JSON.stringify({ name: repoName, private: false }),
   });
-  // Step 7: push files to the new repository
+  // Step 8: push files to the repository
   for (const [path, content] of Object.entries(siteFiles)) {
     const encoded = btoa(unescape(encodeURIComponent(content)));
     await fetch(`https://api.github.com/repos/${env.GITHUB_USERNAME}/${repoName}/contents/${path}`, {
@@ -170,7 +158,7 @@ export async function mvpHandler(request, env) {
       body: JSON.stringify({ message: `Add ${path}`, content: encoded, branch: 'main' }),
     });
   }
-  // Step 8: create a Cloudflare Pages project backing the repository
+  // Step 9: create the Cloudflare Pages project
   const projectName = `app-${ideaId}`;
   await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects`, {
     method: 'POST',
@@ -192,7 +180,7 @@ export async function mvpHandler(request, env) {
       },
     }),
   });
-  // Step 9: trigger a deployment of the pages project
+  // Step 10: trigger deployment
   const formData = new FormData();
   formData.append('branch', 'main');
   await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects/${projectName}/deployments`, {
@@ -200,7 +188,6 @@ export async function mvpHandler(request, env) {
     headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
     body: formData,
   });
-  // Return the repository and pages URLs
   return jsonResponse({
     ideaId,
     repoUrl: `https://github.com/${env.GITHUB_USERNAME}/${repoName}`,
