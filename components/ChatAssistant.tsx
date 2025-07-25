@@ -217,7 +217,14 @@ export default function ChatAssistant() {
               />
             )}
             {activeIdea.takeaways?.branding && (
-              <BrandingCard branding={activeIdea.takeaways.branding} />
+              <BrandingCard
+  name={activeIdea.takeaways.branding.name}
+  tagline={activeIdea.takeaways.branding.tagline}
+  colors={activeIdea.takeaways.branding.colors}
+  logoDesc={activeIdea.takeaways.branding.logoDesc}
+  logoUrl={activeIdea.takeaways.branding.logoUrl}
+/>
+
             )}
             {activeIdea.finalPlan && (
               <MVPPreview
