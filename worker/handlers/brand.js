@@ -38,7 +38,7 @@ export async function brandHandler(request, env) {
           Authorization: `Bearer ${env.OPENAI_API_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: 'gpt-image-1', prompt: parsed.logoDesc, n: 1, size: '1024x1024' }),
+        body: JSON.stringify({ model: 'dall-e-3', prompt: parsed.logoDesc, n: 1, size: '1024x1024' }),
       });
       const imgJson = await imgRes.json();
       if (imgJson?.data?.[0]?.url) {
