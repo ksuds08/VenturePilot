@@ -1,4 +1,4 @@
-// ChatAssistant.tsx (Updated to match typed ChatPanel and RefinedIdeaCard)
+// ChatAssistant.tsx (Finalized with typed prop fixes for ChatPanel, RefinedIdeaCard, and ValidationSummary)
 
 import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
@@ -207,7 +207,14 @@ export default function ChatAssistant() {
               />
             )}
             {activeIdea.takeaways?.validationSummary && (
-              <ValidationSummary summary={activeIdea.takeaways.validationSummary} />
+              <ValidationSummary
+                summary={activeIdea.takeaways.validationSummary}
+                onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
+                onRestart={() => {
+                  setShowPanel(true);
+                  setActiveIdeaId(activeIdea.id);
+                }}
+              />
             )}
             {activeIdea.takeaways?.branding && (
               <BrandingCard branding={activeIdea.takeaways.branding} />
