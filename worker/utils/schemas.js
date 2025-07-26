@@ -61,17 +61,26 @@ export const planSchema = {
 };
 
 export const componentListSchema = {
-  type: 'array',
-  items: {
-    type: 'object',
-    properties: {
-      name: { type: 'string' },
-      type: { type: 'string', enum: ['frontend', 'backend'] },
-      description: { type: 'string' },
-      location: { type: 'string' },
+  // Wrap the array in an object with a `components` property. OpenAI's
+  // function‑calling API does not allow a top‑level array schema, so
+  // putting the array under a named property works around the issue.
+  type: 'object',
+  properties: {
+    components: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          type: { type: 'string', enum: ['frontend', 'backend'] },
+          description: { type: 'string' },
+          location: { type: 'string' },
+        },
+        required: ['name', 'type', 'description', 'location'],
+      },
     },
-    required: ['name', 'type', 'description', 'location'],
   },
+  required: ['components'],
 };
 
 export const fileMapSchema = {
