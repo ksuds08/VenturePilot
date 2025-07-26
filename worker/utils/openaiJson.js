@@ -40,25 +40,49 @@ export async function openaiChatJson(apiKey, messages, options = {}) {
     try {
       return JSON.parse(jsonText);
     } catch (err) {
-      // Attempt a naive fix: convert single quotes around keys and simple string values to double quotes
-      try {
-        const fixed = jsonText
-          // Replace 'key': with "key":
-          .replace(/'([^']+)'(?=\s*:)/g, '"$1"')
-          // Replace : 'value' with : "value"
-          .replace(/:\s*'([^']+)'/g, ': "$1"');
-        return JSON.parse(fixed);
-      } catch (_ignored) {
-        attempt++;
-        if (attempt >= 2) {
-          throw new Error('Failed to parse JSON response from OpenAI');
+      /**
+       * If the first parse fails, attempt a series of increasingly permissive
+       * repairs. Common issues include single‑quoted keys/values, trailing
+       * commas, and unquoted keys. We'll attempt to fix each in turn and
+       * parse again. If all repairs fail, fall back to evaluating the
+       * response as a JavaScript object.  Only after all attempts fail
+       * will we throw an error.
+       */
+      const repairs = [];
+      // 1. Fix single quotes around keys and values
+      repairs.push((str) => str
+        .replace(/'([^']+)'(?=\s*:)/g, '"$1"')
+        .replace(/:\s*'([^']+)'/g, ': "$1"'));
+      // 2. Remove trailing commas before closing braces/brackets
+      repairs.push((str) => str.replace(/,\s*([}\]])/g, '$1'));
+      // 3. Quote unquoted keys (e.g. { foo: 1 } -> { "foo": 1 })
+      repairs.push((str) => str.replace(/([\{,]\s*)([A-Za-z0-9_]+)\s*:/g, '$1"$2":'));
+      let lastError = err;
+      for (const repair of repairs) {
+        try {
+          const repaired = repair(jsonText);
+          return JSON.parse(repaired);
+        } catch (e) {
+          lastError = e;
         }
-        // Prepend a reminder to return valid JSON only
-        msgs = [
-          { role: 'system', content: 'You must return only valid JSON. Do not include markdown or commentary.' },
-          ...messages,
-        ];
       }
+      // 4. As a last resort, evaluate as JavaScript object
+      try {
+        // eslint-disable-next-line no-new-func
+        const obj = Function('"use strict";return (' + jsonText + ')')();
+        return obj;
+      } catch (e) {
+        lastError = e;
+      }
+      // If we've exhausted all repair attempts, retry the API call once with a stricter system message
+      attempt++;
+      if (attempt >= 2) {
+        throw new Error('Failed to parse JSON response from OpenAI');
+      }
+      msgs = [
+        { role: 'system', content: 'You must return only valid JSON. Do not include markdown or commentary.' },
+        ...messages,
+      ];
     }
   }
 }
