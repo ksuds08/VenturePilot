@@ -15,6 +15,7 @@ import {
   generateComponentSubFiles,
   decomposePlanToComponents,
   generateRouterFile,
+  generateBackendComponentFiles,
 } from '../utils/mvpUtils.js';
 
 /**
@@ -117,14 +118,13 @@ Format:
     // Decompose plan into components
     const components = await decomposePlanToComponents(plan, env);
     const allComponentFiles = {};
-    // Generate backend components
+    // Generate backend components using single-call generator to reduce subrequests
     for (const component of components) {
       if (component.type === 'backend') {
-        const result = await generateComponentWithRetry(component, plan, env);
-        if (result?.files) Object.assign(allComponentFiles, result.files);
-        // For multiâfile components, generate additional subâfiles
-        const subFiles = await generateComponentSubFiles(component, plan, env);
-        Object.assign(allComponentFiles, subFiles);
+        const files = await generateBackendComponentFiles(component, plan, env);
+        if (files) {
+          Object.assign(allComponentFiles, files);
+        }
       }
     }
     // Generate router file
