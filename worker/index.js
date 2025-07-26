@@ -11,6 +11,7 @@ import { validateHandler }  from './handlers/validate.js';
 import { brandHandler }     from './handlers/brand.js';
 import { assistantHandler } from './handlers/assistant.js';
 import { mvpHandler }       from './handlers/mvp.js';
+import { generateHandler }  from './handlers/generate.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -19,7 +20,7 @@ export default {
       return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } });
     }
     const url  = new URL(request.url);
-    const path = url.pathname.replace(/^\/+/, '');
+    const path = url.pathname.replace(/^\/+/,'');
     switch (path) {
       case '':
         return new Response('VenturePilot API is running', { headers: { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' } });
@@ -33,6 +34,9 @@ export default {
         return assistantHandler(request, env);
       case 'mvp':
         return mvpHandler(request, env);
+      case 'generate':
+        // Internal route used to offload long‑running generation tasks
+        return generateHandler(request, env);
       default:
         return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
     }
