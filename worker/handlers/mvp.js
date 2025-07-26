@@ -4,16 +4,60 @@ import {
   decomposePlanToComponents,
   generateComponentWithRetry,
   generateRouterFile,
-  generateFrontendFiles,
-  generateBackendStubs
+  generateFrontendFiles
 } from '../utils/mvpUtils.js';
+
+/**
+ * Generate basic stub handlers for any backend endpoints defined in the plan.
+ * Each stub returns a simple JSON response indicating the endpoint is not yet implemented.
+ *
+ * @param {Object} plan – the parsed MVP plan with an optional backendEndpoints array
+ * @returns {Object} – map of file paths to TypeScript code strings
+ */
+function generateBackendStubs(plan) {
+  const stubs = {};
+  const endpoints = Array.isArray(plan?.backendEndpoints) ? plan.backendEndpoints : [];
+  for (const ep of endpoints) {
+    // Create a safe filename from the path (e.g. "/users" -> "users")
+    const name = (ep.path || '/').replace(/^\//, '').replace(/[^A-Za-z0-9]/g, '') || 'index';
+    const fileName = `functions/api/${name}.ts`;
+    const handlerName = `${name}Handler`;
+    const description = ep.description || 'Not implemented';
+    stubs[fileName] = `export async function ${handlerName}(req: Request): Promise<Response> {
+  return new Response(JSON.stringify({ message: "${description}" }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}`;
+  }
+  return stubs;
+}
 
 /**
  * Handler for the `/mvp` endpoint. This function orchestrates the
  * generation of an MVP site based on the chat history and branding
  * information provided by the frontend. It wraps all logic in a
- * top-level try/catch so that unexpected exceptions always surface
+ * top‑level try/catch so that unexpected exceptions always surface
  * useful error messages instead of resulting in opaque 500 errors.
+ *
+ * The handler performs the following steps:
+ * 1. Validate the request body contains `ideaId`, `branding` and `messages`.
+ * 2. Ask OpenAI to extract a structured MVP plan from the chat history.
+ *    We instruct the model to return JSON only (no code fences or commentary).
+ *    The response is cleaned of backticks and sliced from the first `{` to
+ *    the last `}`.  If parsing fails or required fields are missing, one
+ *    retry is attempted.  Additional logging is added to surface the plan
+ *    content when parsing fails or mandatory keys are missing.
+ * 3. Decompose the plan into backend components and generate code for each.
+ * 4. Generate frontend files using the supplied branding and plan.
+ * 5. Combine the generated backend and frontend files and upload them to
+ *    a new GitHub repository.  Each call to the GitHub API is checked
+ *    for success.
+ * 6. Provision a Cloudflare Pages project and trigger a deployment.
+ * 7. Return the ideaId, repository URL and Pages URL upon success.
+ *
+ * @param {Request} request The incoming HTTP request.
+ * @param {Record<string, any>} env The Worker environment bindings.
  */
 export async function mvpHandler(request, env) {
   try {
@@ -25,7 +69,9 @@ export async function mvpHandler(request, env) {
       return jsonResponse({ error: 'Missing ideaId, branding, or messages' }, 400);
     }
 
-    // Compose a plan extraction prompt.
+    // Compose a plan extraction prompt.  We instruct the model to
+    // return pure JSON and include all required fields.  If the model
+    // embeds code fences or commentary, we'll strip them out before parsing.
     const planPrompt = [
       {
         role: 'system',
@@ -60,10 +106,14 @@ Format:
       },
     ];
 
-    // Helper to clean and parse the plan response.
+    // Helper to clean and parse the plan response.  It strips backticks,
+    // extracts the JSON portion, and attempts to parse.  If parsing
+    // fails, the error will be caught in the calling context.
     const parsePlan = (raw) => {
       let text = raw.trim();
+      // Remove any code fences (```json ...```) that might wrap the JSON
       text = text.replace(/```.*?\n|```/gs, '');
+      // Extract from first '{' to last '}'
       const a = text.indexOf('{');
       const b = text.lastIndexOf('}');
       if (a !== -1 && b !== -1 && b > a) {
@@ -78,12 +128,14 @@ Format:
     while (attempt < 2) {
       const planRes = await openaiChat(env.OPENAI_API_KEY, planPrompt);
       const planTextRaw = planRes.choices?.[0]?.message?.content?.trim();
+      // Ensure we actually received some content back
       if (!planTextRaw) {
         console.error('❌ No plan content returned by OpenAI', planRes);
         return jsonResponse({ error: 'OpenAI did not return a plan.' }, 500);
       }
       try {
         plan = parsePlan(planTextRaw);
+        // Validate required fields
         if (
           plan?.mvp?.name &&
           plan?.mvp?.description &&
@@ -93,6 +145,7 @@ Format:
         ) {
           break;
         }
+        // If mandatory fields are missing, log and throw to trigger retry/return
         console.error('❌ Parsed plan is missing required fields', plan);
         throw new Error('Incomplete plan');
       } catch (err) {
@@ -101,28 +154,34 @@ Format:
           console.error('❌ Failed to parse plan JSON', planTextRaw);
           return jsonResponse(
             { error: 'Failed to parse plan from thread', raw: planTextRaw },
-            500
+            500,
           );
         }
+        // retry by continuing the loop
       }
     }
 
+    // At this point, we should have a valid plan. If not, return error.
     if (!plan?.mvp) {
       console.error('❌ MVP plan missing required fields after parsing', plan);
       return jsonResponse({ error: 'MVP plan missing required fields', plan }, 500);
     }
 
-    // Decompose plan into components and generate backend files
+    // Decompose plan into components
     const components = await decomposePlanToComponents(plan, env);
     const allComponentFiles = {};
+    // Generate backend component files (no subfiles to reduce subrequests)
     for (const component of components) {
       if (component.type === 'backend') {
         const result = await generateComponentWithRetry(component, plan, env);
         if (result?.files) {
-          Object.assign(allComponentFiles, result.files);
+          for (const [filename, content] of Object.entries(result.files)) {
+            allComponentFiles[filename] = content;
+          }
         }
       }
     }
+    // Add router file for backend
     const { indexFile } = generateRouterFile(allComponentFiles);
     allComponentFiles['functions/api/index.ts'] = indexFile;
 
@@ -134,14 +193,16 @@ Format:
       console.error('❌ Failed to generate frontend', err);
       return jsonResponse({ error: 'Failed to generate frontend', details: err.message }, 500);
     }
-
-    // Generate backend stubs and combine files
+    // Generate backend stubs
     const backendStubs = generateBackendStubs(plan);
+    // Combine all site files
     const siteFiles = { ...frontendFiles, ...backendStubs, ...allComponentFiles };
 
-    // Create and populate GitHub repo
+    // Prepare repository name
     const repoName = `${ideaId}-app`;
     const token = env.GITHUB_PAT;
+
+    // Create the repository
     const repoRes = await fetch('https://api.github.com/user/repos', {
       method: 'POST',
       headers: {
@@ -155,6 +216,8 @@ Format:
       console.error('❌ Failed to create repo', errorText);
       return jsonResponse({ error: 'Failed to create repo', details: errorText }, repoRes.status);
     }
+
+    // Upload each file
     for (const [path, content] of Object.entries(siteFiles)) {
       const encoded = btoa(unescape(encodeURIComponent(content)));
       const uploadRes = await fetch(
@@ -178,7 +241,7 @@ Format:
       }
     }
 
-    // Create Cloudflare Pages project and trigger deployment
+    // Create a Pages project
     const projectName = `app-${ideaId}`;
     const cfProjectRes = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects`,
@@ -211,6 +274,8 @@ Format:
         cfProjectRes.status,
       );
     }
+
+    // Trigger a deployment
     const formData = new FormData();
     formData.append('branch', 'main');
     const deployRes = await fetch(
@@ -230,12 +295,14 @@ Format:
       );
     }
 
+    // Return success
     return jsonResponse({
       ideaId,
       repoUrl: `https://github.com/${env.GITHUB_USERNAME}/${repoName}`,
       pagesUrl: `https://${projectName}.pages.dev`,
     });
   } catch (err) {
+    // Catch any unexpected errors that weren't handled above
     console.error('❌ Unhandled error in mvpHandler', err);
     return jsonResponse({ error: 'Unhandled error', details: err.message }, 500);
   }
