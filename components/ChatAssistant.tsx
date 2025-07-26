@@ -245,9 +245,14 @@ export default function ChatAssistant() {
         <div className="w-full space-y-4" ref={panelRef}>
           {/* Refined Idea */}
           {activeIdea.takeaways?.refinedIdea && (
-            <div className="rounded border border-gray-200 p-2">
-              <div className="font-medium mb-1">
-                Idea: {activeIdea.takeaways.refinedIdea.name}
+            <div
+              className={`rounded border border-gray-200 p-2 ${
+                activeIdea.currentStage === "ideation" ? "bg-blue-100" : "bg-blue-50"
+              }`}
+            >
+              <div className="font-medium mb-1 flex items-center justify-between">
+                <span>Idea</span>
+                {activeIdea.currentStage !== "ideation" && <span className="text-gray-400">▼</span>}
               </div>
               {activeIdea.currentStage === "ideation" && (
                 <RefinedIdeaCard
@@ -265,9 +270,16 @@ export default function ChatAssistant() {
 
           {/* Validation summary */}
           {activeIdea.takeaways?.validationSummary && (
-            <div className="rounded border border-gray-200 p-2">
-              <div className="font-medium mb-1">
-                Validation: {activeIdea.takeaways.validationSummary}
+            <div
+              className={`rounded border border-gray-200 p-2 ${
+                activeIdea.currentStage === "validation" ? "bg-green-100" : "bg-green-50"
+              }`}
+            >
+              <div className="font-medium mb-1 flex items-center justify-between">
+                <span>Validation</span>
+                {activeIdea.currentStage !== "validation" && (
+                  <span className="text-gray-400">▼</span>
+                )}
               </div>
               {activeIdea.currentStage === "validation" && (
                 <ValidationSummary
@@ -285,10 +297,16 @@ export default function ChatAssistant() {
 
           {/* Branding */}
           {activeIdea.takeaways?.branding && (
-            <div className="rounded border border-gray-200 p-2">
-              <div className="font-medium mb-1">
-                Branding: {activeIdea.takeaways.branding.name} —{" "}
-                {activeIdea.takeaways.branding.tagline}
+            <div
+              className={`rounded border border-gray-200 p-2 ${
+                activeIdea.currentStage === "branding" ? "bg-purple-100" : "bg-purple-50"
+              }`}
+            >
+              <div className="font-medium mb-1 flex items-center justify-between">
+                <span>Branding</span>
+                {activeIdea.currentStage !== "branding" && (
+                  <span className="text-gray-400">▼</span>
+                )}
               </div>
               {activeIdea.currentStage === "branding" && (
                 <BrandingCard
@@ -310,7 +328,7 @@ export default function ChatAssistant() {
 
           {/* MVP preview */}
           {activeIdea.currentStage === "mvp" && (
-            <div className="rounded border border-gray-200 p-2">
+            <div className="rounded border border-gray-200 p-2 bg-yellow-100">
               <div className="font-medium mb-1">MVP Preview</div>
               <MVPPreview
                 ideaName={activeIdea.title || "Your Idea"}
