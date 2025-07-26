@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+/ SPDX-License-Identifier: MIT
 //
 // Main handler for the `/mvp` endpoint.  This module orchestrates the
 // generation of MVP code by invoking the planning, decomposition and
@@ -70,48 +70,23 @@ Format:
         content: messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n'),
       },
     ];
-    // Helper to clean and parse the plan
-    const parsePlan = (raw) => {
-      let text = raw.trim().replace(/```.*?\n|```/gs, '');
-      const a = text.indexOf('{');
-      const b = text.lastIndexOf('}');
-      if (a !== -1 && b !== -1 && b > a) text = text.slice(a, b + 1);
-      return JSON.parse(text);
-    };
+    // Extract the plan using our JSON wrapper.  This helper ensures any
+    // malformed JSON returned by the model is repaired or parsed via a
+    // fallback.  If parsing fails, it will throw, which triggers the
+    // catch block.
     let plan;
-    let attempt = 0;
-    while (attempt < 2) {
-      const planRes = await openaiChat(env.OPENAI_API_KEY, planPrompt);
-      const planTextRaw = planRes.choices?.[0]?.message?.content?.trim();
-      if (!planTextRaw) {
-        console.error('â No plan content returned by OpenAI', planRes);
-        return jsonResponse({ error: 'OpenAI did not return a plan.' }, 500);
-      }
-      try {
-        plan = parsePlan(planTextRaw);
-        if (
-          plan?.mvp?.name &&
-          plan?.mvp?.description &&
-          plan?.mvp?.technology &&
-          Array.isArray(plan.mvp.features) &&
-          plan.mvp.features.length > 0
-        ) {
-          break;
-        }
-        console.error('â Parsed plan is missing required fields', plan);
-        throw new Error('Incomplete plan');
-      } catch (err) {
-        attempt++;
-        if (attempt >= 2) {
-          console.error('â Failed to parse plan JSON', planTextRaw);
-          return jsonResponse(
-            { error: 'Failed to parse plan from thread', raw: planTextRaw },
-            500,
-          );
-        }
-      }
+    try {
+      plan = await openaiChatJson(env.OPENAI_API_KEY, planPrompt);
+    } catch (e) {
+      console.error('â Failed to parse plan JSON', e.message);
+      return jsonResponse({ error: 'Failed to parse plan from thread', details: e.message }, 500);
     }
-    if (!plan?.mvp) {
+    if (!plan?.mvp ||
+        !plan.mvp.name ||
+        !plan.mvp.description ||
+        !plan.mvp.technology ||
+        !Array.isArray(plan.mvp.features) ||
+        plan.mvp.features.length === 0) {
       console.error('â MVP plan missing required fields after parsing', plan);
       return jsonResponse({ error: 'MVP plan missing required fields', plan }, 500);
     }
