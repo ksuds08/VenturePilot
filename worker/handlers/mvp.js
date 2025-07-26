@@ -1,397 +1,353 @@
-// SPDX-License-Identifier: MIT
-//
-// Helper utilities for MVP generation.  These routines encapsulate the core logic
-// for decomposing a product specification into granular components, generating
-// frontend and backend code via OpenAI, and assembling a router file for
-// Cloudflare Pages Functions.  Centralising this functionality in one module
-// makes the primary worker easier to maintain and allows us to update prompt
-// templates in a single place.
-
-import { openaiChat } from './openai.js';
+import { jsonResponse, safeJson } from '../utils/response.js';
+import { openaiChat } from '../utils/openai.js';
+import {
+  decomposePlanToComponents,
+  generateComponentWithRetry,
+  generateRouterFile,
+  generateFrontendFiles
+} from '../utils/mvpUtils.js';
 
 /**
- * Generate a single component implementation by calling OpenAI.
+ * Generate basic stub handlers for any backend endpoints defined in the plan.
+ * Each stub returns a simple JSON response indicating the endpoint is not yet implemented.
  *
- * Components may represent either frontend or backend pieces of the MVP.  We
- * construct the system prompt with detailed instructions about code quality,
- * error handling, accessibility and progressive elaboration.  To avoid issues
- * where template literals collapse together during bundling (e.g. concatenating
- * variable names), this function builds dynamic strings outside of a single
- * template literal.
- *
- * The helper will retry generation up to two times if an error occurs or if
- * the response does not include the expected file.  On ultimate failure it
- * returns null so callers can decide how to proceed.
- *
- * @param {Object} component â the component definition including name
- * @param {Object} plan â the full MVP plan
- * @param {Object} env â environment variables (contains OPENAI_API_KEY)
- * @returns {Promise<Object|null>} â map of file names to contents or null on failure
+ * @param {Object} plan – the parsed MVP plan with an optional backendEndpoints array
+ * @returns {Object} – map of file paths to TypeScript code strings
  */
-export async function generateComponentWithRetry(component, plan, env) {
-  // Precompute names to prevent unintended concatenation during bundling.
-  const handlerName = `${component.name}Handler`;
-  const filePath = `functions/api/${component.name}.ts`;
-
-  // Define the system prompt as an array of lines for clarity.  These lines are
-  // joined with newlines before sending to OpenAI.  We include detailed
-  // instructions about quality standards and a progressive elaboration approach.
-  const systemLines = [
-    'You are a senior fullâstack engineer. Build only the code needed to implement the following component of a multiâfile web application.',
-    '',
-    // Styling and file expectations
-    '- Use Tailwind CSS for styling.',
-    '- If frontend: generate index.html, style.css, and script.js.',
-    '- If backend:',
-    `  - Create a file at: ${filePath}`,
-    `  - The file MUST export this named async function exactly:`,
-    `    export async function ${handlerName}(req: Request): Promise<Response>`,
-    '  - DO NOT export default.',
-    '  - DO NOT use external frameworks or libraries.',
-    '  - DO NOT import from "express", "@vercel/node", "some-http-library", or "your-framework".',
-    '  - Use only native Cloudflare Worker APIs (Request, Response).',
-    '',
-    // Quality guidelines
-    '- Write productionâquality, maintainable TypeScript code.',
-    '- Use clear, descriptive variable and function names.',
-    '- Validate inputs and handle errors gracefully, returning appropriate HTTP status codes.',
-    '- Structure logic to be modular and easy to extend.',
-    '- For frontend code: use semantic HTML5 tags, accessible markup (add ARIA attributes where applicable) and ensure responsive design.',
-    '- For backend code: properly parse the request body, validate expected fields, and never assume wellâformed input.',
-    '- Include inline comments only to clarify complex logic, not as extra commentary.',
-    '- Before writing code, think through the requirements and architecture step by step.  This is a progressive elaboration approach: reason internally about what is needed and then produce a polished implementation without exposing your reasoning.',
-    '',
-    // Response format requirements
-    'You MUST return ONLY valid JSON in this format:',
-    '{',
-    '  "files": {',
-    `    "${filePath}": "..."`,
-    '  }',
-    '}',
-    '',
-    // Strict rules
-    'Strict rules:',
-    '- DO NOT include markdown code fences like ``',
-    '- DO NOT include commentary, explanations, or extra keys',
-  ];
-
-  const userLines = [
-    `Project: ${plan.mvp.name}`,
-    `Component: ${component.name}`,
-    `Purpose: ${component.purpose}`,
-    `Data: ${component.data || 'N/A'}`,
-    `Technology: ${plan.mvp.technology}`,
-    `UI/UX Notes: ${plan.mvp.visualStyle}`,
-    '',
-    'Add this feature to the existing site.',
-  ];
-
-  const compPrompt = [
-    { role: 'system', content: systemLines.join('\n') },
-    { role: 'user', content: userLines.join('\n') },
-  ];
-
-  let attempt = 0;
-  while (attempt < 2) {
-    try {
-      const compRes = await openaiChat(env.OPENAI_API_KEY, compPrompt);
-      let raw = compRes.choices?.[0]?.message?.content?.trim() || '';
-      // Remove any accidental code fences or language annotations
-      raw = raw.replace(/^```(?:json|ts|js)?/, '').replace(/```$/, '').trim();
-      const parsed = JSON.parse(raw);
-      // Validate that the expected file is present in the response
-      if (!parsed?.files || !parsed.files[filePath]) {
-        throw new Error('Missing expected file in response');
-      }
-      return parsed;
-    } catch (err) {
-      attempt++;
-      console.error(`â Failed to generate component: ${component.name}, attempt ${attempt}`, err);
-      if (attempt >= 2) {
-        return null;
-      }
-    }
+function generateBackendStubs(plan) {
+  const stubs = {};
+  const endpoints = Array.isArray(plan?.backendEndpoints) ? plan.backendEndpoints : [];
+  for (const ep of endpoints) {
+    // Create a safe filename from the path (e.g. "/users" -> "users")
+    const name = (ep.path || '/').replace(/^\//, '').replace(/[^A-Za-z0-9]/g, '') || 'index';
+    const fileName = `functions/api/${name}.ts`;
+    const handlerName = `${name}Handler`;
+    const description = ep.description || 'Not implemented';
+    stubs[fileName] = `export async function ${handlerName}(req: Request): Promise<Response> {
+  return new Response(JSON.stringify({ message: "${description}" }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}`;
   }
+  return stubs;
 }
 
 /**
- * Generate frontend files (HTML/CSS/JS) for the given MVP plan and branding.
+ * Handler for the `/mvp` endpoint. This function orchestrates the
+ * generation of an MVP site based on the chat history and branding
+ * information provided by the frontend. It wraps all logic in a
+ * top‑level try/catch so that unexpected exceptions always surface
+ * useful error messages instead of resulting in opaque 500 errors.
  *
- * The returned object maps file paths to contents.  This helper enforces
- * Tailwind usage, prioritises accessibility and responsiveness, and ensures
- * that index.html is present.  The prompt emphasises production quality and
- * instructs the model to think through the page structure before coding.
+ * The handler performs the following steps:
+ * 1. Validate the request body contains `ideaId`, `branding` and `messages`.
+ * 2. Ask OpenAI to extract a structured MVP plan from the chat history.
+ *    We instruct the model to return JSON only (no code fences or commentary).
+ *    The response is cleaned of backticks and sliced from the first `{` to
+ *    the last `}`.  If parsing fails or required fields are missing, one
+ *    retry is attempted.  Additional logging is added to surface the plan
+ *    content when parsing fails or mandatory keys are missing.
+ * 3. Decompose the plan into backend components and generate code for each.
+ * 4. Generate frontend files using the supplied branding and plan.
+ * 5. Combine the generated backend and frontend files and upload them to
+ *    a new GitHub repository.  Each call to the GitHub API is checked
+ *    for success.
+ * 6. Provision a Cloudflare Pages project and trigger a deployment.
+ * 7. Return the ideaId, repository URL and Pages URL upon success.
  *
- * @param {Object} plan â the MVP plan returned from the planning step
- * @param {Object} branding â branding kit with name, tagline and colors
- * @param {string|null} logoUrl â optional logo URL to embed
- * @param {Object} env â environment variables
- * @returns {Promise<Object>} â map of file names to contents
+ * @param {Request} request The incoming HTTP request.
+ * @param {Record<string, any>} env The Worker environment bindings.
  */
-export async function generateFrontendFiles(plan, branding, logoUrl, env) {
-  const prompt = [
-    {
-      role: 'system',
-      content: `
-You are a fullâstack developer tasked with generating the frontend for a new MVP.
+export async function mvpHandler(request, env) {
+  try {
+    // Parse and validate the request body
+    const body = await safeJson(request);
+    const { ideaId, branding, messages } = body;
+    const logoUrl = branding?.logoUrl || null;
+    if (!ideaId || !branding || !messages) {
+      return jsonResponse({ error: 'Missing ideaId, branding, or messages' }, 400);
+    }
 
-Use Tailwind CSS. Create clean, professional HTML/CSS and optionally JavaScript. Prioritise usability, accessibility and mobile responsiveness.
-
-Write productionâready, maintainable code: use semantic HTML5 tags, a clear component structure, descriptive class and id names, and modular scripts. Avoid inline styles unless absolutely necessary. Provide interactive UI elements (forms, buttons, modals, chat bubbles) that match the described features.
-
-Before writing code, think through the user journey and page layout step by step. Apply a progressive elaboration approach: plan the structure internally and then output only the final implementation without your reasoning.
-
-If a backend API is needed (e.g., to fetch or submit data), wire the frontend to call the appropriate endpoint under /functions/api/.
-
-Return only valid JSON in this structure:
+    // Compose a plan extraction prompt.  We instruct the model to
+    // return pure JSON and include all required fields.  If the model
+    // embeds code fences or commentary, we'll strip them out before parsing.
+    const planPrompt = [
+      {
+        role: 'system',
+        content: `You are a startup cofounder assistant AI. From the following chat history, extract a complete MVP plan.
+Return JSON only—no markdown, no code fences, no commentary.
+The "features" array must contain at least one object with "feature" and "description" keys.
+If a field isn't obvious, infer a reasonable value.
+Format:
 {
-  "files": {
-    "index.html": "...",
-    "style.css": "...",            // optional, Tailwind preferred
-    "script.js": "...",            // optional
-    ...
-  }
+  "mvp": {
+    "name": string,
+    "description": string,
+    "features": [{ "feature": string, "description": string }],
+    "technology": string,
+    "targetAudience": string,
+    "businessModel": string,
+    "launchPlan": string,
+    "visualStyle": string,
+    "userFlow": string,
+    "dataFlow": string,
+    "keyComponents": [string],
+    "exampleInteractions": [string]
+  },
+  "backendEndpoints": [
+    { "path": string, "method": string, "description": string }
+  ]
 }`.trim(),
-    },
-    {
-      role: 'user',
-      content: `
-MVP:
-${JSON.stringify(plan.mvp, null, 2)}
-
-Branding:
-- Name: ${branding.name}
-- Tagline: ${branding.tagline}
-- Colors: ${branding.colors?.join(', ')}
-- Logo: ${branding.logoDesc}
-- Logo URL: ${logoUrl || 'none'}
-
-When relevant, include frontend wiring to call a backend API at /functions/api/handler.ts.
-      `.trim(),
-    },
-  ];
-  const res = await openaiChat(env.OPENAI_API_KEY, prompt);
-  let raw = res.choices?.[0]?.message?.content?.trim() || '';
-  raw = raw.replace(/^```(?:json)?/, '').replace(/```$/, '');
-  let files;
-  try {
-    files = JSON.parse(raw)?.files;
-  } catch (err) {
-    console.error('â Frontend validation failed:', raw);
-    throw new Error('Frontend validation failed: bad JSON');
-  }
-  if (!files || !files['index.html']) {
-    throw new Error('Frontend output missing index.html');
-  }
-  return files;
-}
-
-/**
- * Determine which implementation files are required for a given component and generate each one by prompting OpenAI.
- *
- * This helper first asks the model for a list of files (with filename and purpose), then calls OpenAI again
- * to generate the code for each file.  Files are returned in a single object mapping filenames to contents.
- *
- * Like generateComponentWithRetry, this function avoids nested template literals when constructing prompts to prevent
- * accidental concatenation of identifiers.  We also include quality guidelines and a progressive elaboration approach.
- *
- * @param {Object} component â the component definition
- * @param {Object} plan â the MVP plan
- * @param {Object} env â environment variables
- * @returns {Promise<Object>} â map of filenames to contents
- */
-export async function generateComponentSubFiles(component, plan, env) {
-  // Prompt for the list of needed files
-  const subPrompt = [
-    {
-      role: 'system',
-      content: [
-        'You are a senior fullâstack architect.',
-        '',
-        'For the following component of a multiâfile web app, return a list of implementation files that should be created to properly build the feature.',
-        '',
-        'Each file should include:',
-        '- filename (relative path)',
-        '- purpose (short sentence about its role)',
-        '',
-        'DO NOT include content. Return valid JSON like:',
-        '[',
-        '  { "filename": "functions/api/MyComponent.ts", "purpose": "Main API handler" },',
-        '  { "filename": "functions/api/utils/helpers.ts", "purpose": "Helper functions" }',
-        ']',
-      ].join('\n'),
-    },
-    {
-      role: 'user',
-      content: [
-        `Project: ${plan.mvp.name}`,
-        `Component: ${component.name}`,
-        `Type: ${component.type}`,
-        `Purpose: ${component.purpose}`,
-        `Technology: ${plan.mvp.technology}`,
-        '',
-        'Describe the files needed to build this component.',
-      ].join('\n'),
-    },
-  ];
-  const listRes = await openaiChat(env.OPENAI_API_KEY, subPrompt);
-  let listRaw = listRes.choices?.[0]?.message?.content?.trim() || '';
-  listRaw = listRaw.replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
-  let filesNeeded;
-  try {
-    filesNeeded = JSON.parse(listRaw);
-    if (!Array.isArray(filesNeeded)) throw new Error('Invalid file list format');
-  } catch (err) {
-    console.error(`â Failed to parse subâfile list for component: ${component.name}`, listRaw);
-    return {};
-  }
-  const outputFiles = {};
-  // Generate each file sequentially
-  for (const file of filesNeeded) {
-    const fileName = file.filename;
-    // Build a system prompt for code generation.  Include quality guidelines and progressive elaboration.
-    const sysLines = [
-      'You are a senior fullâstack engineer. Generate only the code for the following file.',
-      '',
-      'Requirements:',
-      '- Use Tailwind for styling (frontend)',
-      '- Use native Cloudflare Worker APIs (backend)',
-      '- DO NOT use express, @vercel/node, etc.',
-      // Additional quality guidelines
-      '- Write productionâquality, maintainable TypeScript code.',
-      '- Use clear, descriptive variable and function names.',
-      '- Validate inputs and handle errors gracefully.',
-      '- Structure logic to be modular and easy to extend.',
-      '- For frontend: use semantic HTML and accessible markup.',
-      '- Before coding, think through the implementation step by step (progressive elaboration) but output only the final code.',
-      '',
-      '- DO NOT include markdown fences or explanations.',
-      `- Return only valid JSON: { "files": { "${fileName}": "..." } }`,
+      },
+      {
+        role: 'user',
+        content: messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n'),
+      },
     ];
-    const userLines = [
-      `Project: ${plan.mvp.name}`,
-      `Component: ${component.name}`,
-      `File: ${fileName}`,
-      `Purpose: ${file.purpose}`,
-      `Technology: ${plan.mvp.technology}`,
-      `Context: ${JSON.stringify(plan.mvp, null, 2)}`,
-      '',
-      'Add this file to the implementation.',
-    ];
-    const codePrompt = [
-      { role: 'system', content: sysLines.join('\n') },
-      { role: 'user', content: userLines.join('\n') },
-    ];
-    const fileRes = await openaiChat(env.OPENAI_API_KEY, codePrompt);
-    let fileRaw = fileRes.choices?.[0]?.message?.content?.trim() || '';
-    fileRaw = fileRaw.replace(/^```(?:json|ts|js)?/, '').replace(/```$/, '').trim();
-    try {
-      const parsed = JSON.parse(fileRaw);
-      for (const [filename, code] of Object.entries(parsed.files || {})) {
-        outputFiles[filename] = code;
+
+    // Helper to clean and parse the plan response.  It strips backticks,
+    // extracts the JSON portion, and attempts to parse.  If parsing
+    // fails, the error will be caught in the calling context.
+    const parsePlan = (raw) => {
+      let text = raw.trim();
+      // Remove any code fences (```json ...```) that might wrap the JSON
+      text = text.replace(/```.*?\n|```/gs, '');
+      // Extract from first '{' to last '}'
+      const a = text.indexOf('{');
+      const b = text.lastIndexOf('}');
+      if (a !== -1 && b !== -1 && b > a) {
+        text = text.slice(a, b + 1);
       }
-    } catch (err) {
-      console.error(`â Failed to generate subfile: ${fileName}`, fileRaw);
+      return JSON.parse(text);
+    };
+
+    // Attempt to fetch and parse the plan, with one retry on failure
+    let plan;
+    let attempt = 0;
+    while (attempt < 2) {
+      const planRes = await openaiChat(env.OPENAI_API_KEY, planPrompt);
+      const planTextRaw = planRes.choices?.[0]?.message?.content?.trim();
+      // Ensure we actually received some content back
+      if (!planTextRaw) {
+        console.error('❌ No plan content returned by OpenAI', planRes);
+        return jsonResponse({ error: 'OpenAI did not return a plan.' }, 500);
+      }
+      try {
+        plan = parsePlan(planTextRaw);
+        // Validate required fields
+        if (
+          plan?.mvp?.name &&
+          plan?.mvp?.description &&
+          plan?.mvp?.technology &&
+          Array.isArray(plan.mvp.features) &&
+          plan.mvp.features.length > 0
+        ) {
+          break;
+        }
+        // If mandatory fields are missing, log and throw to trigger retry/return
+        console.error('❌ Parsed plan is missing required fields', plan);
+        throw new Error('Incomplete plan');
+      } catch (err) {
+        attempt++;
+        if (attempt >= 2) {
+          console.error('❌ Failed to parse plan JSON', planTextRaw);
+          return jsonResponse(
+            { error: 'Failed to parse plan from thread', raw: planTextRaw },
+            500,
+          );
+        }
+        // retry by continuing the loop
+      }
     }
-  }
-  return outputFiles;
-}
 
-/**
- * Decompose a highâlevel MVP specification into a list of functional components.
- *
- * This helper prompts the model to perform the decomposition and filters out nonâfunctional
- * items such as logos or themes.  It emphasises identifying granular features and splitting
- * them into distinct frontend and backend components where appropriate.
- *
- * @param {Object} plan â the parsed MVP plan
- * @param {Object} env â environment variables
- * @returns {Promise<Array<Object>>} â list of component definitions
- */
-export async function decomposePlanToComponents(plan, env) {
-  const prompt = [
-    {
-      role: 'system',
-      content: `
-You are an expert software architect.
+    // At this point, we should have a valid plan. If not, return error.
+    if (!plan?.mvp) {
+      console.error('❌ MVP plan missing required fields after parsing', plan);
+      return jsonResponse({ error: 'MVP plan missing required fields', plan }, 500);
+    }
 
-Given the following MVP specification, decompose it into the *minimum viable set* of frontend and backend components required to implement the product.
-
-Guidelines:
-- Identify each meaningful feature described in the plan and break it down into discrete components. If a feature requires both frontend and backend logic, create separate components for each aspect (e.g. ResumeGeneratorFrontend and ResumeGeneratorBackend).
-- Do NOT include abstract UI pieces like "Header", "ColorTheme", or "Logo".
-- Do NOT include static assets like "logo.svg".
-- DO include only meaningful, functional components (e.g., ResumeGenerator, TipsAPI).
-- Use PascalCase for all component names.
-- Think through the architecture and interactions step by step (progressive elaboration) before listing components, but output only the final JSON.
-
-Each component must include:
-- name: PascalCase identifier (no spaces or symbols)
-- type: "frontend" or "backend"
-- description: Clear purpose of this component
-- location: Where the code should go (e.g., "index.html" or "functions/api/MyComponent.ts")
-
-Return a JSON array. No markdown, no extra keys. Valid JSON only.
-        `.trim(),
-    },
-    {
-      role: 'user',
-      content: `MVP Spec:\n\n${JSON.stringify(plan.mvp, null, 2)}`,
-    },
-  ];
-  const res = await openaiChat(env.OPENAI_API_KEY, prompt);
-  let raw = res.choices?.[0]?.message?.content?.trim() || '';
-  raw = raw.replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
-  try {
-    const components = JSON.parse(raw);
-    if (!Array.isArray(components)) throw new Error('Not a valid array');
-    // Filter out unwanted items
-    return components.filter(
-      (c) =>
-        c?.name &&
-        c?.type &&
-        ['frontend', 'backend'].includes(c.type) &&
-        c?.location &&
-        c?.description &&
-        !/logo|color|theme|header|footer/i.test(c.name)
-    );
-  } catch (err) {
-    console.error('â Failed to parse component decomposition:', raw);
-    return [];
-  }
-}
-
-/**
- * Generate a router index file for Pages Functions based on the discovered backend handlers.
- * Each handler must export an async function matching the naming convention `${name}Handler`.
- *
- * @param {Object} allComponentFiles â map of file names to file contents
- * @returns {Object} â object containing the index.ts text and handlerExports array
- */
-export function generateRouterFile(allComponentFiles) {
-  let indexTs = `// Auto-generated index.ts for Pages Functions routing\nimport type { Request } from 'itty-router';\n\n`;
-  const handlerExports = [];
-  for (const [filename, content] of Object.entries(allComponentFiles)) {
-    if (filename.startsWith('functions/api/') && filename !== 'functions/api/index.ts') {
-      const match = filename.match(/functions\/api\/(.+)\.ts$/);
-      if (match) {
-        const name = match[1];
-        const handlerName = `${name}Handler`;
-        if (content.includes(`export async function ${handlerName}`)) {
-          indexTs += `import { ${handlerName} } from './${name}';\n`;
-          handlerExports.push({ path: `/api/${name}`, handlerName, file: filename });
+    // Decompose plan into components
+    const components = await decomposePlanToComponents(plan, env);
+    const allComponentFiles = {};
+    // Generate backend component files (no subfiles to reduce subrequests)
+    for (const component of components) {
+      if (component.type === 'backend') {
+        const result = await generateComponentWithRetry(component, plan, env);
+        if (result?.files) {
+          for (const [filename, content] of Object.entries(result.files)) {
+            allComponentFiles[filename] = content;
+          }
         }
       }
     }
+    // Add router file for backend
+    const { indexFile } = generateRouterFile(allComponentFiles);
+    allComponentFiles['functions/api/index.ts'] = indexFile;
+
+    // Generate frontend
+    let frontendFiles;
+    try {
+      frontendFiles = await generateFrontendFiles(plan, branding, logoUrl, env);
+    } catch (err) {
+      console.error('❌ Failed to generate frontend', err);
+      return jsonResponse({ error: 'Failed to generate frontend', details: err.message }, 500);
+    }
+    // Generate backend stubs
+    const backendStubs = generateBackendStubs(plan);
+    // Combine all site files
+    const siteFiles = { ...frontendFiles, ...backendStubs, ...allComponentFiles };
+
+    // Prepare repository name
+    const baseRepoName = `${ideaId}-app`;
+    // Pull the GitHub PAT from the environment.  Some deployments use PAT_GITHUB
+    // instead of GITHUB_PAT, so prefer PAT_GITHUB if available.
+    const token = env.PAT_GITHUB || env.GITHUB_PAT;
+    // Default owner login comes from environment but may be overwritten after repo creation
+    let ownerLogin = env.GITHUB_USERNAME;
+
+    // Attempt to create the repository.  If a repository with the same name
+    // already exists (GitHub returns 422), append a timestamp suffix and retry
+    let finalRepoName = baseRepoName;
+    let repoRes = await fetch('https://api.github.com/user/repos', {
+      method: 'POST',
+      headers: {
+        Authorization: `token ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'VenturePilot-CFWorker',
+      },
+      body: JSON.stringify({ name: finalRepoName, private: false }),
+    });
+    if (!repoRes.ok) {
+      const errorText = await repoRes.text();
+      // If the repo already exists, retry once with a unique name
+      if (repoRes.status === 422 && /name already exists/i.test(errorText)) {
+        finalRepoName = `${baseRepoName}-${Date.now()}`;
+        repoRes = await fetch('https://api.github.com/user/repos', {
+          method: 'POST',
+          headers: {
+        Authorization: `token ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'VenturePilot-CFWorker',
+          },
+          body: JSON.stringify({ name: finalRepoName, private: false }),
+        });
+        if (!repoRes.ok) {
+          const retryText = await repoRes.text();
+          console.error('❌ Failed to create repo on second attempt', retryText);
+          return jsonResponse(
+            { error: 'Failed to create repo after retry', details: retryText },
+            repoRes.status,
+          );
+        }
+      } else {
+        console.error('❌ Failed to create repo', errorText);
+        return jsonResponse(
+          { error: 'Failed to create repo', details: errorText },
+          repoRes.status,
+        );
+      }
+    }
+
+    // Determine the owner login from the repo creation response.  This ensures
+    // we upload files to the correct owner namespace, even if the username
+    // configured in the environment differs from the authenticated PAT's login.
+    try {
+      const repoInfo = await repoRes.json();
+      // Update finalRepoName in case GitHub applied any transformations
+      finalRepoName = repoInfo?.name || finalRepoName;
+    } catch (_) {
+      // ignore JSON parse errors and fall back to env.GITHUB_USERNAME
+    }
+
+    // Upload each file
+    for (const [path, content] of Object.entries(siteFiles)) {
+      const encoded = btoa(unescape(encodeURIComponent(content)));
+      const uploadRes = await fetch(
+        `https://api.github.com/repos/${ownerLogin}/${finalRepoName}/contents/${path}`,
+        {
+          method: 'PUT',
+          headers: {
+            Authorization: `token ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'VenturePilot-CFWorker',
+          },
+          body: JSON.stringify({ message: `Add ${path}`, content: encoded, branch: 'main' }),
+        },
+      );
+      if (!uploadRes.ok) {
+        const errorText = await uploadRes.text();
+        console.error(`❌ Failed to upload ${path}`, errorText);
+        return jsonResponse(
+          { error: `Failed to upload ${path}`, details: errorText },
+          uploadRes.status,
+        );
+      }
+    }
+
+    // Create a Pages project
+    const projectName = `app-${ideaId}`;
+    const cfProjectRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.CF_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: projectName,
+          production_branch: 'main',
+          source: {
+            type: 'github',
+            config: {
+              owner: ownerLogin,
+              repo_name: finalRepoName,
+              production_branch: 'main',
+              deployments_enabled: true,
+            },
+          },
+        }),
+      },
+    );
+    if (!cfProjectRes.ok) {
+      const errorText = await cfProjectRes.text();
+      console.error('❌ Failed to create Pages project', errorText);
+      return jsonResponse(
+        { error: 'Failed to create Pages project', details: errorText },
+        cfProjectRes.status,
+      );
+    }
+
+    // Trigger a deployment
+    const formData = new FormData();
+    formData.append('branch', 'main');
+    const deployRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects/${projectName}/deployments`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
+        body: formData,
+      },
+    );
+    if (!deployRes.ok) {
+      const errorText = await deployRes.text();
+      console.error('❌ Failed to trigger deployment', errorText);
+      return jsonResponse(
+        { error: 'Failed to trigger deployment', details: errorText },
+        deployRes.status,
+      );
+    }
+
+    // Return success
+    return jsonResponse({
+      ideaId,
+      repoUrl: `https://github.com/${env.GITHUB_USERNAME}/${finalRepoName}`,
+      pagesUrl: `https://${projectName}.pages.dev`,
+    });
+  } catch (err) {
+    // Catch any unexpected errors that weren't handled above
+    console.error('❌ Unhandled error in mvpHandler', err);
+    return jsonResponse({ error: 'Unhandled error', details: err.message }, 500);
   }
-  indexTs += `\nexport async function onRequest({ request }: { request: Request }): Promise<Response> {\n`;
-  indexTs += `  const url = new URL(request.url);\n  const path = url.pathname;\n\n`;
-  for (const { path: routePath, handlerName } of handlerExports) {
-    indexTs += `  if (path === "${routePath}") return ${handlerName}(request);\n`;
-  }
-  indexTs += `\n  return new Response("Not found", { status: 404 });\n}\n`;
-  return {
-    indexFile: indexTs,
-    handlerExports,
-  };
 }
