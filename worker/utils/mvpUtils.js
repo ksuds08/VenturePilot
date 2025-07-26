@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: MIT */
 //
-// Helper utilities for MVP generation.  These routines encapsulate the core logic
-// for decomposing a product specification into granular components, generating
-// frontend and backend code via OpenAI, and assembling a router file for
-// Cloudflare Pages Functions.  Centralising this functionality in one module
-// makes the primary worker easier to maintain and allows us to update prompt
-// templates in a single place.
+// Helper utilities for MVP generation.  These routines encapsulate the core
+// logic for decomposing a product specification into granular components,
+// generating frontend and backend code via OpenAI, and assembling a router
+// file for Cloudflare Pages Functions.  Centralising this functionality in
+// one module makes the primary worker easier to maintain and allows us to
+// update prompt templates in a single place.
 
 import { openaiChat } from './openai.js';
 import { openaiChatJson } from './openaiJson.js';
@@ -22,7 +22,10 @@ import { openaiChatJson } from './openaiJson.js';
  * @returns {string} – sanitized code with disallowed imports removed
  */
 function sanitizeImports(code) {
-  return code.replace(/import\s+\{[^}]+\}\s+from\s+['"](cloudflare-worker-types|some-cloudflare-package|undici|worktop)['"];?\n?/g, '');
+  return code.replace(
+    /import\s+\{[^}]+\}\s+from\s+['"](cloudflare-worker-types|some-cloudflare-package|undici|worktop)['"];?\n?/g,
+    '',
+  );
 }
 
 /**
@@ -54,7 +57,7 @@ export async function generateBackendComponentFiles(component, plan, env) {
     '- Return only valid JSON: { "files": { "<path>": "<code>", ... } }',
     '- Use double quotes for all keys and string values in your JSON output.',
     '',
-    'Do not include markdown fences or explanations.'
+    'Do not include markdown fences or explanations.',
   ];
   const userLines = [
     `Project: ${plan.mvp.name}`,
@@ -155,7 +158,6 @@ export async function generateComponentWithRetry(component, plan, env) {
     '- In your JSON response, use double quotes (") for all keys and string values. Single quotes (\') are not valid in JSON.',
     '- DO NOT import any modules or packages other than the built‑in Cloudflare Worker APIs (Request, Response). You must NOT import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library. Use only the native Fetch API (fetch) and Request/Response types provided by the runtime.',
   ];
-
   const userLines = [
     `Project: ${plan.mvp.name}`,
     `Component: ${component.name}`,
@@ -166,12 +168,10 @@ export async function generateComponentWithRetry(component, plan, env) {
     '',
     'Add this feature to the existing site.',
   ];
-
   const compPrompt = [
     { role: 'system', content: systemLines.join('\n') },
     { role: 'user', content: userLines.join('\n') },
   ];
-
   let attempt = 0;
   while (attempt < 2) {
     try {
@@ -216,41 +216,42 @@ export async function generateFrontendFiles(plan, branding, logoUrl, env) {
     {
       role: 'system',
       content: `
-You are a full‑stack developer tasked with generating the frontend for a new MVP.
+    You are a full‑stack developer tasked with generating the frontend for a new MVP.
 
-Use Tailwind CSS. Create clean, professional HTML/CSS and optionally JavaScript. Prioritise usability, accessibility and mobile responsiveness.
+    Use Tailwind CSS. Create clean, professional HTML/CSS and optionally JavaScript. Prioritise usability, accessibility and mobile responsiveness.
 
-Write production‑ready, maintainable code: use semantic HTML5 tags, a clear component structure, descriptive class and id names, and modular scripts. Avoid inline styles unless absolutely necessary. Provide interactive UI elements (forms, buttons, modals, chat bubbles) that match the described features.
+    Write production‑ready, maintainable code: use semantic HTML5 tags, a clear component structure, descriptive class and id names, and modular scripts. Avoid inline styles unless absolutely necessary. Provide interactive UI elements (forms, buttons, modals, chat bubbles) that match the described features.
 
-Before writing code, think through the user journey and page layout step by step. Apply a progressive elaboration approach: plan the structure internally and then output only the final implementation without your reasoning.
+    Before writing code, think through the user journey and page layout step by step. Apply a progressive elaboration approach: plan the structure internally and then output only the final implementation without your reasoning.
 
-If a backend API is needed (e.g., to fetch or submit data), wire the frontend to call the appropriate endpoint under /functions/api/.
+    If a backend API is needed (e.g., to fetch or submit data), wire the frontend to call the appropriate endpoint under /functions/api/.
 
-Return only valid JSON in this structure:
-{
-  "files": {
-    "index.html": "...",
-    "style.css": "...",            // optional, Tailwind preferred
-    "script.js": "...",            // optional
-    ...
-  }
-}`.trim(),
+    Return only valid JSON in this structure:
+    {
+      "files": {
+        "index.html": "...",
+        "style.css": "...",            // optional, Tailwind preferred
+        "script.js": "...",            // optional
+        ...
+      }
+    }
+    `.trim(),
     },
     {
       role: 'user',
       content: `
-MVP:
-${JSON.stringify(plan.mvp, null, 2)}
+    MVP:
+    ${JSON.stringify(plan.mvp, null, 2)}
 
-Branding:
-- Name: ${branding.name}
-- Tagline: ${branding.tagline}
-- Colors: ${branding.colors?.join(', ')}
-- Logo: ${branding.logoDesc}
-- Logo URL: ${logoUrl || 'none'}
+    Branding:
+    - Name: ${branding.name}
+    - Tagline: ${branding.tagline}
+    - Colors: ${branding.colors?.join(', ')}
+    - Logo: ${branding.logoDesc}
+    - Logo URL: ${logoUrl || 'none'}
 
-When relevant, include frontend wiring to call a backend API at /functions/api/handler.ts.
-      `.trim(),
+    When relevant, include frontend wiring to call a backend API at /functions/api/handler.ts.
+          `.trim(),
     },
   ];
   // Use openaiChatJson to enforce valid JSON output and strip code fences automatically.
@@ -423,26 +424,26 @@ export async function decomposePlanToComponents(plan, env) {
     {
       role: 'system',
       content: `
-You are an expert software architect.
+    You are an expert software architect.
 
-Given the following MVP specification, decompose it into the *minimum viable set* of frontend and backend components required to implement the product.
+    Given the following MVP specification, decompose it into the *minimum viable set* of frontend and backend components required to implement the product.
 
-Guidelines:
-- Identify each meaningful feature described in the plan and break it down into discrete components. If a feature requires both frontend and backend logic, create separate components for each aspect (e.g. ResumeGeneratorFrontend and ResumeGeneratorBackend).
-- Do NOT include abstract UI pieces like "Header", "ColorTheme", or "Logo".
-- Do NOT include static assets like "logo.svg".
-- DO include only meaningful, functional components (e.g., ResumeGenerator, TipsAPI).
-- Use PascalCase for all component names.
-- Think through the architecture and interactions step by step (progressive elaboration) before listing components, but output only the final JSON.
+    Guidelines:
+    - Identify each meaningful feature described in the plan and break it down into discrete components. If a feature requires both frontend and backend logic, create separate components for each aspect (e.g. ResumeGeneratorFrontend and ResumeGeneratorBackend).
+    - Do NOT include abstract UI pieces like "Header", "ColorTheme", or "Logo".
+    - Do NOT include static assets like "logo.svg".
+    - DO include only meaningful, functional components (e.g., ResumeGenerator, TipsAPI).
+    - Use PascalCase for all component names.
+    - Think through the architecture and interactions step by step (progressive elaboration) before listing components, but output only the final JSON.
 
-Each component must include:
-- name: PascalCase identifier (no spaces or symbols)
-- type: "frontend" or "backend"
-- description: Clear purpose of this component
-- location: Where the code should go (e.g., "index.html" or "functions/api/MyComponent.ts")
+    Each component must include:
+    - name: PascalCase identifier (no spaces or symbols)
+    - type: "frontend" or "backend"
+    - description: Clear purpose of this component
+    - location: Where the code should go (e.g., "index.html" or "functions/api/MyComponent.ts")
 
-Return a JSON array. Use double quotes (\") for all keys and string values; single quotes are not valid in JSON. No markdown, no extra keys. Valid JSON only.
-        `.trim(),
+    Return a JSON array. Use double quotes (\") for all keys and string values; single quotes are not valid in JSON. No markdown, no extra keys. Valid JSON only.
+            `.trim(),
     },
     {
       role: 'user',
@@ -461,7 +462,7 @@ Return a JSON array. Use double quotes (\") for all keys and string values; sing
         ['frontend', 'backend'].includes(c.type) &&
         c?.location &&
         c?.description &&
-        !/logo|color|theme|header|footer/i.test(c.name)
+        !/logo|color|theme|header|footer/i.test(c.name),
     );
   } catch (err) {
     console.error('❌ Failed to parse component decomposition:', err.message);
@@ -487,7 +488,7 @@ Return a JSON array. Use double quotes (\") for all keys and string values; sing
             ['frontend', 'backend'].includes(c.type) &&
             c?.location &&
             c?.description &&
-            !/logo|color|theme|header|footer/i.test(c.name)
+            !/logo|color|theme|header|footer/i.test(c.name),
         );
       } catch (parseErr) {
         // Attempt naive repair for single quotes
@@ -504,7 +505,7 @@ Return a JSON array. Use double quotes (\") for all keys and string values; sing
               ['frontend', 'backend'].includes(c.type) &&
               c?.location &&
               c?.description &&
-              !/logo|color|theme|header|footer/i.test(c.name)
+              !/logo|color|theme|header|footer/i.test(c.name),
           );
         } catch (_ignored) {
           console.error('❌ Fallback parse of component decomposition failed', parseErr.message);
