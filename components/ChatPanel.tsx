@@ -1,5 +1,4 @@
-// ChatPanel.tsx (Final fix for remark-gfm + Vite/Vercel ESM compat)
-
+// Updated ChatPanel.tsx with chat bubbles and animated spinner
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 
@@ -41,9 +40,9 @@ export default function ChatPanel({
   const [remarkPlugins, setRemarkPlugins] = useState<any[]>([]);
 
   useEffect(() => {
-    loadRemarkGfm().then((plugin) => {
-      setRemarkPlugins([plugin]);
-    });
+  loadRemarkGfm().then((plugin) => {
+    setRemarkPlugins([plugin]);
+  });
   }, []);
 
   const handleSend = () => {
@@ -64,6 +63,19 @@ export default function ChatPanel({
     }
   }, [streamedContent, onStreamComplete]);
 
+  // Helper to render spinner with three bouncing dots
+  const Spinner = () => (
+    <div className="flex space-x-1 py-1">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="h-2 w-2 rounded-full bg-gray-500 animate-bounce"
+          style={{ animationDelay: `${i * 0.2}s` }}
+        ></div>
+      ))}
+    </div>
+  );
+
   return (
     <div
       className={`rounded-xl border border-gray-200 p-4 shadow-sm ${
@@ -76,31 +88,28 @@ export default function ChatPanel({
         className="max-h-64 overflow-y-auto rounded bg-gray-50 p-2 text-sm"
       >
         {messages.map((msg, index) => (
-          <div
-            key={index}
-            className={`mb-2 ${
-              msg.role === "user" ? "text-right text-blue-700" : "text-left text-gray-800"
-            }`}
-          >
-            <ReactMarkdown
-              remarkPlugins={remarkPlugins}
-              className="prose prose-sm"
+          <div key={index} className={`mb-2 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div
+              className={`${msg.role === "user" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-800"} px-3 py-2 rounded-lg max-w-xs break-words`}
             >
-              {msg.content}
-            </ReactMarkdown>
+              <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
+                {msg.content}
+              </ReactMarkdown>
+            </div>
           </div>
         ))}
         {loading && (
-          <div className="italic text-gray-500 animate-pulse">Thinking...</div>
+          <div className="mb-2 flex justify-start">
+            <Spinner />
+          </div>
         )}
         {streamedContent && (
-          <div className="text-left text-gray-800">
-            <ReactMarkdown
-              remarkPlugins={remarkPlugins}
-              className="prose prose-sm"
-            >
-              {streamedContent}
-            </ReactMarkdown>
+          <div className="mb-2 flex justify-start">
+            <div className="bg-gray-200 text-gray-800 px-3 py-2 rounded-lg max-w-xs break-words">
+              <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
+                {streamedContent}
+              </ReactMarkdown>
+            </div>
           </div>
         )}
       </div>
