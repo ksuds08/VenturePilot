@@ -237,76 +237,58 @@ export async function generateComponentSubFiles(component, plan, env) {
     return {};
   }
   const outputFiles = {};
-  // Generate each file sequentially
-  for (const file of filesNeeded) {
-    const fileName = file.filename;
-    // Build a system prompt for code generation.  Include quality guidelines and progressive elaboration.
-    const sysLines = [
-      'You are a senior fullâstack engineer. Generate only the code for the following file.',
-      '',
-      'Requirements:',
-      '- Use Tailwind for styling (frontend)',
-      '- Use native Cloudflare Worker APIs (backend)',
-      '- DO NOT use express, @vercel/node, etc.',
-      // Additional quality guidelines
-      '- Write productionâquality, maintainable TypeScript code.',
-      '- Use clear, descriptive variable and function names.',
-      '- Validate inputs and handle errors gracefully.',
-      '- Structure logic to be modular and easy to extend.',
-      '- For frontend: use semantic HTML and accessible markup.',
-      '- Before coding, think through the implementation step by step (progressive elaboration) but output only the final code.',
-      '',
-      '- DO NOT include markdown fences or explanations.',
-      '- In your JSON response, use double quotes (\") for all keys and string values. Single quotes (\') are not valid in JSON.',
-      `- Return only valid JSON: { "files": { "${fileName}": "..." } }`,
-    ];
-    const userLines = [
-      `Project: ${plan.mvp.name}`,
-      `Component: ${component.name}`,
-      `File: ${fileName}`,
-      `Purpose: ${file.purpose}`,
-      `Technology: ${plan.mvp.technology}`,
-      `Context: ${JSON.stringify(plan.mvp, null, 2)}`,
-      '',
-      'Add this file to the implementation.',
-    ];
-    const codePrompt = [
-      { role: 'system', content: sysLines.join('\n') },
-      { role: 'user', content: userLines.join('\n') },
-    ];
-    try {
-      // Generate the file content using the JSON wrapper to enforce proper formatting.
-      const parsed = await openaiChatJson(env.OPENAI_API_KEY, codePrompt);
-      const fileMap = parsed?.files;
-      if (fileMap && typeof fileMap === 'object') {
-        for (const [filename, code] of Object.entries(fileMap)) {
-          outputFiles[filename] = code;
-        }
-        continue;
+  if (filesNeeded.length === 0) {
+    return outputFiles;
+  }
+  // Build a single prompt to generate all files at once.  This reduces the number of OpenAI calls and
+  // avoids exceeding subrequest limits on Cloudflare Workers.  We provide the list of filenames and
+  // their purposes and ask for a JSON object mapping each filename to its code.
+  const allSysLines = [
+    'You are a senior fullâstack engineer. Generate code for multiple files required for a component.',
+    '',
+    'Requirements:',
+    '- Use Tailwind for styling (frontend)',
+    '- Use native Cloudflare Worker APIs (backend)',
+    '- DO NOT use express, @vercel/node, etc.',
+    // Additional quality guidelines
+    '- Write productionâquality, maintainable TypeScript code.',
+    '- Use clear, descriptive variable and function names.',
+    '- Validate inputs and handle errors gracefully.',
+    '- Structure logic to be modular and easy to extend.',
+    '- For frontend: use semantic HTML and accessible markup.',
+    '- Before coding, think through the implementation step by step (progressive elaboration) but output only the final code.',
+    '',
+    '- DO NOT include markdown fences or explanations.',
+    '- In your JSON response, use double quotes (\") for all keys and string values. Single quotes (\') are not valid in JSON.',
+    '- Return only valid JSON of the form: { "files": { "filename1": "code1", "filename2": "code2", ... } }',
+  ];
+  const allUserLines = [
+    `Project: ${plan.mvp.name}`,
+    `Component: ${component.name}`,
+    `Technology: ${plan.mvp.technology}`,
+    `Context: ${JSON.stringify(plan.mvp, null, 2)}`,
+    '',
+    'Files needed (filename: purpose):',
+    ...filesNeeded.map((f) => `- ${f.filename}: ${f.purpose}`),
+    '',
+    'Generate all of these files with the appropriate code. Only include the files specified.',
+  ];
+  const allPrompt = [
+    { role: 'system', content: allSysLines.join('\n') },
+    { role: 'user', content: allUserLines.join('\n') },
+  ];
+  try {
+    const parsed = await openaiChatJson(env.OPENAI_API_KEY, allPrompt);
+    const fileMap = parsed?.files;
+    if (fileMap && typeof fileMap === 'object') {
+      for (const [filename, code] of Object.entries(fileMap)) {
+        outputFiles[filename] = code;
       }
-      // If structure is not as expected, fall through to fallback
-      console.error(`â File generation for ${fileName} returned invalid structure`, parsed);
-    } catch (err) {
-      // If parsing fails, attempt a fallback using the raw openaiChat output and manual parsing
-      console.error(`â Failed to generate subfile via JSON wrapper: ${fileName}`, err.message);
+    } else {
+      console.error('â Multi-file generation returned invalid structure', parsed);
     }
-    // Fallback: use openaiChat directly and attempt to parse manually
-    try {
-      const fileRes = await openaiChat(env.OPENAI_API_KEY, codePrompt);
-      let fileRaw = fileRes.choices?.[0]?.message?.content?.trim() || '';
-      fileRaw = fileRaw.replace(/```.*?\n|```/gs, '').trim();
-      const parsedFallback = JSON.parse(fileRaw);
-      const fileMapFallback = parsedFallback.files;
-      if (fileMapFallback && typeof fileMapFallback === 'object') {
-        for (const [filename, code] of Object.entries(fileMapFallback)) {
-          outputFiles[filename] = code;
-        }
-      } else {
-        console.error(`â Fallback generation for ${fileName} returned invalid structure`, parsedFallback);
-      }
-    } catch (err2) {
-      console.error(`â Failed to generate subfile: ${fileName}`, err2.message);
-    }
+  } catch (err) {
+    console.error('â Failed to generate subfiles for component', component.name, err.message);
   }
   return outputFiles;
 }
