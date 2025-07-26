@@ -1,4 +1,4 @@
-/ SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 //
 // Main handler for the `/mvp` endpoint.  This module orchestrates the
 // generation of MVP code by invoking the planning, decomposition and
