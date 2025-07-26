@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+/ SPDX-License-Identifier: MIT
 //
 // Helper utilities for MVP generation.  These routines encapsulate the core logic
 // for decomposing a product specification into granular components, generating
@@ -9,6 +9,21 @@
 
 import { openaiChat } from './openai.js';
 import { openaiChatJson } from './openaiJson.js';
+
+/**
+ * Remove import statements from generated backend code that reference external
+ * modules not available in Cloudflare Pages Functions.  This sanitization
+ * ensures that handlers rely only on the global Request and Response types
+ * provided by the runtime.  It specifically removes imports from modules
+ * like 'cloudflare-worker-types', 'some-cloudflare-package', 'undici', and
+ * 'worktop'.
+ *
+ * @param {string} code – TypeScript or JavaScript source code
+ * @returns {string} – sanitized code with disallowed imports removed
+ */
+function sanitizeImports(code) {
+  return code.replace(/import\s+\{[^}]+\}\s+from\s+['"](cloudflare-worker-types|some-cloudflare-package|undici|worktop)['"];?\n?/g, '');
+}
 
 /**
  * Generate a single component implementation by calling OpenAI.
@@ -24,10 +39,10 @@ import { openaiChatJson } from './openaiJson.js';
  * the response does not include the expected file.  On ultimate failure it
  * returns null so callers can decide how to proceed.
  *
- * @param {Object} component â the component definition including name
- * @param {Object} plan â the full MVP plan
- * @param {Object} env â environment variables (contains OPENAI_API_KEY)
- * @returns {Promise<Object|null>} â map of file names to contents or null on failure
+ * @param {Object} component – the component definition including name
+ * @param {Object} plan – the full MVP plan
+ * @param {Object} env – environment variables (contains OPENAI_API_KEY)
+ * @returns {Promise<Object|null>} – map of file names to contents or null on failure
  */
 export async function generateComponentWithRetry(component, plan, env) {
   // Precompute names to prevent unintended concatenation during bundling.
@@ -38,7 +53,7 @@ export async function generateComponentWithRetry(component, plan, env) {
   // joined with newlines before sending to OpenAI.  We include detailed
   // instructions about quality standards and a progressive elaboration approach.
   const systemLines = [
-    'You are a senior fullâstack engineer. Build only the code needed to implement the following component of a multiâfile web application.',
+    'You are a senior full‑stack engineer. Build only the code needed to implement the following component of a multi‑file web application.',
     '',
     // Styling and file expectations
     '- Use Tailwind CSS for styling.',
@@ -53,12 +68,12 @@ export async function generateComponentWithRetry(component, plan, env) {
     '  - Use only native Cloudflare Worker APIs (Request, Response).',
     '',
     // Quality guidelines
-    '- Write productionâquality, maintainable TypeScript code.',
+    '- Write production‑quality, maintainable TypeScript code.',
     '- Use clear, descriptive variable and function names.',
     '- Validate inputs and handle errors gracefully, returning appropriate HTTP status codes.',
     '- Structure logic to be modular and easy to extend.',
     '- For frontend code: use semantic HTML5 tags, accessible markup (add ARIA attributes where applicable) and ensure responsive design.',
-    '- For backend code: properly parse the request body, validate expected fields, and never assume wellâformed input.',
+    '- For backend code: properly parse the request body, validate expected fields, and never assume well‑formed input.',
     '- Include inline comments only to clarify complex logic, not as extra commentary.',
     '- Before writing code, think through the requirements and architecture step by step.  This is a progressive elaboration approach: reason internally about what is needed and then produce a polished implementation without exposing your reasoning.',
     '',
@@ -75,7 +90,7 @@ export async function generateComponentWithRetry(component, plan, env) {
     '- DO NOT include markdown code fences like ``',
     '- DO NOT include commentary, explanations, or extra keys',
     '- In your JSON response, use double quotes (") for all keys and string values. Single quotes (\') are not valid in JSON.',
-    '- DO NOT import any modules or packages other than the builtâin Cloudflare Worker APIs (Request, Response). You must NOT import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library. Use only the native Fetch API (fetch) and Request/Response types provided by the runtime.',
+    '- DO NOT import any modules or packages other than the built‑in Cloudflare Worker APIs (Request, Response). You must NOT import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library. Use only the native Fetch API (fetch) and Request/Response types provided by the runtime.',
   ];
 
   const userLines = [
@@ -102,10 +117,16 @@ export async function generateComponentWithRetry(component, plan, env) {
       if (!parsed?.files || !parsed.files[filePath]) {
         throw new Error('Missing expected file in response');
       }
-      return parsed;
+      // Sanitize imports in backend code to remove disallowed packages
+      const sanitized = { files: { ...parsed.files } };
+      const code = sanitized.files[filePath];
+      if (typeof code === 'string') {
+        sanitized.files[filePath] = sanitizeImports(code);
+      }
+      return sanitized;
     } catch (err) {
       attempt++;
-      console.error(`â Failed to generate component: ${component.name}, attempt ${attempt}`, err);
+      console.error(`❌ Failed to generate component: ${component.name}, attempt ${attempt}`, err);
       if (attempt >= 2) {
         return null;
       }
@@ -121,22 +142,22 @@ export async function generateComponentWithRetry(component, plan, env) {
  * that index.html is present.  The prompt emphasises production quality and
  * instructs the model to think through the page structure before coding.
  *
- * @param {Object} plan â the MVP plan returned from the planning step
- * @param {Object} branding â branding kit with name, tagline and colors
- * @param {string|null} logoUrl â optional logo URL to embed
- * @param {Object} env â environment variables
- * @returns {Promise<Object>} â map of file names to contents
+ * @param {Object} plan – the MVP plan returned from the planning step
+ * @param {Object} branding – branding kit with name, tagline and colors
+ * @param {string|null} logoUrl – optional logo URL to embed
+ * @param {Object} env – environment variables
+ * @returns {Promise<Object>} – map of file names to contents
  */
 export async function generateFrontendFiles(plan, branding, logoUrl, env) {
   const prompt = [
     {
       role: 'system',
       content: `
-You are a fullâstack developer tasked with generating the frontend for a new MVP.
+You are a full‑stack developer tasked with generating the frontend for a new MVP.
 
 Use Tailwind CSS. Create clean, professional HTML/CSS and optionally JavaScript. Prioritise usability, accessibility and mobile responsiveness.
 
-Write productionâready, maintainable code: use semantic HTML5 tags, a clear component structure, descriptive class and id names, and modular scripts. Avoid inline styles unless absolutely necessary. Provide interactive UI elements (forms, buttons, modals, chat bubbles) that match the described features.
+Write production‑ready, maintainable code: use semantic HTML5 tags, a clear component structure, descriptive class and id names, and modular scripts. Avoid inline styles unless absolutely necessary. Provide interactive UI elements (forms, buttons, modals, chat bubbles) that match the described features.
 
 Before writing code, think through the user journey and page layout step by step. Apply a progressive elaboration approach: plan the structure internally and then output only the final implementation without your reasoning.
 
@@ -174,7 +195,7 @@ When relevant, include frontend wiring to call a backend API at /functions/api/h
   // json should contain a "files" key with generated files.  Validate presence of index.html.
   const files = json?.files;
   if (!files || typeof files !== 'object' || !files['index.html']) {
-    console.error('â Frontend output missing index.html or invalid files object', json);
+    console.error('❌ Frontend output missing index.html or invalid files object', json);
     throw new Error('Frontend output missing index.html');
   }
   return files;
@@ -189,10 +210,10 @@ When relevant, include frontend wiring to call a backend API at /functions/api/h
  * Like generateComponentWithRetry, this function avoids nested template literals when constructing prompts to prevent
  * accidental concatenation of identifiers.  We also include quality guidelines and a progressive elaboration approach.
  *
- * @param {Object} component â the component definition
- * @param {Object} plan â the MVP plan
- * @param {Object} env â environment variables
- * @returns {Promise<Object>} â map of filenames to contents
+ * @param {Object} component – the component definition
+ * @param {Object} plan – the MVP plan
+ * @param {Object} env – environment variables
+ * @returns {Promise<Object>} – map of filenames to contents
  */
 export async function generateComponentSubFiles(component, plan, env) {
   // Prompt for the list of needed files
@@ -200,9 +221,9 @@ export async function generateComponentSubFiles(component, plan, env) {
     {
       role: 'system',
       content: [
-        'You are a senior fullâstack architect.',
+        'You are a senior full‑stack architect.',
         '',
-        'For the following component of a multiâfile web app, return a list of implementation files that should be created to properly build the feature.',
+        'For the following component of a multi‑file web app, return a list of implementation files that should be created to properly build the feature.',
         '',
         'Each file should include:',
         '- filename (relative path)',
@@ -234,8 +255,32 @@ export async function generateComponentSubFiles(component, plan, env) {
     filesNeeded = await openaiChatJson(env.OPENAI_API_KEY, subPrompt);
     if (!Array.isArray(filesNeeded)) throw new Error('Invalid file list format');
   } catch (err) {
-    console.error(`â Failed to parse subâfile list for component: ${component.name}`, err.message);
-    return {};
+    // Fallback: call openaiChat directly and attempt to parse manually
+    try {
+      const res = await openaiChat(env.OPENAI_API_KEY, subPrompt);
+      let raw = res.choices?.[0]?.message?.content?.trim() || '';
+      raw = raw.replace(/```.*?\n|```/gs, '').trim();
+      // The expected response is a JSON array; find brackets
+      const s = raw.indexOf('[');
+      const e = raw.lastIndexOf(']');
+      let jsonText = raw;
+      if (s !== -1 && e !== -1 && e >= s) {
+        jsonText = raw.slice(s, e + 1);
+      }
+      try {
+        filesNeeded = JSON.parse(jsonText);
+      } catch (parseErr) {
+        // Attempt naive repair for single quotes
+        const fixed = jsonText
+          .replace(/'([^']+)'(?=\s*:)/g, '"$1"')
+          .replace(/:\s*'([^']+)'/g, ': "$1"');
+        filesNeeded = JSON.parse(fixed);
+      }
+      if (!Array.isArray(filesNeeded)) throw new Error('Invalid file list format');
+    } catch (err2) {
+      console.error(`❌ Failed to parse sub‑file list for component: ${component.name}`, err2.message);
+      return {};
+    }
   }
   const outputFiles = {};
   if (filesNeeded.length === 0) {
@@ -245,14 +290,14 @@ export async function generateComponentSubFiles(component, plan, env) {
   // avoids exceeding subrequest limits on Cloudflare Workers.  We provide the list of filenames and
   // their purposes and ask for a JSON object mapping each filename to its code.
   const allSysLines = [
-    'You are a senior fullâstack engineer. Generate code for multiple files required for a component.',
+    'You are a senior full‑stack engineer. Generate code for multiple files required for a component.',
     '',
     'Requirements:',
     '- Use Tailwind for styling (frontend)',
     '- Use native Cloudflare Worker APIs (backend)',
     '- DO NOT use express, @vercel/node, etc.',
     // Additional quality guidelines
-    '- Write productionâquality, maintainable TypeScript code.',
+    '- Write production‑quality, maintainable TypeScript code.',
     '- Use clear, descriptive variable and function names.',
     '- Validate inputs and handle errors gracefully.',
     '- Structure logic to be modular and easy to extend.',
@@ -262,7 +307,7 @@ export async function generateComponentSubFiles(component, plan, env) {
     '- DO NOT include markdown fences or explanations.',
     '- In your JSON response, use double quotes (\") for all keys and string values. Single quotes (\') are not valid in JSON.',
     '- Return only valid JSON of the form: { "files": { "filename1": "code1", "filename2": "code2", ... } }',
-    '- DO NOT import any modules or packages other than the builtâin Cloudflare Worker APIs (Request, Response). You must NOT import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library. Use only the native Fetch API (fetch) and Request/Response types provided by the runtime.',
+    '- DO NOT import any modules or packages other than the built‑in Cloudflare Worker APIs (Request, Response). You must NOT import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library. Use only the native Fetch API (fetch) and Request/Response types provided by the runtime.',
   ];
   const allUserLines = [
     `Project: ${plan.mvp.name}`,
@@ -284,27 +329,31 @@ export async function generateComponentSubFiles(component, plan, env) {
     const fileMap = parsed?.files;
     if (fileMap && typeof fileMap === 'object') {
       for (const [filename, code] of Object.entries(fileMap)) {
-        outputFiles[filename] = code;
+        if (typeof code === 'string' && filename.startsWith('functions/api/')) {
+          outputFiles[filename] = sanitizeImports(code);
+        } else {
+          outputFiles[filename] = code;
+        }
       }
     } else {
-      console.error('â Multi-file generation returned invalid structure', parsed);
+      console.error('❌ Multi-file generation returned invalid structure', parsed);
     }
   } catch (err) {
-    console.error('â Failed to generate subfiles for component', component.name, err.message);
+    console.error('❌ Failed to generate subfiles for component', component.name, err.message);
   }
   return outputFiles;
 }
 
 /**
- * Decompose a highâlevel MVP specification into a list of functional components.
+ * Decompose a high‑level MVP specification into a list of functional components.
  *
- * This helper prompts the model to perform the decomposition and filters out nonâfunctional
+ * This helper prompts the model to perform the decomposition and filters out non‑functional
  * items such as logos or themes.  It emphasises identifying granular features and splitting
  * them into distinct frontend and backend components where appropriate.
  *
- * @param {Object} plan â the parsed MVP plan
- * @param {Object} env â environment variables
- * @returns {Promise<Array<Object>>} â list of component definitions
+ * @param {Object} plan – the parsed MVP plan
+ * @param {Object} env – environment variables
+ * @returns {Promise<Array<Object>>} – list of component definitions
  */
 export async function decomposePlanToComponents(plan, env) {
   const prompt = [
@@ -352,7 +401,7 @@ Return a JSON array. Use double quotes (\") for all keys and string values; sing
         !/logo|color|theme|header|footer/i.test(c.name)
     );
   } catch (err) {
-    console.error('â Failed to parse component decomposition:', err.message);
+    console.error('❌ Failed to parse component decomposition:', err.message);
     // Fallback: try a plain OpenAI call and manual parsing
     try {
       const res = await openaiChat(env.OPENAI_API_KEY, prompt);
@@ -395,12 +444,12 @@ Return a JSON array. Use double quotes (\") for all keys and string values; sing
               !/logo|color|theme|header|footer/i.test(c.name)
           );
         } catch (_ignored) {
-          console.error('â Fallback parse of component decomposition failed', parseErr.message);
+          console.error('❌ Fallback parse of component decomposition failed', parseErr.message);
           return [];
         }
       }
     } catch (err2) {
-      console.error('â Fallback call for component decomposition failed', err2.message);
+      console.error('❌ Fallback call for component decomposition failed', err2.message);
       return [];
     }
   }
@@ -410,8 +459,8 @@ Return a JSON array. Use double quotes (\") for all keys and string values; sing
  * Generate a router index file for Pages Functions based on the discovered backend handlers.
  * Each handler must export an async function matching the naming convention `${name}Handler`.
  *
- * @param {Object} allComponentFiles â map of file names to file contents
- * @returns {Object} â object containing the index.ts text and handlerExports array
+ * @param {Object} allComponentFiles – map of file names to file contents
+ * @returns {Object} – object containing the index.ts text and handlerExports array
  */
 export function generateRouterFile(allComponentFiles) {
   let indexTs = `// Auto-generated index.ts for Pages Functions routing\nimport type { Request } from 'itty-router';\n\n`;
