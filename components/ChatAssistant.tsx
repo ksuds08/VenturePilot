@@ -8,20 +8,35 @@ import ValidationSummary from "./ValidationSummary";
 import BrandingCard from "./BrandingCard";
 import MVPPreview from "./MVPPreview";
 
+// Base URLs for the API endpoints
 const baseUrl =
   process.env.NEXT_PUBLIC_API_URL || "https://venturepilot-api.promptpulse.workers.dev";
 const validateUrl = `${baseUrl}/validate`;
 const brandUrl = `${baseUrl}/brand`;
 const mvpUrl = `${baseUrl}/mvp`;
 
+/**
+ * ChatAssistant orchestrates the chat flow and stage progression.
+ *
+ * Changes from the original implementation:
+ * - Always uses a single‑column layout so the stage panel appears
+ *   below the chat on all screen sizes.
+ * - Introduces messageEndRef and panelRef to handle scrolling. When a
+ *   new user message is sent, the chat scrolls to the bottom. When the
+ *   assistant finishes streaming its reply, the page scrolls down to
+ *   reveal the stage panel.
+ * - Removes the useEffect that auto‑scrolled on every message update,
+ *   allowing users to scroll freely during streaming.
+ */
 export default function ChatAssistant() {
-  const [ideas, setIdeas] = useState([]);
-  const [activeIdeaId, setActiveIdeaId] = useState(null);
+  const [ideas, setIdeas] = useState<any[]>([]);
+  const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
-  // Initialize a starter idea
+  // Initialize a starter idea on first render
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
       const id = uuidv4();
@@ -44,13 +59,7 @@ export default function ChatAssistant() {
     }
   }, [activeIdeaId, ideas.length]);
 
-  // Auto-scroll when messages change
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [ideas]);
-
+  // Helper to update an idea by id
   const updateIdea = (id: any, updates: any) => {
     setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
@@ -66,6 +75,9 @@ export default function ChatAssistant() {
     const baseMessages = [...current.messages, userMsg, placeholder];
     updateIdea(current.id, { messages: baseMessages });
     setLoading(true);
+
+    // Scroll to the bottom of the chat when a new message is added
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
     // Fetch the assistant's full reply (no streaming API)
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
@@ -96,6 +108,11 @@ export default function ChatAssistant() {
           ...(plan && { finalPlan: plan }),
         });
         setLoading(false);
+
+        // Scroll to the stage panel once the stream is done
+        setTimeout(() => {
+          panelRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
 
         // Move to the next stage if suggested
         if (nextStage && nextStage !== current.currentStage) {
@@ -206,8 +223,9 @@ export default function ChatAssistant() {
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 lg:mt-0 mt-6">
-      <div className="flex flex-col w-full lg:w-7/12 px-2 lg:px-0">
+    <div className="flex flex-col gap-8 mt-6 px-2">
+      {/* Chat container */}
+      <div className="flex flex-col w-full">
         {ideas.map((idea) => (
           <div key={idea.id} className="mb-6">
             <ChatPanel
@@ -224,52 +242,52 @@ export default function ChatAssistant() {
             />
           </div>
         ))}
-        <div ref={scrollRef} />
+        {/* marker div to scroll to when a new message is sent */}
+        <div ref={messageEndRef} />
       </div>
-      <div className="flex flex-col w-full lg:w-5/12">
-        {activeIdea && (
-          <>
-            {activeIdea.currentStage === "ideation" && activeIdea.takeaways?.refinedIdea && (
-              <RefinedIdeaCard
-                name={activeIdea.takeaways.refinedIdea.name}
-                description={activeIdea.takeaways.refinedIdea.description}
-                onConfirm={() => handleAdvanceStage(activeIdea.id, "validation")}
-                onEdit={() => setActiveIdeaId(activeIdea.id)}
-              />
-            )}
-            {activeIdea.currentStage === "validation" && activeIdea.takeaways?.validationSummary && (
-              <ValidationSummary
-                summary={activeIdea.takeaways.validationSummary}
-                fullText={activeIdea.validation}
-                onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
-                onRestart={() => setActiveIdeaId(activeIdea.id)}
-              />
-            )}
-            {activeIdea.currentStage === "branding" && activeIdea.takeaways?.branding && (
-              <BrandingCard
-                name={activeIdea.takeaways.branding.name}
-                tagline={activeIdea.takeaways.branding.tagline}
-                colors={activeIdea.takeaways.branding.colors}
-                logoDesc={activeIdea.takeaways.branding.logoDesc}
-                logoUrl={activeIdea.takeaways.branding.logoUrl}
-                onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
-                onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
-                onRestart={() => setActiveIdeaId(activeIdea.id)}
-              />
-            )}
-            {/* Show the deploy panel as soon as we're in the mvp stage */}
-            {activeIdea.currentStage === "mvp" && (
-              <MVPPreview
-                ideaName={activeIdea.title || "Your Idea"}
-                onDeploy={() => handleConfirmBuild(activeIdea.id)}
-                deploying={activeIdea.deploying}
-                deployedUrl={activeIdea.pagesUrl}
-                deployError={activeIdea.deployError}
-              />
-            )}
-          </>
-        )}
-      </div>
+
+      {/* Phase panel always below chat */}
+      {activeIdea && (
+        <div className="w-full" ref={panelRef}>
+          {activeIdea.currentStage === "ideation" && activeIdea.takeaways?.refinedIdea && (
+            <RefinedIdeaCard
+              name={activeIdea.takeaways.refinedIdea.name}
+              description={activeIdea.takeaways.refinedIdea.description}
+              onConfirm={() => handleAdvanceStage(activeIdea.id, "validation")}
+              onEdit={() => setActiveIdeaId(activeIdea.id)}
+            />
+          )}
+          {activeIdea.currentStage === "validation" && activeIdea.takeaways?.validationSummary && (
+            <ValidationSummary
+              summary={activeIdea.takeaways.validationSummary}
+              fullText={activeIdea.validation}
+              onContinue={() => handleAdvanceStage(activeIdea.id, "branding")}
+              onRestart={() => setActiveIdeaId(activeIdea.id)}
+            />
+          )}
+          {activeIdea.currentStage === "branding" && activeIdea.takeaways?.branding && (
+            <BrandingCard
+              name={activeIdea.takeaways.branding.name}
+              tagline={activeIdea.takeaways.branding.tagline}
+              colors={activeIdea.takeaways.branding.colors}
+              logoDesc={activeIdea.takeaways.branding.logoDesc}
+              logoUrl={activeIdea.takeaways.branding.logoUrl}
+              onAccept={() => handleAdvanceStage(activeIdea.id, "mvp")}
+              onRegenerate={() => handleAdvanceStage(activeIdea.id, "branding")}
+              onRestart={() => setActiveIdeaId(activeIdea.id)}
+            />
+          )}
+          {activeIdea.currentStage === "mvp" && (
+            <MVPPreview
+              ideaName={activeIdea.title || "Your Idea"}
+              onDeploy={() => handleConfirmBuild(activeIdea.id)}
+              deploying={activeIdea.deploying}
+              deployedUrl={activeIdea.pagesUrl}
+              deployError={activeIdea.deployError}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
