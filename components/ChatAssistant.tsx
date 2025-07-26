@@ -19,11 +19,11 @@ const mvpUrl = `${baseUrl}/mvp`;
  * ChatAssistant orchestrates the chat flow and stage progression.
  *
  * Key behaviours:
- * - Always uses a single-column layout: chat on top, panels below.
+ * - Single-column layout: chat on top, panels below.
  * - Each phase panel persists; earlier phases are collapsed to a summary line.
- * - User can expand/collapse panels manually, and the current stage panel opens automatically.
- * - Scrolls to the bottom of the chat when sending a message or when Edit/Restart is clicked.
- * - Shows a spinner during long operations (validation, branding, etc.).
+ * - Users can expand/collapse panels manually, and the current stage panel opens automatically.
+ * - Scrolls to the bottom of the chat when sending or editing messages.
+ * - Spinner shows during long operations.
  */
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState<any[]>([]);
@@ -33,14 +33,14 @@ export default function ChatAssistant() {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
-  // Track which panels are explicitly open. When a stage is active it is automatically open.
+  // Track which panels are explicitly open (ideation, validation, branding)
   const [openPanels, setOpenPanels] = useState({
     ideation: false,
     validation: false,
     branding: false,
   });
 
-  // Ensure the current stage panel is open by default when stage changes
+  // Automatically open the current stage's panel
   useEffect(() => {
     if (activeIdea) {
       setOpenPanels((prev) => ({
@@ -52,7 +52,7 @@ export default function ChatAssistant() {
     }
   }, [activeIdea?.currentStage]);
 
-  // Helper to toggle panel open state when header clicked
+  // Toggle panel open state
   const togglePanel = (key: "ideation" | "validation" | "branding") => {
     setOpenPanels((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -85,35 +85,26 @@ export default function ChatAssistant() {
     setIdeas((prev) => prev.map((i) => (i.id === id ? { ...i, ...updates } : i)));
   };
 
-  // Handle sending a user message with simulated streaming
+  // Send a message and handle streaming plus summarisation fallback
   const handleSend = async (content: string) => {
     const current = activeIdea;
     if (!current) return;
 
-    // Insert the user's message and an empty assistant placeholder
     const userMsg = { role: "user", content };
     const placeholder = { role: "assistant", content: "" };
     const baseMessages = [...current.messages, userMsg, placeholder];
     updateIdea(current.id, { messages: baseMessages });
     setLoading(true);
 
-    // Scroll to the bottom of the chat when a new message is added
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
-    // Fetch the assistant's full reply (no streaming API)
     const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
       [...current.messages, userMsg],
       current.currentStage
     );
-    // Once we've received the full reply from the assistant we want
-    // to stop showing the loading spinner.  The response will now be
-    // streamed via the reveal() helper below, so we clear the
-    // loading flag before starting the streaming animation.  If
-    // loading remains true here the spinner will continue to display
-    // on top of the chat while the text is being revealed.
+    // Hide spinner before streaming
     setLoading(false);
 
-    // Simulated typing: gradually reveal the reply
     const reveal = (index: number, msgs: any[]) => {
       const updatedMsgs = msgs.map((m, i) =>
         i === msgs.length - 1 ? { ...m, content: reply.slice(0, index) } : m
@@ -123,22 +114,63 @@ export default function ChatAssistant() {
       if (index <= reply.length) {
         setTimeout(() => reveal(index + 1, updatedMsgs), 20);
       } else {
-        updateIdea(current.id, {
-          title: current.title || content.slice(0, 80),
-          messages: updatedMsgs,
-          takeaways: {
-            ...current.takeaways,
-            refinedIdea: refinedIdea || current.takeaways.refinedIdea,
-          },
-          ...(plan && { finalPlan: plan }),
-        });
-        setLoading(false);
+        // Fallback summary: first 2 sentences or first 150 chars
+        let summaryDesc = reply || content;
+        try {
+          const parts = summaryDesc.split(/(?<=[.!?])\s+/);
+          summaryDesc = parts.slice(0, 2).join(" ");
+          if (!summaryDesc) {
+            summaryDesc = (reply || content).slice(0, 150);
+          }
+        } catch {
+          summaryDesc = (reply || content).slice(0, 150);
+        }
+        const fallbackRefined = {
+          name: (current.title || content).slice(0, 60),
+          description: summaryDesc,
+        };
 
-        // Scroll to the stage panel once the stream is done
+        // If the API didn't provide refinedIdea, try asking the assistant to summarise
+        (async () => {
+          let finalRefined = refinedIdea || current.takeaways.refinedIdea || fallbackRefined;
+          if (!refinedIdea && current.currentStage === "ideation") {
+            try {
+              const summaryRes = await sendToAssistant(
+                [
+                  ...current.messages,
+                  userMsg,
+                  { role: "assistant", content: reply },
+                  { role: "user", content: "Please summarise the above idea concisely." },
+                ],
+                current.currentStage
+              );
+              const summaryReply =
+                summaryRes?.reply || summaryRes?.summary || summaryRes?.content;
+              if (summaryReply) {
+                finalRefined = {
+                  name: (current.title || content).slice(0, 60),
+                  description: summaryReply.trim(),
+                };
+              }
+            } catch {
+              // summarisation failure: use fallback
+            }
+          }
+          updateIdea(current.id, {
+            title: current.title || content.slice(0, 80),
+            messages: updatedMsgs,
+            takeaways: {
+              ...current.takeaways,
+              refinedIdea: finalRefined,
+            },
+            ...(plan && { finalPlan: plan }),
+          });
+        })();
+
+        // scroll to stage panel and proceed to next stage if needed
         setTimeout(() => {
           panelRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 100);
-
         if (nextStage && nextStage !== current.currentStage) {
           setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
         }
@@ -151,7 +183,6 @@ export default function ChatAssistant() {
   // Advance to the next stage (validation → branding → mvp, etc.)
   const handleAdvanceStage = async (id: any, forcedStage?: StageType) => {
     setLoading(true);
-    // Ensure the spinner is visible by scrolling to the bottom of the chat
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
     const stageOrder: StageType[] = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
@@ -170,7 +201,10 @@ export default function ChatAssistant() {
       const summary = data?.validation?.split("\n")[0] || "";
       const messages = [
         ...idea.messages,
-        { role: "assistant", content: `✅ Validation complete. Here's what we found:\n\n${summary}` },
+        {
+          role: "assistant",
+          content: `✅ Validation complete. Here's what we found:\n\n${summary}`,
+        },
       ];
       updateIdea(id, {
         messages,
@@ -218,7 +252,7 @@ export default function ChatAssistant() {
     setLoading(false);
   };
 
-  // Kick off the build and deploy the generated MVP
+  // Deploy the generated MVP
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -275,7 +309,7 @@ export default function ChatAssistant() {
       {/* Panel stack: each panel always rendered; current stage expands its content */}
       {activeIdea && (
         <div className="w-full space-y-4" ref={panelRef}>
-          {/* Refined Idea */}
+          {/* Refined Idea panel */}
           {activeIdea.takeaways?.refinedIdea && (
             <div
               className={`rounded border border-gray-200 p-2 ${
@@ -307,7 +341,7 @@ export default function ChatAssistant() {
             </div>
           )}
 
-          {/* Validation */}
+          {/* Validation panel */}
           {activeIdea.takeaways?.validationSummary && (
             <div
               className={`rounded border border-gray-200 p-2 ${
@@ -322,7 +356,9 @@ export default function ChatAssistant() {
               >
                 <span>Validation</span>
                 <span className="text-gray-400">
-                  {activeIdea.currentStage === "validation" || openPanels.validation ? "▲" : "▼"}
+                  {activeIdea.currentStage === "validation" || openPanels.validation
+                    ? "▲"
+                    : "▼"}
                 </span>
               </div>
               {(activeIdea.currentStage === "validation" || openPanels.validation) && (
@@ -339,7 +375,7 @@ export default function ChatAssistant() {
             </div>
           )}
 
-          {/* Branding */}
+          {/* Branding panel */}
           {activeIdea.takeaways?.branding && (
             <div
               className={`rounded border border-gray-200 p-2 ${
@@ -354,7 +390,9 @@ export default function ChatAssistant() {
               >
                 <span>Branding</span>
                 <span className="text-gray-400">
-                  {activeIdea.currentStage === "branding" || openPanels.branding ? "▲" : "▼"}
+                  {activeIdea.currentStage === "branding" || openPanels.branding
+                    ? "▲"
+                    : "▼"}
                 </span>
               </div>
               {(activeIdea.currentStage === "branding" || openPanels.branding) && (
