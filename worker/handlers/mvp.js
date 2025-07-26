@@ -200,7 +200,9 @@ Format:
 
     // Prepare repository name
     const baseRepoName = `${ideaId}-app`;
-    const token = env.GITHUB_PAT;
+    // Pull the GitHub PAT from the environment.  Some deployments use PAT_GITHUB
+    // instead of GITHUB_PAT, so prefer PAT_GITHUB if available.
+    const token = env.PAT_GITHUB || env.GITHUB_PAT;
 
     // Attempt to create the repository.  If a repository with the same name
     // already exists (GitHub returns 422), append a timestamp suffix and retry
@@ -208,7 +210,7 @@ Format:
     let repoRes = await fetch('https://api.github.com/user/repos', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `token ${token}`,
         'Content-Type': 'application/json',
         'User-Agent': 'VenturePilot-CFWorker',
       },
@@ -222,7 +224,7 @@ Format:
         repoRes = await fetch('https://api.github.com/user/repos', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${token}`,
+        Authorization: `token ${token}`,
             'Content-Type': 'application/json',
             'User-Agent': 'VenturePilot-CFWorker',
           },
@@ -253,7 +255,7 @@ Format:
         {
           method: 'PUT',
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `token ${token}`,
             'Content-Type': 'application/json',
             'User-Agent': 'VenturePilot-CFWorker',
           },
