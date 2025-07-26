@@ -24,6 +24,7 @@ const mvpUrl = `${baseUrl}/mvp`;
  * - User can expand/collapse panels manually, and the current stage panel opens automatically.
  * - Scrolls to the bottom of the chat when sending or editing messages.
  * - Spinner shows during long operations.
+ * - Clicking Continue/Confirm/Accept auto-collapses the panel.
  */
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState<any[]>([]);
@@ -40,7 +41,7 @@ export default function ChatAssistant() {
     branding: false,
   });
 
-  // Automatically open the current stage's panel
+  // Automatically open the current stage's panel when stage changes
   useEffect(() => {
     if (activeIdea) {
       setOpenPanels((prev) => ({
@@ -52,7 +53,7 @@ export default function ChatAssistant() {
     }
   }, [activeIdea?.currentStage]);
 
-  // Toggle panel open state
+  // Toggle panel open state when header clicked
   const togglePanel = (key: "ideation" | "validation" | "branding") => {
     setOpenPanels((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -144,7 +145,6 @@ export default function ChatAssistant() {
                 ],
                 current.currentStage
               );
-              // Cast to any so we can access optional properties
               const summaryAny = summaryRes as any;
               const summaryReply =
                 summaryAny?.reply || summaryAny?.summary || summaryAny?.content;
@@ -169,7 +169,7 @@ export default function ChatAssistant() {
           });
         })();
 
-        // scroll to stage panel and proceed to next stage if needed
+        // Scroll to stage panel and proceed to next stage if needed
         setTimeout(() => {
           panelRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 100);
@@ -182,7 +182,7 @@ export default function ChatAssistant() {
     reveal(1, baseMessages);
   };
 
-  // Advance to the next stage (validation → branding → mvp, etc.)
+  // Advance to the next stage; clicking Continue/Confirm/Accept triggers this
   const handleAdvanceStage = async (id: any, forcedStage?: StageType) => {
     setLoading(true);
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -191,6 +191,12 @@ export default function ChatAssistant() {
     if (!idea) return;
     const currentIndex = stageOrder.indexOf(idea.currentStage || ("ideation" as StageType));
     const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
+
+    // Collapse the panel we're leaving
+    if (idea.currentStage === "ideation" || idea.currentStage === "validation" || idea.currentStage === "branding") {
+      setOpenPanels((prev) => ({ ...prev, [idea.currentStage as any]: false }));
+    }
+
     updateIdea(id, { currentStage: nextStage });
 
     if (nextStage === "validation") {
@@ -225,9 +231,9 @@ export default function ChatAssistant() {
         body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
       });
       const data = await res.json();
-      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(
-        ", "
-      )}\n• Logo: ${data.logoDesc}`;
+      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${
+        data.tagline
+      }\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
       const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
       updateIdea(id, {
         messages,
@@ -358,9 +364,7 @@ export default function ChatAssistant() {
               >
                 <span>Validation</span>
                 <span className="text-gray-400">
-                  {activeIdea.currentStage === "validation" || openPanels.validation
-                    ? "▲"
-                    : "▼"}
+                  {activeIdea.currentStage === "validation" || openPanels.validation ? "▲" : "▼"}
                 </span>
               </div>
               {(activeIdea.currentStage === "validation" || openPanels.validation) && (
@@ -392,9 +396,7 @@ export default function ChatAssistant() {
               >
                 <span>Branding</span>
                 <span className="text-gray-400">
-                  {activeIdea.currentStage === "branding" || openPanels.branding
-                    ? "▲"
-                    : "▼"}
+                  {activeIdea.currentStage === "branding" || openPanels.branding ? "▲" : "▼"}
                 </span>
               </div>
               {(activeIdea.currentStage === "branding" || openPanels.branding) && (
@@ -415,7 +417,7 @@ export default function ChatAssistant() {
             </div>
           )}
 
-          {/* MVP preview */}
+          {/* MVP panel */}
           {activeIdea.currentStage === "mvp" && (
             <div className="rounded border border-gray-200 p-2 bg-yellow-100">
               <div className="font-medium mb-1">MVP Preview</div>
