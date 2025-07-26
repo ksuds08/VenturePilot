@@ -40,15 +40,25 @@ export async function openaiChatJson(apiKey, messages, options = {}) {
     try {
       return JSON.parse(jsonText);
     } catch (err) {
-      attempt++;
-      if (attempt >= 2) {
-        throw new Error('Failed to parse JSON response from OpenAI');
+      // Attempt a naive fix: convert single quotes around keys and simple string values to double quotes
+      try {
+        const fixed = jsonText
+          // Replace 'key': with "key":
+          .replace(/'([^']+)'(?=\s*:)/g, '"$1"')
+          // Replace : 'value' with : "value"
+          .replace(/:\s*'([^']+)'/g, ': "$1"');
+        return JSON.parse(fixed);
+      } catch (_ignored) {
+        attempt++;
+        if (attempt >= 2) {
+          throw new Error('Failed to parse JSON response from OpenAI');
+        }
+        // Prepend a reminder to return valid JSON only
+        msgs = [
+          { role: 'system', content: 'You must return only valid JSON. Do not include markdown or commentary.' },
+          ...messages,
+        ];
       }
-      // Prepend a reminder to return valid JSON only
-      msgs = [
-        { role: 'system', content: 'You must return only valid JSON. Do not include markdown or commentary.' },
-        ...messages,
-      ];
     }
   }
 }
