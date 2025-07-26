@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: MIT */
 //
 // Helper utilities for MVP generation.  These routines encapsulate the core logic
 // for decomposing a product specification into granular components, generating
@@ -23,6 +23,69 @@ import { openaiChatJson } from './openaiJson.js';
  */
 function sanitizeImports(code) {
   return code.replace(/import\s+\{[^}]+\}\s+from\s+['"](cloudflare-worker-types|some-cloudflare-package|undici|worktop)['"];?\n?/g, '');
+}
+
+/**
+ * Generate all backend files for a component in a single OpenAI call.  This
+ * function requests both the primary handler (functions/api/Component.ts) and
+ * any supporting files in one JSON response.  It reduces the number of
+ * subrequests by avoiding separate calls for the main file and sub-file
+ * listing.  The returned files are sanitized to remove disallowed imports.
+ *
+ * @param {Object} component – component definition (backend type)
+ * @param {Object} plan – full MVP plan
+ * @param {Object} env – environment variables
+ * @returns {Promise<Object|null>} – map of filenames to code or null on failure
+ */
+export async function generateBackendComponentFiles(component, plan, env) {
+  const filePath = `functions/api/${component.name}.ts`;
+  const sysLines = [
+    'You are a senior full‑stack engineer. Generate all necessary backend files for the given component in a single response.',
+    '',
+    'Requirements:',
+    '- Use only native Cloudflare Worker APIs (Request, Response, fetch).',
+    '- DO NOT import any modules or packages other than built‑in APIs. Do not import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library.',
+    '- The primary handler file must be located at: ' + filePath,
+    `- The file must export an async function named ${component.name}Handler(req: Request): Promise<Response>`,
+    '- DO NOT export default.',
+    '- If additional helper files are needed, include them under functions/api/, with appropriate filenames.',
+    '',
+    '- Validate inputs, handle errors gracefully, and use clear TypeScript types.',
+    '- Return only valid JSON: { "files": { "<path>": "<code>", ... } }',
+    '- Use double quotes for all keys and string values in your JSON output.',
+    '',
+    'Do not include markdown fences or explanations.'
+  ];
+  const userLines = [
+    `Project: ${plan.mvp.name}`,
+    `Component: ${component.name}`,
+    `Purpose: ${component.purpose}`,
+    `Technology: ${plan.mvp.technology}`,
+    `Context: ${JSON.stringify(plan.mvp, null, 2)}`,
+  ];
+  const prompt = [
+    { role: 'system', content: sysLines.join('\n') },
+    { role: 'user', content: userLines.join('\n') },
+  ];
+  try {
+    const parsed = await openaiChatJson(env.OPENAI_API_KEY, prompt);
+    const files = parsed?.files;
+    if (!files || typeof files !== 'object' || !files[filePath]) {
+      throw new Error('Missing main backend file in response');
+    }
+    const output = {};
+    for (const [fname, code] of Object.entries(files)) {
+      if (fname.startsWith('functions/api/') && typeof code === 'string') {
+        output[fname] = sanitizeImports(code);
+      } else {
+        output[fname] = code;
+      }
+    }
+    return output;
+  } catch (err) {
+    console.error('❌ Failed to generate backend files for component', component.name, err.message);
+    return null;
+  }
 }
 
 /**
