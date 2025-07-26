@@ -199,34 +199,63 @@ Format:
     const siteFiles = { ...frontendFiles, ...backendStubs, ...allComponentFiles };
 
     // Prepare repository name
-    const repoName = `${ideaId}-app`;
+    const baseRepoName = `${ideaId}-app`;
     const token = env.GITHUB_PAT;
 
-    // Create the repository
-    const repoRes = await fetch('https://api.github.com/user/repos', {
+    // Attempt to create the repository.  If a repository with the same name
+    // already exists (GitHub returns 422), append a timestamp suffix and retry
+    let finalRepoName = baseRepoName;
+    let repoRes = await fetch('https://api.github.com/user/repos', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
+        'User-Agent': 'VenturePilot-CFWorker',
       },
-      body: JSON.stringify({ name: repoName, private: false }),
+      body: JSON.stringify({ name: finalRepoName, private: false }),
     });
     if (!repoRes.ok) {
       const errorText = await repoRes.text();
-      console.error('❌ Failed to create repo', errorText);
-      return jsonResponse({ error: 'Failed to create repo', details: errorText }, repoRes.status);
+      // If the repo already exists, retry once with a unique name
+      if (repoRes.status === 422 && /name already exists/i.test(errorText)) {
+        finalRepoName = `${baseRepoName}-${Date.now()}`;
+        repoRes = await fetch('https://api.github.com/user/repos', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'VenturePilot-CFWorker',
+          },
+          body: JSON.stringify({ name: finalRepoName, private: false }),
+        });
+        if (!repoRes.ok) {
+          const retryText = await repoRes.text();
+          console.error('❌ Failed to create repo on second attempt', retryText);
+          return jsonResponse(
+            { error: 'Failed to create repo after retry', details: retryText },
+            repoRes.status,
+          );
+        }
+      } else {
+        console.error('❌ Failed to create repo', errorText);
+        return jsonResponse(
+          { error: 'Failed to create repo', details: errorText },
+          repoRes.status,
+        );
+      }
     }
 
     // Upload each file
     for (const [path, content] of Object.entries(siteFiles)) {
       const encoded = btoa(unescape(encodeURIComponent(content)));
       const uploadRes = await fetch(
-        `https://api.github.com/repos/${env.GITHUB_USERNAME}/${repoName}/contents/${path}`,
+        `https://api.github.com/repos/${env.GITHUB_USERNAME}/${finalRepoName}/contents/${path}`,
         {
           method: 'PUT',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
+            'User-Agent': 'VenturePilot-CFWorker',
           },
           body: JSON.stringify({ message: `Add ${path}`, content: encoded, branch: 'main' }),
         },
@@ -258,7 +287,7 @@ Format:
             type: 'github',
             config: {
               owner: env.GITHUB_USERNAME,
-              repo_name: repoName,
+              repo_name: finalRepoName,
               production_branch: 'main',
               deployments_enabled: true,
             },
@@ -298,7 +327,7 @@ Format:
     // Return success
     return jsonResponse({
       ideaId,
-      repoUrl: `https://github.com/${env.GITHUB_USERNAME}/${repoName}`,
+      repoUrl: `https://github.com/${env.GITHUB_USERNAME}/${finalRepoName}`,
       pagesUrl: `https://${projectName}.pages.dev`,
     });
   } catch (err) {
