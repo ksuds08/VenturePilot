@@ -327,7 +327,7 @@ Each component must include:
 - description: Clear purpose of this component
 - location: Where the code should go (e.g., "index.html" or "functions/api/MyComponent.ts")
 
-Return a JSON array. No markdown, no extra keys. Valid JSON only.
+Return a JSON array. Use double quotes (\") for all keys and string values; single quotes are not valid in JSON. No markdown, no extra keys. Valid JSON only.
         `.trim(),
     },
     {
@@ -351,7 +351,26 @@ Return a JSON array. No markdown, no extra keys. Valid JSON only.
     );
   } catch (err) {
     console.error('â Failed to parse component decomposition:', err.message);
-    return [];
+    // Fallback: try a plain OpenAI call and manual parsing
+    try {
+      const res = await openaiChat(env.OPENAI_API_KEY, prompt);
+      let raw = res.choices?.[0]?.message?.content?.trim() || '';
+      raw = raw.replace(/```.*?\n|```/gs, '').trim();
+      const components = JSON.parse(raw);
+      if (!Array.isArray(components)) throw new Error('Not a valid array');
+      return components.filter(
+        (c) =>
+          c?.name &&
+          c?.type &&
+          ['frontend', 'backend'].includes(c.type) &&
+          c?.location &&
+          c?.description &&
+          !/logo|color|theme|header|footer/i.test(c.name)
+      );
+    } catch (err2) {
+      console.error('â Fallback parse of component decomposition failed', err2.message);
+      return [];
+    }
   }
 }
 
