@@ -18,13 +18,11 @@ const mvpUrl = `${baseUrl}/mvp`;
 /**
  * ChatAssistant orchestrates the chat flow and stage progression.
  *
- * Changes from the original implementation:
- * - Always uses a single‑column layout so the stage panels appear
- *   below the chat on all screen sizes.
- * - Uses <details> elements to collapse panels from earlier phases,
- *   showing a summary line (via <summary>) and keeping the current phase expanded.
- * - Includes the previous modifications: streaming scroll behavior and
- *   scrolling to the bottom when Edit/Restart is clicked.
+ * Key behaviours:
+ * - Always uses a single-column layout: chat on top, panels below.
+ * - Each phase panel persists; earlier phases are collapsed to a summary line.
+ * - Scrolls to the bottom of the chat when sending a message or when Edit/Restart is clicked.
+ * - Shows a spinner during long operations (validation, branding, etc.).
  */
 export default function ChatAssistant() {
   const [ideas, setIdeas] = useState<any[]>([]);
@@ -85,17 +83,14 @@ export default function ChatAssistant() {
 
     // Simulated typing: gradually reveal the reply
     const reveal = (index: number, msgs: any[]) => {
-      // Update last message content up to the current index
       const updatedMsgs = msgs.map((m, i) =>
         i === msgs.length - 1 ? { ...m, content: reply.slice(0, index) } : m
       );
       updateIdea(current.id, { messages: updatedMsgs });
 
       if (index <= reply.length) {
-        // Continue revealing one character at a time
         setTimeout(() => reveal(index + 1, updatedMsgs), 20);
       } else {
-        // Streaming complete: commit the final reply and takeaways
         updateIdea(current.id, {
           title: current.title || content.slice(0, 80),
           messages: updatedMsgs,
@@ -112,7 +107,6 @@ export default function ChatAssistant() {
           panelRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 100);
 
-        // Move to the next stage if suggested
         if (nextStage && nextStage !== current.currentStage) {
           setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
         }
@@ -125,6 +119,8 @@ export default function ChatAssistant() {
   // Advance to the next stage (validation → branding → mvp, etc.)
   const handleAdvanceStage = async (id: any, forcedStage?: StageType) => {
     setLoading(true);
+    // Ensure the spinner is visible by scrolling to the bottom of the chat
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
     const stageOrder: StageType[] = ["ideation", "validation", "branding", "mvp", "generatePlan"];
     const idea = ideas.find((i) => i.id === id);
     if (!idea) return;
@@ -132,14 +128,92 @@ export default function ChatAssistant() {
     const nextStage = forcedStage || stageOrder[Math.min(currentIndex + 1, stageOrder.length - 1)];
     updateIdea(id, { currentStage: nextStage });
 
-    // handle transitions as before (validation, branding, mvp)...
+    if (nextStage === "validation") {
+      const res = await fetch(validateUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
+      const data = await res.json();
+      const summary = data?.validation?.split("\n")[0] || "";
+      const messages = [
+        ...idea.messages,
+        { role: "assistant", content: `✅ Validation complete. Here's what we found:\n\n${summary}` },
+      ];
+      updateIdea(id, {
+        messages,
+        validation: data?.validation,
+        takeaways: {
+          ...idea.takeaways,
+          validationSummary: summary,
+        },
+      });
+    }
+
+    if (nextStage === "branding") {
+      const res = await fetch(brandUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
+      });
+      const data = await res.json();
+      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(
+        ", "
+      )}\n• Logo: ${data.logoDesc}`;
+      const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
+      updateIdea(id, {
+        messages,
+        branding: data,
+        takeaways: {
+          ...idea.takeaways,
+          branding: {
+            name: data.name,
+            tagline: data.tagline,
+            colors: data.colors,
+            logoDesc: data.logoDesc,
+            logoUrl: data.logoUrl || "",
+          },
+        },
+      });
+    }
+
+    if (nextStage === "mvp") {
+      const replyText = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
+      const messages = [...idea.messages, { role: "assistant", content: replyText }];
+      updateIdea(id, { messages });
+    }
 
     setLoading(false);
   };
 
   // Kick off the build and deploy the generated MVP
   const handleConfirmBuild = async (id: any) => {
-    // same implementation as before...
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
+      updateIdea(id, { deployError: "Missing ideaId, branding, or messages" });
+      return;
+    }
+    updateIdea(id, { deploying: true });
+    const res = await fetch(mvpUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ideaId: idea.id,
+        branding: idea.takeaways.branding,
+        messages: idea.messages,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      updateIdea(id, { deploying: false, deployError: data.error || "Unknown error" });
+      return;
+    }
+    updateIdea(id, {
+      deploying: false,
+      deployed: true,
+      repoUrl: data.repoUrl,
+      pagesUrl: data.pagesUrl,
+    });
   };
 
   return (
@@ -162,21 +236,19 @@ export default function ChatAssistant() {
             />
           </div>
         ))}
+        {/* marker div to scroll to when a new message is sent */}
         <div ref={messageEndRef} />
       </div>
 
-      {/* Panel stack below chat */}
+      {/* Panel stack: each panel always rendered; current stage expands its content */}
       {activeIdea && (
         <div className="w-full space-y-4" ref={panelRef}>
-          {/* Idea panel */}
+          {/* Refined Idea */}
           {activeIdea.takeaways?.refinedIdea && (
-            <details
-              className="rounded border border-gray-200 p-2"
-              open={activeIdea.currentStage === "ideation"}
-            >
-              <summary className="font-medium cursor-pointer">
+            <div className="rounded border border-gray-200 p-2">
+              <div className="font-medium mb-1">
                 Idea: {activeIdea.takeaways.refinedIdea.name}
-              </summary>
+              </div>
               {activeIdea.currentStage === "ideation" && (
                 <RefinedIdeaCard
                   name={activeIdea.takeaways.refinedIdea.name}
@@ -188,18 +260,15 @@ export default function ChatAssistant() {
                   }}
                 />
               )}
-            </details>
+            </div>
           )}
 
-          {/* Validation panel */}
+          {/* Validation summary */}
           {activeIdea.takeaways?.validationSummary && (
-            <details
-              className="rounded border border-gray-200 p-2"
-              open={activeIdea.currentStage === "validation"}
-            >
-              <summary className="font-medium cursor-pointer">
+            <div className="rounded border border-gray-200 p-2">
+              <div className="font-medium mb-1">
                 Validation: {activeIdea.takeaways.validationSummary}
-              </summary>
+              </div>
               {activeIdea.currentStage === "validation" && (
                 <ValidationSummary
                   summary={activeIdea.takeaways.validationSummary}
@@ -211,19 +280,16 @@ export default function ChatAssistant() {
                   }}
                 />
               )}
-            </details>
+            </div>
           )}
 
-          {/* Branding panel */}
+          {/* Branding */}
           {activeIdea.takeaways?.branding && (
-            <details
-              className="rounded border border-gray-200 p-2"
-              open={activeIdea.currentStage === "branding"}
-            >
-              <summary className="font-medium cursor-pointer">
+            <div className="rounded border border-gray-200 p-2">
+              <div className="font-medium mb-1">
                 Branding: {activeIdea.takeaways.branding.name} —{" "}
                 {activeIdea.takeaways.branding.tagline}
-              </summary>
+              </div>
               {activeIdea.currentStage === "branding" && (
                 <BrandingCard
                   name={activeIdea.takeaways.branding.name}
@@ -239,13 +305,13 @@ export default function ChatAssistant() {
                   }}
                 />
               )}
-            </details>
+            </div>
           )}
 
-          {/* MVP panel */}
+          {/* MVP preview */}
           {activeIdea.currentStage === "mvp" && (
-            <details className="rounded border border-gray-200 p-2" open>
-              <summary className="font-medium cursor-pointer">MVP Preview</summary>
+            <div className="rounded border border-gray-200 p-2">
+              <div className="font-medium mb-1">MVP Preview</div>
               <MVPPreview
                 ideaName={activeIdea.title || "Your Idea"}
                 onDeploy={() => handleConfirmBuild(activeIdea.id)}
@@ -253,7 +319,7 @@ export default function ChatAssistant() {
                 deployedUrl={activeIdea.pagesUrl}
                 deployError={activeIdea.deployError}
               />
-            </details>
+            </div>
           )}
         </div>
       )}
