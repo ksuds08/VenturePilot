@@ -9,6 +9,7 @@
 
 import { openaiChat } from './openai.js';
 import { openaiChatJson } from './openaiJson.js';
+import { componentListSchema } from './schemas.js';
 
 /**
  * Remove import statements from generated backend code that reference external
@@ -420,10 +421,74 @@ export async function generateComponentSubFiles(component, plan, env) {
  * @returns {Promise<Array<Object>>} – list of component definitions
  */
 export async function decomposePlanToComponents(plan, env) {
-  const prompt = [
+  /*
+   * Use OpenAI's function calling to ask for a list of components.  We define
+   * a function named "list_components" with a schema describing the
+   * expected array of component objects.  The model should return its
+   * answer as the arguments to the function.  If function calling fails
+   * to produce valid JSON, fall back to the JSON wrapper and manual
+   * parsing as before.
+   */
+  const messages = [
     {
       role: 'system',
-      content: `
+      content: [
+        'You are an expert software architect.',
+        '',
+        'Given the following MVP specification, decompose it into the *minimum viable set* of frontend and backend components required to implement the product.',
+        '',
+        'Guidelines:',
+        '- Identify each meaningful feature described in the plan and break it down into discrete components. If a feature requires both frontend and backend logic, create separate components for each aspect (e.g. ResumeGeneratorFrontend and ResumeGeneratorBackend).',
+        '- Do NOT include abstract UI pieces like "Header", "ColorTheme", or "Logo".',
+        '- Do NOT include static assets like "logo.svg".',
+        '- DO include only meaningful, functional components (e.g., ResumeGenerator, TipsAPI).',
+        '- Use PascalCase for all component names.',
+        '- Think through the architecture and interactions step by step (progressive elaboration) before listing components, but output only the final JSON.',
+        '',
+        'When possible, call the function list_components with your result.',
+        'Do not include code fences or commentary; return only the function arguments.',
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: `MVP Spec:\n\n${JSON.stringify(plan.mvp, null, 2)}`,
+    },
+  ];
+  const functions = [
+    {
+      name: 'list_components',
+      description: 'List the functional components needed to build the MVP',
+      parameters: componentListSchema,
+    },
+  ];
+  try {
+    // Attempt to use function calling
+    const res = await openaiChat(env.OPENAI_API_KEY, messages, 'gpt-4o', 0.7, functions);
+    const msg = res.choices?.[0]?.message;
+    let components;
+    if (msg?.function_call && msg.function_call.name === 'list_components') {
+      const args = msg.function_call.arguments || '[]';
+      components = JSON.parse(args);
+    } else {
+      components = await openaiChatJson(env.OPENAI_API_KEY, messages);
+    }
+    if (!Array.isArray(components)) throw new Error('Not a valid array');
+    return components.filter(
+      (c) =>
+        c?.name &&
+        c?.type &&
+        ['frontend', 'backend'].includes(c.type) &&
+        c?.location &&
+        c?.description &&
+        !/logo|color|theme|header|footer/i.test(c.name),
+    );
+  } catch (err) {
+    console.error('❌ Failed to parse component decomposition:', err.message);
+    // Fallback: original manual parsing logic
+    const prompt = [
+      {
+        role: 'system',
+        content: `
     You are an expert software architect.
 
     Given the following MVP specification, decompose it into the *minimum viable set* of frontend and backend components required to implement the product.
@@ -444,34 +509,16 @@ export async function decomposePlanToComponents(plan, env) {
 
     Return a JSON array. Use double quotes (\") for all keys and string values; single quotes are not valid in JSON. No markdown, no extra keys. Valid JSON only.
             `.trim(),
-    },
-    {
-      role: 'user',
-      content: `MVP Spec:\n\n${JSON.stringify(plan.mvp, null, 2)}`,
-    },
-  ];
-  try {
-    // Use the JSON wrapper to enforce valid output from OpenAI
-    const components = await openaiChatJson(env.OPENAI_API_KEY, prompt);
-    if (!Array.isArray(components)) throw new Error('Not a valid array');
-    // Filter out unwanted items
-    return components.filter(
-      (c) =>
-        c?.name &&
-        c?.type &&
-        ['frontend', 'backend'].includes(c.type) &&
-        c?.location &&
-        c?.description &&
-        !/logo|color|theme|header|footer/i.test(c.name),
-    );
-  } catch (err) {
-    console.error('❌ Failed to parse component decomposition:', err.message);
-    // Fallback: try a plain OpenAI call and manual parsing
+      },
+      {
+        role: 'user',
+        content: `MVP Spec:\n\n${JSON.stringify(plan.mvp, null, 2)}`,
+      },
+    ];
     try {
-      const res = await openaiChat(env.OPENAI_API_KEY, prompt);
-      let raw = res.choices?.[0]?.message?.content?.trim() || '';
+      const res2 = await openaiChat(env.OPENAI_API_KEY, prompt);
+      let raw = res2.choices?.[0]?.message?.content?.trim() || '';
       raw = raw.replace(/```.*?\n|```/gs, '').trim();
-      // Extract JSON portion from first '[' to last ']'
       const start = raw.indexOf('[');
       const end = raw.lastIndexOf(']');
       let jsonText = raw;
@@ -491,7 +538,6 @@ export async function decomposePlanToComponents(plan, env) {
             !/logo|color|theme|header|footer/i.test(c.name),
         );
       } catch (parseErr) {
-        // Attempt naive repair for single quotes
         try {
           const fixed = jsonText
             .replace(/'([^']+)'(?=\s*:)/g, '"$1"')
