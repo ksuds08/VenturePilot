@@ -21,6 +21,7 @@ const mvpUrl = `${baseUrl}/mvp`;
  * Key behaviours:
  * - Always uses a single-column layout: chat on top, panels below.
  * - Each phase panel persists; earlier phases are collapsed to a summary line.
+ * - User can expand/collapse panels manually, and the current stage panel opens automatically.
  * - Scrolls to the bottom of the chat when sending a message or when Edit/Restart is clicked.
  * - Shows a spinner during long operations (validation, branding, etc.).
  */
@@ -31,6 +32,30 @@ export default function ChatAssistant() {
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
+
+  // Track which panels are explicitly open. When a stage is active it is automatically open.
+  const [openPanels, setOpenPanels] = useState({
+    ideation: false,
+    validation: false,
+    branding: false,
+  });
+
+  // Ensure the current stage panel is open by default when stage changes
+  useEffect(() => {
+    if (activeIdea) {
+      setOpenPanels((prev) => ({
+        ...prev,
+        ideation: prev.ideation || activeIdea.currentStage === "ideation",
+        validation: prev.validation || activeIdea.currentStage === "validation",
+        branding: prev.branding || activeIdea.currentStage === "branding",
+      }));
+    }
+  }, [activeIdea?.currentStage]);
+
+  // Helper to toggle panel open state when header clicked
+  const togglePanel = (key: "ideation" | "validation" | "branding") => {
+    setOpenPanels((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // Initialize a starter idea on first render
   useEffect(() => {
@@ -247,14 +272,21 @@ export default function ChatAssistant() {
           {activeIdea.takeaways?.refinedIdea && (
             <div
               className={`rounded border border-gray-200 p-2 ${
-                activeIdea.currentStage === "ideation" ? "bg-blue-100" : "bg-blue-50"
+                activeIdea.currentStage === "ideation" || openPanels.ideation
+                  ? "bg-blue-100"
+                  : "bg-blue-50"
               }`}
             >
-              <div className="font-medium mb-1 flex items-center justify-between">
+              <div
+                className="font-medium mb-1 flex items-center justify-between cursor-pointer"
+                onClick={() => togglePanel("ideation")}
+              >
                 <span>Idea</span>
-                {activeIdea.currentStage !== "ideation" && <span className="text-gray-400">▼</span>}
+                <span className="text-gray-400">
+                  {activeIdea.currentStage === "ideation" || openPanels.ideation ? "▲" : "▼"}
+                </span>
               </div>
-              {activeIdea.currentStage === "ideation" && (
+              {(activeIdea.currentStage === "ideation" || openPanels.ideation) && (
                 <RefinedIdeaCard
                   name={activeIdea.takeaways.refinedIdea.name}
                   description={activeIdea.takeaways.refinedIdea.description}
@@ -268,20 +300,25 @@ export default function ChatAssistant() {
             </div>
           )}
 
-          {/* Validation summary */}
+          {/* Validation */}
           {activeIdea.takeaways?.validationSummary && (
             <div
               className={`rounded border border-gray-200 p-2 ${
-                activeIdea.currentStage === "validation" ? "bg-green-100" : "bg-green-50"
+                activeIdea.currentStage === "validation" || openPanels.validation
+                  ? "bg-green-100"
+                  : "bg-green-50"
               }`}
             >
-              <div className="font-medium mb-1 flex items-center justify-between">
+              <div
+                className="font-medium mb-1 flex items-center justify-between cursor-pointer"
+                onClick={() => togglePanel("validation")}
+              >
                 <span>Validation</span>
-                {activeIdea.currentStage !== "validation" && (
-                  <span className="text-gray-400">▼</span>
-                )}
+                <span className="text-gray-400">
+                  {activeIdea.currentStage === "validation" || openPanels.validation ? "▲" : "▼"}
+                </span>
               </div>
-              {activeIdea.currentStage === "validation" && (
+              {(activeIdea.currentStage === "validation" || openPanels.validation) && (
                 <ValidationSummary
                   summary={activeIdea.takeaways.validationSummary}
                   fullText={activeIdea.validation}
@@ -299,16 +336,21 @@ export default function ChatAssistant() {
           {activeIdea.takeaways?.branding && (
             <div
               className={`rounded border border-gray-200 p-2 ${
-                activeIdea.currentStage === "branding" ? "bg-purple-100" : "bg-purple-50"
+                activeIdea.currentStage === "branding" || openPanels.branding
+                  ? "bg-purple-100"
+                  : "bg-purple-50"
               }`}
             >
-              <div className="font-medium mb-1 flex items-center justify-between">
+              <div
+                className="font-medium mb-1 flex items-center justify-between cursor-pointer"
+                onClick={() => togglePanel("branding")}
+              >
                 <span>Branding</span>
-                {activeIdea.currentStage !== "branding" && (
-                  <span className="text-gray-400">▼</span>
-                )}
+                <span className="text-gray-400">
+                  {activeIdea.currentStage === "branding" || openPanels.branding ? "▲" : "▼"}
+                </span>
               </div>
-              {activeIdea.currentStage === "branding" && (
+              {(activeIdea.currentStage === "branding" || openPanels.branding) && (
                 <BrandingCard
                   name={activeIdea.takeaways.branding.name}
                   tagline={activeIdea.takeaways.branding.tagline}
