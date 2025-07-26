@@ -75,6 +75,7 @@ export async function generateComponentWithRetry(component, plan, env) {
     '- DO NOT include markdown code fences like ``',
     '- DO NOT include commentary, explanations, or extra keys',
     '- In your JSON response, use double quotes (") for all keys and string values. Single quotes (\') are not valid in JSON.',
+    '- DO NOT import any modules or packages other than the builtâin Cloudflare Worker APIs (Request, Response). You must NOT import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library. Use only the native Fetch API (fetch) and Request/Response types provided by the runtime.',
   ];
 
   const userLines = [
@@ -261,6 +262,7 @@ export async function generateComponentSubFiles(component, plan, env) {
     '- DO NOT include markdown fences or explanations.',
     '- In your JSON response, use double quotes (\") for all keys and string values. Single quotes (\') are not valid in JSON.',
     '- Return only valid JSON of the form: { "files": { "filename1": "code1", "filename2": "code2", ... } }',
+    '- DO NOT import any modules or packages other than the builtâin Cloudflare Worker APIs (Request, Response). You must NOT import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library. Use only the native Fetch API (fetch) and Request/Response types provided by the runtime.',
   ];
   const allUserLines = [
     `Project: ${plan.mvp.name}`,
@@ -356,19 +358,49 @@ Return a JSON array. Use double quotes (\") for all keys and string values; sing
       const res = await openaiChat(env.OPENAI_API_KEY, prompt);
       let raw = res.choices?.[0]?.message?.content?.trim() || '';
       raw = raw.replace(/```.*?\n|```/gs, '').trim();
-      const components = JSON.parse(raw);
-      if (!Array.isArray(components)) throw new Error('Not a valid array');
-      return components.filter(
-        (c) =>
-          c?.name &&
-          c?.type &&
-          ['frontend', 'backend'].includes(c.type) &&
-          c?.location &&
-          c?.description &&
-          !/logo|color|theme|header|footer/i.test(c.name)
-      );
+      // Extract JSON portion from first '[' to last ']'
+      const start = raw.indexOf('[');
+      const end = raw.lastIndexOf(']');
+      let jsonText = raw;
+      if (start !== -1 && end !== -1 && end >= start) {
+        jsonText = raw.slice(start, end + 1);
+      }
+      try {
+        const components = JSON.parse(jsonText);
+        if (!Array.isArray(components)) throw new Error('Not a valid array');
+        return components.filter(
+          (c) =>
+            c?.name &&
+            c?.type &&
+            ['frontend', 'backend'].includes(c.type) &&
+            c?.location &&
+            c?.description &&
+            !/logo|color|theme|header|footer/i.test(c.name)
+        );
+      } catch (parseErr) {
+        // Attempt naive repair for single quotes
+        try {
+          const fixed = jsonText
+            .replace(/'([^']+)'(?=\s*:)/g, '"$1"')
+            .replace(/:\s*'([^']+)'/g, ': "$1"');
+          const components = JSON.parse(fixed);
+          if (!Array.isArray(components)) throw new Error('Not a valid array');
+          return components.filter(
+            (c) =>
+              c?.name &&
+              c?.type &&
+              ['frontend', 'backend'].includes(c.type) &&
+              c?.location &&
+              c?.description &&
+              !/logo|color|theme|header|footer/i.test(c.name)
+          );
+        } catch (_ignored) {
+          console.error('â Fallback parse of component decomposition failed', parseErr.message);
+          return [];
+        }
+      }
     } catch (err2) {
-      console.error('â Fallback parse of component decomposition failed', err2.message);
+      console.error('â Fallback call for component decomposition failed', err2.message);
       return [];
     }
   }
