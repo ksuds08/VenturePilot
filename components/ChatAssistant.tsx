@@ -105,6 +105,13 @@ export default function ChatAssistant() {
       [...current.messages, userMsg],
       current.currentStage
     );
+    // Once we've received the full reply from the assistant we want
+    // to stop showing the loading spinner.  The response will now be
+    // streamed via the reveal() helper below, so we clear the
+    // loading flag before starting the streaming animation.  If
+    // loading remains true here the spinner will continue to display
+    // on top of the chat while the text is being revealed.
+    setLoading(false);
 
     // Simulated typing: gradually reveal the reply
     const reveal = (index: number, msgs: any[]) => {
