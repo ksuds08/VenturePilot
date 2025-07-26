@@ -16,9 +16,9 @@ import { openaiChat } from './openai.js';
  * JSON only.
  *
  * @param {string} apiKey – OpenAI API key
- * @param {Array<Object>} messages – chat messages for the completion
+ * @param {Array} messages – chat messages for the completion
  * @param {Object} [options] – optional model and temperature overrides
- * @returns {Promise<any>} – parsed JSON object
+ * @returns {Promise<Object>} – parsed JSON object
  * @throws {Error} – if JSON cannot be parsed after two attempts
  */
 export async function openaiChatJson(apiKey, messages, options = {}) {
@@ -28,8 +28,10 @@ export async function openaiChatJson(apiKey, messages, options = {}) {
   while (attempt < 2) {
     const res = await openaiChat(apiKey, msgs, model, temperature);
     let raw = res.choices?.[0]?.message?.content?.trim() || '';
-    // Remove code fences and language hints
-    raw = raw.replace(/```.*?\n|```/gs, '').trim();
+    // Remove triple backticks and any optional language tags.  Some models
+    // prefix their JSON with ```json or ``` before the object.  This regex
+    // strips the fence and any immediate non‑newline characters following it.
+    raw = raw.replace(/```[a-zA-Z0-9]*\s*/g, '').trim();
     // Extract from first '{' to last '}' if possible
     const start = raw.indexOf('{');
     const end = raw.lastIndexOf('}');
