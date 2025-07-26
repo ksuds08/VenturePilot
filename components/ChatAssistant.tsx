@@ -21,7 +21,7 @@ const mvpUrl = `${baseUrl}/mvp`;
  * Key behaviours:
  * - Single-column layout: chat on top, panels below.
  * - Each phase panel persists; earlier phases are collapsed to a summary line.
- * - Users can expand/collapse panels manually, and the current stage panel opens automatically.
+ * - User can expand/collapse panels manually, and the current stage panel opens automatically.
  * - Scrolls to the bottom of the chat when sending or editing messages.
  * - Spinner shows during long operations.
  */
@@ -144,8 +144,10 @@ export default function ChatAssistant() {
                 ],
                 current.currentStage
               );
+              // Cast to any so we can access optional properties
+              const summaryAny = summaryRes as any;
               const summaryReply =
-                summaryRes?.reply || summaryRes?.summary || summaryRes?.content;
+                summaryAny?.reply || summaryAny?.summary || summaryAny?.content;
               if (summaryReply) {
                 finalRefined = {
                   name: (current.title || content).slice(0, 60),
