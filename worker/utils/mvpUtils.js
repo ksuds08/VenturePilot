@@ -1,4 +1,4 @@
-/ SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT
 //
 // Helper utilities for MVP generation.  These routines encapsulate the core logic
 // for decomposing a product specification into granular components, generating
