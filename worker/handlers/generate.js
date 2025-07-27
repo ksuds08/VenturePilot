@@ -228,50 +228,24 @@ export async function generateHandler(request, env) {
         return jsonResponse({ error: `Failed to upload ${path}`, details: errorText }, uploadRes.status);
       }
     }
-    // Create Cloudflare Pages project
-    const projectName = `app-${ideaId}`;
-    const cfProjectRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.CF_API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: projectName,
-        production_branch: 'main',
-        source: {
-          type: 'github',
-          config: {
-            owner: ghUser,
-            repo_name: repoName,
-            production_branch: 'main',
-            deployments_enabled: true,
-          },
-        },
-      }),
-    });
-    if (!cfProjectRes.ok) {
-      const errorText = await cfProjectRes.text();
-      console.error('❌ Failed to create Pages project', errorText);
-      return jsonResponse({ error: 'Failed to create Pages project', details: errorText }, cfProjectRes.status);
+    // Determine the workers.dev subdomain for the account so we can construct the Worker URL.
+    let workerUrl = null;
+    try {
+      const subdomainRes = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/subdomain`,
+        { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } },
+      );
+      if (subdomainRes.ok) {
+        const data = await subdomainRes.json();
+        const sub = data?.result?.subdomain;
+        if (sub) {
+          workerUrl = `https://${repoName}.${sub}.workers.dev`;
+        }
+      }
+    } catch (_) {
+      // ignore failure to fetch subdomain
     }
-    // Trigger deployment
-    const formData = new FormData();
-    formData.append('branch', 'main');
-    const deployRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects/${projectName}/deployments`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` },
-        body: formData,
-      },
-    );
-    if (!deployRes.ok) {
-      const errorText = await deployRes.text();
-      console.error('❌ Failed to trigger deployment', errorText);
-      return jsonResponse({ error: 'Failed to trigger deployment', details: errorText }, deployRes.status);
-    }
-    return jsonResponse({ ideaId, repoUrl: `https://github.com/${ghUser}/${repoName}`, pagesUrl: `https://${projectName}.pages.dev` });
+    return jsonResponse({ ideaId, repoUrl: `https://github.com/${ghUser}/${repoName}`, workerUrl });
   } catch (err) {
     console.error('❌ Unhandled error in generateHandler', err);
     return jsonResponse({ error: 'Unhandled error', details: err.message }, 500);
