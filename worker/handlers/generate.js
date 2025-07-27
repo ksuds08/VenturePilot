@@ -197,13 +197,18 @@ export async function generateHandler(request, env) {
       '',
     ].join('\n');
     siteFiles['wrangler.toml'] = wranglerToml;
-    const deployWorkflow = `name: Deploy Worker\n\n` +
-      `on:\n  push:\n    branches: [main]\n\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n` +
-      `      - uses: actions/checkout@v3\n` +
-      `      - uses: oven-sh/setup-bun@v1\n` +
-      `        with:\n          bun-version: '1.2.15'\n` +
-      `      - run: bun install\n` +
-      `      - run: npx wrangler deploy\n        env:\n          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}\n          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}\n`;
+    const deployWorkflow =
+      'name: Deploy Worker\n\n' +
+      'on:\n  push:\n    branches: [main]\n\n' +
+      'jobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n' +
+      '      - uses: actions/checkout@v3\n' +
+      '      - uses: oven-sh/setup-bun@v1\n' +
+      "        with:\n          bun-version: '1.2.15'\n" +
+      '      - run: bun install\n' +
+      '      - run: npx wrangler deploy\n' +
+      '        env:\n' +
+      '          CF_API_TOKEN: \${{ secrets.CF_API_TOKEN }}\n' +
+      '          CF_ACCOUNT_ID: \${{ secrets.CF_ACCOUNT_ID }}\n';
     siteFiles['.github/workflows/deploy.yml'] = deployWorkflow;
     // Upload files
     for (const [path, content] of Object.entries(siteFiles)) {
