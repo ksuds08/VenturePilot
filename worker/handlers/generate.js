@@ -197,15 +197,23 @@ export async function generateHandler(request, env) {
       '',
     ].join('\n');
     siteFiles['wrangler.toml'] = wranglerToml;
+    // Create a minimal package.json so package managers have something to work with
+    const pkg = {
+      name: repoName,
+      version: '0.0.1',
+      private: true,
+      type: 'module',
+    };
+    siteFiles['package.json'] = JSON.stringify(pkg, null, 2);
+    // Define the GitHub Actions workflow to deploy the Worker.  It installs wrangler via npm
+    // (no need for bun) and deploys the script.
     const deployWorkflow =
       'name: Deploy Worker\n\n' +
       'on:\n  push:\n    branches: [main]\n\n' +
       'jobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n' +
       '      - uses: actions/checkout@v3\n' +
-      '      - uses: oven-sh/setup-bun@v1\n' +
-      "        with:\n          bun-version: '1.2.15'\n" +
-      '      - run: bun install\n' +
-      '      - run: npx wrangler deploy\n' +
+      '      - run: npm install -g wrangler\n' +
+      '      - run: wrangler deploy\n' +
       '        env:\n' +
       '          CF_API_TOKEN: \${{ secrets.CF_API_TOKEN }}\n' +
       '          CF_ACCOUNT_ID: \${{ secrets.CF_ACCOUNT_ID }}\n';
