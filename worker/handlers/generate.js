@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MIT
-//
-// Internal handler for generating an MVP.  This module contains the core
-// logic previously found in handlers/mvp.js.  Separating the generation
-// logic from the HTTP endpoint allows the worker to offload long‑running
-// tasks to a different route or service.  Future implementations may
-// replace this module with calls to an external Durable Object or other
-// backend.
+// Patched generate handler for VenturePilot
+// NOTE: This file includes verification logic to ensure that all backend
+// components are generated and registered before deployment.
 
 import { jsonResponse, safeJson } from '../utils/response.js';
 import { openaiChat } from '../utils/openai.js';
@@ -19,6 +15,30 @@ import {
   generateRouterFile,
   generateBackendComponentFiles,
 } from '../utils/mvpUtils.js';
+
+/**
+ * Verify that every backend component has a corresponding file in the generated files
+ * and that the router index file wires up each handler.  Throws an error if any
+ * component is missing or not registered.
+ *
+ * @param {Array} components – list of components returned by decomposePlanToComponents
+ * @param {Object} allFiles – map of filename → file contents
+ * @param {string} indexTs – contents of the generated index.ts file
+ */
+function verifyGeneratedBackendFiles(components, allFiles, indexTs) {
+  for (const comp of components) {
+    if (comp.type === 'backend') {
+      const filePath = `functions/api/${comp.name}.ts`;
+      if (!Object.prototype.hasOwnProperty.call(allFiles, filePath)) {
+        throw new Error(`Missing handler file: ${filePath}`);
+      }
+      const handlerName = `${comp.name}Handler`;
+      if (typeof indexTs !== 'string' || !indexTs.includes(handlerName)) {
+        throw new Error(`Missing handler registration: ${handlerName}`);
+      }
+    }
+  }
+}
 
 /**
  * Handler that performs all steps needed to generate an MVP from a user
@@ -53,7 +73,7 @@ export async function generateHandler(request, env) {
         content: [
           'You are a startup cofounder assistant AI. From the following chat history, extract a complete MVP plan.',
           'When possible, call the function extract_mvp_plan with your answer as arguments.',
-          'If a field isn\'t obvious, infer a reasonable value.',
+          "If a field isn't obvious, infer a reasonable value.",
           'Do not include code fences or commentary; return only arguments for the function.',
         ].join('\n'),
       },
@@ -91,12 +111,7 @@ export async function generateHandler(request, env) {
         return jsonResponse({ error: 'Failed to parse plan from thread', details: e2.message }, 500);
       }
     }
-    if (!plan?.mvp ||
-        !plan.mvp.name ||
-        !plan.mvp.description ||
-        !plan.mvp.technology ||
-        !Array.isArray(plan.mvp.features) ||
-        plan.mvp.features.length === 0) {
+    if (!plan?.mvp || !plan.mvp.name || !plan.mvp.description || !plan.mvp.technology || !Array.isArray(plan.mvp.features) || plan.mvp.features.length === 0) {
       console.error('❌ MVP plan missing required fields after parsing', plan);
       return jsonResponse({ error: 'MVP plan missing required fields', plan }, 500);
     }
@@ -115,6 +130,13 @@ export async function generateHandler(request, env) {
     // Generate router file
     const { indexFile } = generateRouterFile(allComponentFiles);
     allComponentFiles['functions/api/index.ts'] = indexFile;
+    // Verify that all backend handlers were generated and registered
+    try {
+      verifyGeneratedBackendFiles(components, allComponentFiles, indexFile);
+    } catch (err) {
+      console.error('❌ Verification failed', err.message);
+      return jsonResponse({ error: err.message }, 500);
+    }
     // Generate frontend
     let frontendFiles;
     try {
@@ -153,67 +175,52 @@ export async function generateHandler(request, env) {
       }
       const errorText = await repoRes.text();
       console.error('❌ Failed to create repo', errorText);
-      return jsonResponse(
-        { error: 'Failed to create repo', details: errorText },
-        repoRes.status,
-      );
+      return jsonResponse({ error: 'Failed to create repo', details: errorText }, repoRes.status);
     }
     // Upload files
     for (const [path, content] of Object.entries(siteFiles)) {
       const encoded = btoa(unescape(encodeURIComponent(content)));
-      const uploadRes = await fetch(
-        `https://api.github.com/repos/${ghUser}/${repoName}/contents/${path}`,
-        {
-          method: 'PUT',
-          headers: {
-            Authorization: `token ${token}`,
-            'User-Agent': 'VenturePilot-CFWorker',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ message: `Add ${path}`, content: encoded, branch: 'main' }),
+      const uploadRes = await fetch(`https://api.github.com/repos/${ghUser}/${repoName}/contents/${path}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `token ${token}`,
+          'User-Agent': 'VenturePilot-CFWorker',
+          'Content-Type': 'application/json',
         },
-      );
+        body: JSON.stringify({ message: `Add ${path}`, content: encoded, branch: 'main' }),
+      });
       if (!uploadRes.ok) {
         const errorText = await uploadRes.text();
         console.error(`❌ Failed to upload ${path}`, errorText);
-        return jsonResponse(
-          { error: `Failed to upload ${path}`, details: errorText },
-          uploadRes.status,
-        );
+        return jsonResponse({ error: `Failed to upload ${path}`, details: errorText }, uploadRes.status);
       }
     }
     // Create Cloudflare Pages project
     const projectName = `app-${ideaId}`;
-    const cfProjectRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${env.CF_API_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: projectName,
-          production_branch: 'main',
-          source: {
-            type: 'github',
-            config: {
-              owner: ghUser,
-              repo_name: repoName,
-              production_branch: 'main',
-              deployments_enabled: true,
-            },
-          },
-        }),
+    const cfProjectRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/pages/projects`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.CF_API_TOKEN}`,
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({
+        name: projectName,
+        production_branch: 'main',
+        source: {
+          type: 'github',
+          config: {
+            owner: ghUser,
+            repo_name: repoName,
+            production_branch: 'main',
+            deployments_enabled: true,
+          },
+        },
+      }),
+    });
     if (!cfProjectRes.ok) {
       const errorText = await cfProjectRes.text();
       console.error('❌ Failed to create Pages project', errorText);
-      return jsonResponse(
-        { error: 'Failed to create Pages project', details: errorText },
-        cfProjectRes.status,
-      );
+      return jsonResponse({ error: 'Failed to create Pages project', details: errorText }, cfProjectRes.status);
     }
     // Trigger deployment
     const formData = new FormData();
@@ -229,16 +236,9 @@ export async function generateHandler(request, env) {
     if (!deployRes.ok) {
       const errorText = await deployRes.text();
       console.error('❌ Failed to trigger deployment', errorText);
-      return jsonResponse(
-        { error: 'Failed to trigger deployment', details: errorText },
-        deployRes.status,
-      );
+      return jsonResponse({ error: 'Failed to trigger deployment', details: errorText }, deployRes.status);
     }
-    return jsonResponse({
-      ideaId,
-      repoUrl: `https://github.com/${ghUser}/${repoName}`,
-      pagesUrl: `https://${projectName}.pages.dev`,
-    });
+    return jsonResponse({ ideaId, repoUrl: `https://github.com/${ghUser}/${repoName}`, pagesUrl: `https://${projectName}.pages.dev` });
   } catch (err) {
     console.error('❌ Unhandled error in generateHandler', err);
     return jsonResponse({ error: 'Unhandled error', details: err.message }, 500);
