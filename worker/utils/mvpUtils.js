@@ -1,4 +1,4 @@
-/*
+
  * Alternate version of mvpUtils.js that avoids OpenAI function‑calling when
  * decomposing the MVP specification into components.  Instead, it asks the
  * model to return a plain JSON array (or an object with a `components`
@@ -74,6 +74,15 @@ export async function generateBackendComponentFiles(component, plan, env) {
         output[fname] = code;
       }
     }
+    // Ensure the primary handler file exports an onRequest wrapper.  If the
+    // model failed to include it, append the wrapper here so Cloudflare
+    // recognises the function.  Pages Functions require an `onRequest` export
+    // to run【552761521993816†L300-L313】.
+    const mainCode = output[filePath];
+    if (typeof mainCode === 'string' &&
+        !/export\s+(const|async\s+function|function)\s+onRequest/.test(mainCode)) {
+      output[filePath] = mainCode.trim() + `\n\nexport const onRequest = ${component.name}Handler;\n`;
+    }
     return output;
   } catch (err) {
     console.error('❌ Failed to generate backend files for component', component.name, err.message);
@@ -141,6 +150,13 @@ export async function generateComponentWithRetry(component, plan, env) {
       const code = sanitized.files[filePath];
       if (typeof code === 'string') {
         sanitized.files[filePath] = sanitizeImports(code);
+      }
+      // Post-process to ensure an onRequest export exists.  If missing,
+      // append an alias so Cloudflare Pages functions can deploy this file.
+      const generated = sanitized.files[filePath];
+      if (typeof generated === 'string' &&
+          !/export\s+(const|async\s+function|function)\s+onRequest/.test(generated)) {
+        sanitized.files[filePath] = generated.trim() + `\n\nexport const onRequest = ${handlerName};\n`;
       }
       return sanitized;
     } catch (err) {
