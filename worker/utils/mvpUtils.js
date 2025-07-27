@@ -1,16 +1,11 @@
-
- * Alternate version of mvpUtils.js that avoids OpenAI function‑calling when
- * decomposing the MVP specification into components.  Instead, it asks the
- * model to return a plain JSON array (or an object with a `components`
- * property) describing the frontend and backend components.  This
- * simplification helps avoid schema-related errors and ensures that every
- * component described in the MVP plan gets generated and deployed.
- *
- * All other helper functions are copied from the original mvpUtils.js and
- * continue to use openaiChatJson to enforce valid JSON output.  The only
- * difference from the original utility is in the implementation of
- * decomposePlanToComponents.
- */
+// mvpUtils.js provides helper functions for decomposing an MVP spec into
+// frontend and backend components and for generating code files from those
+// components.  It instructs the model to include an `onRequest` export in
+// each backend handler so Cloudflare Pages can recognise it【552761521993816†L300-L313】.  The
+// file also contains utilities for generating frontend files and assembling
+// a router to dispatch requests to the appropriate handler.  Comments at
+// the top of the file were converted to line comments to avoid build
+// parsers misinterpreting multi‑line comment blocks.
 
 import { openaiChat } from './openai.js';
 import { openaiChatJson } from './openaiJson.js';
@@ -409,7 +404,10 @@ export async function decomposePlanToComponents(plan, env) {
  * the naming convention `${name}Handler`.
  */
 export function generateRouterFile(allComponentFiles) {
-  let indexTs = `// Auto-generated index.ts for Pages Functions routing\nimport type { Request } from 'itty-router';\n\n`;
+  // Begin the router file without importing external modules.  Cloudflare
+  // Pages provides Request and Response globals, so we avoid any imports
+  // here to prevent missing dependency errors.
+  let indexTs = `// Auto-generated index.ts for Pages Functions routing\n`;
   const handlerExports = [];
   for (const [filename, content] of Object.entries(allComponentFiles)) {
     if (filename.startsWith('functions/api/') && filename !== 'functions/api/index.ts') {
@@ -424,7 +422,7 @@ export function generateRouterFile(allComponentFiles) {
       }
     }
   }
-  indexTs += `\nexport async function onRequest({ request }: { request: Request }): Promise<Response> {\n`;
+  indexTs += `\nexport async function onRequest({ request }) {\n`;
   indexTs += `  const url = new URL(request.url);\n`;
   indexTs += `  const path = url.pathname;\n\n`;
   for (const { path: routePath, handlerName } of handlerExports) {
