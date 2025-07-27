@@ -24,7 +24,12 @@ function sanitizeImports(code) {
  * This helper is unchanged from the original implementation.
  */
 export async function generateBackendComponentFiles(component, plan, env) {
-  const filePath = `functions/api/${component.name}.ts`;
+  // For Worker deployments, write backend handlers into worker/api rather than
+  // functions/api.  Each handler file exports a named async function
+  // `${component.name}Handler` that takes a Request and returns a Response.  We
+  // intentionally omit the onRequest alias because the Worker entrypoint will
+  // import and invoke these handlers directly.
+  const filePath = `worker/api/${component.name}.ts`;
   const sysLines = [
     'You are a senior full‑stack engineer. Generate all necessary backend files for the given component in a single response.',
     '',
@@ -33,8 +38,8 @@ export async function generateBackendComponentFiles(component, plan, env) {
     '- DO NOT import any modules or packages other than built‑in APIs. Do not import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library.',
     `- The primary handler file must be located at: ${filePath}`,
     `- The file must export an async function named ${component.name}Handler(req: Request): Promise<Response>`,
-    // Added instruction: export onRequest alias so Cloudflare will run this function
-    `- To make this file deployable on Cloudflare Pages, you must also export a constant named onRequest that references the handler. Use the form: export const onRequest = ${component.name}Handler;`,
+    // In a Worker deployment we import and call this handler manually from the entrypoint,
+    // so there is no need to export an onRequest alias.
     '- DO NOT export default.',
     '- If additional helper files are needed, include them under functions/api/, with appropriate filenames.',
     '',
@@ -69,15 +74,7 @@ export async function generateBackendComponentFiles(component, plan, env) {
         output[fname] = code;
       }
     }
-    // Ensure the primary handler file exports an onRequest wrapper.  If the
-    // model failed to include it, append the wrapper here so Cloudflare
-    // recognises the function.  Pages Functions require an `onRequest` export
-    // to run【552761521993816†L300-L313】.
-    const mainCode = output[filePath];
-    if (typeof mainCode === 'string' &&
-        !/export\s+(const|async\s+function|function)\s+onRequest/.test(mainCode)) {
-      output[filePath] = mainCode.trim() + `\n\nexport const onRequest = ${component.name}Handler;\n`;
-    }
+    // For Worker deployments we do not automatically append an onRequest alias.
     return output;
   } catch (err) {
     console.error('❌ Failed to generate backend files for component', component.name, err.message);
@@ -91,7 +88,8 @@ export async function generateBackendComponentFiles(component, plan, env) {
  */
 export async function generateComponentWithRetry(component, plan, env) {
   const handlerName = `${component.name}Handler`;
-  const filePath = `functions/api/${component.name}.ts`;
+  // Write backend handler under worker/api for Worker deployments
+  const filePath = `worker/api/${component.name}.ts`;
   const systemLines = [
     'You are a senior full‑stack engineer. Build only the code needed to implement the following component of a multi‑file web application.',
     '',
@@ -146,13 +144,8 @@ export async function generateComponentWithRetry(component, plan, env) {
       if (typeof code === 'string') {
         sanitized.files[filePath] = sanitizeImports(code);
       }
-      // Post-process to ensure an onRequest export exists.  If missing,
-      // append an alias so Cloudflare Pages functions can deploy this file.
-      const generated = sanitized.files[filePath];
-      if (typeof generated === 'string' &&
-          !/export\s+(const|async\s+function|function)\s+onRequest/.test(generated)) {
-        sanitized.files[filePath] = generated.trim() + `\n\nexport const onRequest = ${handlerName};\n`;
-      }
+      // For Worker deployments we do not append an onRequest alias.  The entrypoint
+      // will import and invoke the handler directly.
       return sanitized;
     } catch (err) {
       attempt++;
@@ -433,4 +426,67 @@ export function generateRouterFile(allComponentFiles) {
     indexFile: indexTs,
     handlerExports,
   };
+}
+
+/**
+ * Generate a Worker entrypoint file that serves the static frontend and routes
+ * API requests to backend handlers.  The resulting file is written to
+ * worker/index.ts and can be used as the main entry for a Cloudflare
+ * Worker deployment.
+ *
+ * The entrypoint imports each backend handler from the worker/api directory
+ * and embeds the contents of index.html, style.css and script.js directly
+ * into the script.  Requests to `/` return the HTML, `/style.css` the CSS,
+ * `/script.js` the JS, and `/api/<name>` will invoke the corresponding
+ * `<name>Handler` function.  Any other path yields a 404.
+ *
+ * @param {Object} allComponentFiles Map of filename → file content for backend handlers
+ * @param {Object} frontendFiles Map of filename → file content for the frontend
+ * @returns {{ entryFile: string, handlerImports: Array<{ name: string, handlerName: string }> }}
+ */
+export function generateWorkerEntryFile(allComponentFiles, frontendFiles) {
+  let entryTs = `// Auto-generated entrypoint for Cloudflare Worker\n\n`;
+  // Collect backend handlers
+  const handlers = [];
+  for (const [filename, content] of Object.entries(allComponentFiles)) {
+    if (filename.startsWith('worker/api/') && filename.endsWith('.ts')) {
+      const match = filename.match(/worker\/api\/(.+)\.ts$/);
+      if (match) {
+        const name = match[1];
+        const handlerName = `${name}Handler`;
+        if (typeof content === 'string' && content.includes(`export async function ${handlerName}`)) {
+          entryTs += `import { ${handlerName} } from './api/${name}';\n`;
+          handlers.push({ name, handlerName });
+        }
+      }
+    }
+  }
+  // Inline static assets.  Escape backticks and `${` sequences to avoid
+  // breaking template literals.  Undefined files default to empty strings.
+  const escapeContent = (text) =>
+    (text || '')
+      .replace(/`/g, '\\`')
+      .replace(/\$\{/g, '\\${');
+  const indexHtml = escapeContent(frontendFiles['index.html']);
+  const styleCss = escapeContent(frontendFiles['style.css']);
+  const scriptJs = escapeContent(frontendFiles['script.js']);
+  entryTs += `\nconst INDEX_HTML = \`${indexHtml}\`;\n`;
+  entryTs += `const STYLE_CSS = \`${styleCss}\`;\n`;
+  entryTs += `const SCRIPT_JS = \`${scriptJs}\`;\n\n`;
+  // Build fetch handler
+  entryTs += `export default {\n`;
+  entryTs += `  async fetch(request) {\n`;
+  entryTs += `    const url = new URL(request.url);\n`;
+  entryTs += `    const path = url.pathname;\n`;
+  entryTs += `    if (path === '/') return new Response(INDEX_HTML, { headers: { 'Content-Type': 'text/html' } });\n`;
+  entryTs += `    if (path === '/style.css') return new Response(STYLE_CSS, { headers: { 'Content-Type': 'text/css' } });\n`;
+  entryTs += `    if (path === '/script.js') return new Response(SCRIPT_JS, { headers: { 'Content-Type': 'application/javascript' } });\n`;
+  // Add API routes
+  for (const { name, handlerName } of handlers) {
+    entryTs += `    if (path === '/api/${name}') return ${handlerName}(request);\n`;
+  }
+  entryTs += `    return new Response('Not found', { status: 404 });\n`;
+  entryTs += `  }\n`;
+  entryTs += `};\n`;
+  return { entryFile: entryTs, handlerImports: handlers };
 }
