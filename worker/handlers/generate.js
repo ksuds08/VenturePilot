@@ -12,8 +12,8 @@ import {
   generateFrontendFiles,
   generateComponentSubFiles,
   decomposePlanToComponents,
-  generateRouterFile,
   generateBackendComponentFiles,
+  generateWorkerEntryFile,
 } from '../utils/mvpUtils.js';
 
 /**
@@ -35,6 +35,16 @@ function verifyGeneratedBackendFiles(components, allFiles, indexTs) {
       const handlerName = `${comp.name}Handler`;
       if (typeof indexTs !== 'string' || !indexTs.includes(handlerName)) {
         throw new Error(`Missing handler registration: ${handlerName}`);
+      }
+      // Ensure each backend file exports an onRequest wrapper so Cloudflare Pages
+      // recognises it as a valid function.  Without this, Pages will ignore
+      // the file and no routes will be deployed.  We expect the file to
+      // contain an export statement assigning the handler to onRequest.  See
+      // Cloudflare documentation: a Pages Function must export `onRequest` or
+      // `onRequestGet/Post` to be invoked【552761521993816†L300-L313】.
+      const code = allFiles[filePath];
+      if (typeof code !== 'string' || !code.includes('export const onRequest') && !code.includes('export async function onRequest') && !code.includes('export function onRequest')) {
+        throw new Error(`Missing onRequest export in ${filePath}. Each backend file must export onRequest to be deployed.`);
       }
     }
   }
@@ -127,16 +137,6 @@ export async function generateHandler(request, env) {
         }
       }
     }
-    // Generate router file
-    const { indexFile } = generateRouterFile(allComponentFiles);
-    allComponentFiles['functions/api/index.ts'] = indexFile;
-    // Verify that all backend handlers were generated and registered
-    try {
-      verifyGeneratedBackendFiles(components, allComponentFiles, indexFile);
-    } catch (err) {
-      console.error('❌ Verification failed', err.message);
-      return jsonResponse({ error: err.message }, 500);
-    }
     // Generate frontend
     let frontendFiles;
     try {
@@ -145,8 +145,15 @@ export async function generateHandler(request, env) {
       console.error('❌ Failed to generate frontend', err);
       return jsonResponse({ error: 'Failed to generate frontend', details: err.message }, 500);
     }
-    // Combine frontend and backend files
-    const siteFiles = { ...frontendFiles, ...allComponentFiles };
+    // Generate Worker entrypoint that embeds the frontend and routes API requests.
+    const { entryFile } = generateWorkerEntryFile(allComponentFiles, frontendFiles);
+    allComponentFiles['worker/index.ts'] = entryFile;
+    // Assemble site files: copy frontend assets into worker/static/ and include backend and entrypoint files.
+    const siteFiles = {};
+    for (const [fname, content] of Object.entries(frontendFiles)) {
+      siteFiles[`worker/static/${fname}`] = content;
+    }
+    Object.assign(siteFiles, allComponentFiles);
     // Create repo on GitHub
     const repoNameBase = `${ideaId}-app`;
     let repoName = repoNameBase;
@@ -177,6 +184,27 @@ export async function generateHandler(request, env) {
       console.error('❌ Failed to create repo', errorText);
       return jsonResponse({ error: 'Failed to create repo', details: errorText }, repoRes.status);
     }
+    // After choosing the final repository name, augment the file set with a wrangler.toml and GitHub Actions workflow.
+    // These files enable automatic deployment of the generated Worker via GitHub Actions.
+    const compatibilityDate = new Date().toISOString().split('T')[0];
+    const wranglerToml = [
+      `name = "${repoName}"`,
+      `main = "worker/index.ts"`,
+      `compatibility_date = "${compatibilityDate}"`,
+      '',
+      '[site]',
+      'bucket = "./worker/static"',
+      '',
+    ].join('\n');
+    siteFiles['wrangler.toml'] = wranglerToml;
+    const deployWorkflow = `name: Deploy Worker\n\n` +
+      `on:\n  push:\n    branches: [main]\n\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n` +
+      `      - uses: actions/checkout@v3\n` +
+      `      - uses: oven-sh/setup-bun@v1\n` +
+      `        with:\n          bun-version: '1.2.15'\n` +
+      `      - run: bun install\n` +
+      `      - run: npx wrangler deploy\n        env:\n          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}\n          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}\n`;
+    siteFiles['.github/workflows/deploy.yml'] = deployWorkflow;
     // Upload files
     for (const [path, content] of Object.entries(siteFiles)) {
       const encoded = btoa(unescape(encodeURIComponent(content)));
