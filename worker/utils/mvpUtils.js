@@ -19,7 +19,7 @@ import { componentListSchema } from './schemas.js';
 // Remove disallowed imports from backend code
 function sanitizeImports(code) {
   return code.replace(
-    /import\s+\{[^}]+\}\s+from\s+['"](cloudflare-worker-types|some-cloudflare-package|undici|worktop)['"];?\n?/g,
+    /import\s+\{[^}]+\}\s+from\s+['\"](cloudflare-worker-types|some-cloudflare-package|undici|worktop)['\"];?\n?/g,
     '',
   );
 }
@@ -38,6 +38,8 @@ export async function generateBackendComponentFiles(component, plan, env) {
     '- DO NOT import any modules or packages other than built‑in APIs. Do not import from "cloudflare-worker-types", "some-cloudflare-package", "undici", "worktop", or any other external library.',
     `- The primary handler file must be located at: ${filePath}`,
     `- The file must export an async function named ${component.name}Handler(req: Request): Promise<Response>`,
+    // Added instruction: export onRequest alias so Cloudflare will run this function
+    `- To make this file deployable on Cloudflare Pages, you must also export a constant named onRequest that references the handler. Use the form: export const onRequest = ${component.name}Handler;`,
     '- DO NOT export default.',
     '- If additional helper files are needed, include them under functions/api/, with appropriate filenames.',
     '',
@@ -95,6 +97,9 @@ export async function generateComponentWithRetry(component, plan, env) {
     `  - Create a file at: ${filePath}`,
     `  - The file MUST export this named async function exactly:`,
     `    export async function ${handlerName}(req: Request): Promise<Response>`,
+    // Added instruction: export onRequest alias referencing the handler
+    `    // And also export a variable named onRequest pointing to this handler:`,
+    `    export const onRequest = ${handlerName};`,
     '  - DO NOT export default.',
     '  - DO NOT use external frameworks or libraries.',
     '  - DO NOT import from "express", "@vercel/node", "some-http-library", or "your-framework".',
