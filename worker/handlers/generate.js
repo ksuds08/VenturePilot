@@ -256,18 +256,17 @@ export async function generateHandler(request, env) {
       type: 'module',
     };
     siteFiles['package.json'] = JSON.stringify(pkg, null, 2);
-    // Define the GitHub Actions workflow to deploy the Worker.  It installs wrangler via npm
-    // (no need for bun) and deploys the script.  Use CLOUDFLARE_API_TOKEN in the workflow.
+    // Define the GitHub Actions workflow to deploy the Worker.  Use real newlines for YAML.
     const deployWorkflow =
-      'name: Deploy Worker\\n\\n' +
-      'on:\\n  push:\\n    branches: [main]\\n\\n' +
-      'jobs:\\n  deploy:\\n    runs-on: ubuntu-latest\\n    steps:\\n' +
-      '      - uses: actions/checkout@v3\\n' +
-      '      - run: npm install -g wrangler\\n' +
-      '      - run: wrangler deploy\\n' +
-      '        env:\\n' +
-      '          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\\n' +
-      '          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}\\n';
+      'name: Deploy Worker\n\n' +
+      'on:\n  push:\n    branches: [main]\n\n' +
+      'jobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n' +
+      '      - uses: actions/checkout@v3\n' +
+      '      - run: npm install -g wrangler\n' +
+      '      - run: wrangler deploy\n' +
+      '        env:\n' +
+      '          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n' +
+      '          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}\n';
     siteFiles['.github/workflows/deploy.yml'] = deployWorkflow;
     // Upload files
     for (const [path, content] of Object.entries(siteFiles)) {
