@@ -40,9 +40,9 @@ export default function ChatPanel({
   const [remarkPlugins, setRemarkPlugins] = useState<any[]>([]);
 
   useEffect(() => {
-  loadRemarkGfm().then((plugin) => {
-    setRemarkPlugins([plugin]);
-  });
+    loadRemarkGfm().then((plugin) => {
+      setRemarkPlugins([plugin]);
+    });
   }, []);
 
   const handleSend = () => {
@@ -78,9 +78,7 @@ export default function ChatPanel({
 
   return (
     <div
-      className={`rounded-xl border border-gray-200 p-4 shadow-sm ${
-        isActive ? "ring-2 ring-blue-500" : ""
-      }`}
+      className={`rounded-xl border border-gray-200 p-4 shadow-sm ${isActive ? "ring-2 ring-blue-500" : ""}`}
       onClick={onClick}
     >
       <div
@@ -88,9 +86,14 @@ export default function ChatPanel({
         className="max-h-64 overflow-y-auto rounded bg-gray-50 p-2 text-sm"
       >
         {messages.map((msg, index) => (
-          <div key={index} className={`mb-2 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+          <div
+            key={index}
+            className={`mb-2 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          >
             <div
-              className={`${msg.role === "user" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-800"} px-3 py-2 rounded-lg max-w-xs break-words`}
+              className={`${
+                msg.role === "user" ? "bg-primary text-white" : "bg-gray-200 text-gray-800"
+              } px-3 py-2 rounded-lg max-w-xs break-words`}
             >
               <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
                 {msg.content}
@@ -127,7 +130,7 @@ export default function ChatPanel({
         />
         <button
           onClick={handleSend}
-          className="rounded bg-blue-600 px-4 py-2 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
+          className="rounded bg-primary px-4 py-2 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
           disabled={disabled || input.trim() === ""}
         >
           Send
