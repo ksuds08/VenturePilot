@@ -16,15 +16,6 @@ import {
   generateWorkerEntryFile,
 } from '../utils/mvpUtils.js';
 
-/**
- * Verify that every backend component has a corresponding file in the generated files
- * and that the router index file wires up each handler.  Throws an error if any
- * component is missing or not registered.
- *
- * @param {Array} components – list of components returned by decomposePlanToComponents
- * @param {Object} allFiles – map of filename → file contents
- * @param {string} indexTs – contents of the generated index.ts file
- */
 function verifyGeneratedBackendFiles(components, allFiles, indexTs) {
   for (const comp of components) {
     if (comp.type === 'backend') {
@@ -36,10 +27,6 @@ function verifyGeneratedBackendFiles(components, allFiles, indexTs) {
       if (typeof indexTs !== 'string' || !indexTs.includes(handlerName)) {
         throw new Error(`Missing handler registration: ${handlerName}`);
       }
-      // Ensure each backend file exports an onRequest wrapper so Cloudflare Pages
-      // recognises it as a valid function.  Without this, Pages will ignore
-      // the file and no routes will be deployed.  We expect the file to
-      // contain an export statement assigning the handler to onRequest.
       const code = allFiles[filePath];
       if (
         typeof code !== 'string' ||
@@ -55,17 +42,6 @@ function verifyGeneratedBackendFiles(components, allFiles, indexTs) {
   }
 }
 
-/**
- * Handler that performs all steps needed to generate an MVP from a user
- * specification.  It extracts a plan via OpenAI, decomposes it into
- * components, generates backend and frontend code, creates a GitHub repo,
- * provisions a Cloudflare Pages project and triggers a deployment.  On
- * success it returns the ideaId, GitHub repo URL and Pages URL.
- *
- * @param {Request} request – incoming request
- * @param {Object} env – environment variables (API keys and tokens)
- * @returns {Promise<Response>} – JSON response with repoUrl and pagesUrl
- */
 export async function generateHandler(request, env) {
   try {
     const body = await safeJson(request);
@@ -77,14 +53,8 @@ export async function generateHandler(request, env) {
         400,
       );
     }
-    /*
-     * Compose a prompt to extract the MVP plan from chat history.  We instruct
-     * the model to call a function named "extract_mvp_plan" that follows
-     * our planSchema.  Using OpenAI's function‑calling mode yields a clean
-     * arguments object that we can parse directly without worrying about
-     * markdown fences or commentary.  If function calling is not
-     * successful, we fall back to the JSON wrapper.
-     */
+
+    // Extract the MVP plan using OpenAI function calling, with fallback
     const planMessages = [
       {
         role: 'system',
@@ -111,7 +81,6 @@ export async function generateHandler(request, env) {
     ];
     let plan;
     try {
-      // Attempt to use function calling to extract the plan
       const res = await openaiChat(
         env.OPENAI_API_KEY,
         planMessages,
@@ -124,16 +93,13 @@ export async function generateHandler(request, env) {
         const args = msg.function_call.arguments || '{}';
         plan = JSON.parse(args);
       } else {
-        // Fall back to our JSON wrapper if no function call is returned
         plan = await openaiChatJson(env.OPENAI_API_KEY, planMessages);
       }
     } catch (e) {
       console.error('❌ Failed to parse plan via function calling', e.message);
       try {
-        // Fall back to JSON parsing of the same messages
         plan = await openaiChatJson(env.OPENAI_API_KEY, planMessages);
       } catch (e2) {
-        console.error('❌ Failed to parse plan JSON', e2.message);
         return jsonResponse(
           { error: 'Failed to parse plan from thread', details: e2.message },
           500,
@@ -148,22 +114,19 @@ export async function generateHandler(request, env) {
       !Array.isArray(plan.mvp.features) ||
       plan.mvp.features.length === 0
     ) {
-      console.error('❌ MVP plan missing required fields after parsing', plan);
       return jsonResponse(
         { error: 'MVP plan missing required fields', plan },
         500,
       );
     }
-    // Decompose plan into components
+
+    // Decompose plan into components and generate code
     const components = await decomposePlanToComponents(plan, env);
     const allComponentFiles = {};
-    // Generate backend components using single-call generator to reduce subrequests
     for (const component of components) {
       if (component.type === 'backend') {
         const files = await generateBackendComponentFiles(component, plan, env);
-        if (files) {
-          Object.assign(allComponentFiles, files);
-        }
+        if (files) Object.assign(allComponentFiles, files);
       }
     }
     // Generate frontend
@@ -176,34 +139,33 @@ export async function generateHandler(request, env) {
         env,
       );
     } catch (err) {
-      console.error('❌ Failed to generate frontend', err);
       return jsonResponse(
         { error: 'Failed to generate frontend', details: err.message },
         500,
       );
     }
-    // Generate Worker entrypoint that embeds the frontend and routes API requests.
+    // Worker entrypoint
     const { entryFile } = generateWorkerEntryFile(
       allComponentFiles,
       frontendFiles,
     );
     allComponentFiles['worker/index.ts'] = entryFile;
-    // Assemble site files: copy frontend assets into worker/static/ and include backend and entrypoint files.
+
+    // Assemble site files
     const siteFiles = {};
     for (const [fname, content] of Object.entries(frontendFiles)) {
       siteFiles[`worker/static/${fname}`] = content;
     }
     Object.assign(siteFiles, allComponentFiles);
-    // Create repo on GitHub
+
+    // Create repo in user or org
     const repoNameBase = `${ideaId}-app`;
     let repoName = repoNameBase;
-    let suffix = 0;
     const token = env.PAT_GITHUB || env.GITHUB_PAT;
     const owner = env.GITHUB_ORG || env.GITHUB_USERNAME;
     const createRepoUrl = env.GITHUB_ORG
       ? `https://api.github.com/orgs/${env.GITHUB_ORG}/repos`
       : 'https://api.github.com/user/repos';
-
     // Cloudflare token: prefer CLOUDFLARE_API_TOKEN, fall back to CF_API_TOKEN
     const cfToken = env.CLOUDFLARE_API_TOKEN || env.CF_API_TOKEN;
 
@@ -223,22 +185,19 @@ export async function generateHandler(request, env) {
         break;
       }
       if (repoRes.status === 422) {
-        suffix++;
-        // generate a unique name on conflict
         repoName = `${repoNameBase}-${Date.now()}`;
         continue;
       }
       const errorText = await repoRes.text();
-      console.error('❌ Failed to create repo', errorText);
       return jsonResponse(
         { error: 'Failed to create repo', details: errorText },
         repoRes.status,
       );
     }
-    // After choosing the final repository name, augment the file set with a wrangler.toml and GitHub Actions workflow.
-    // These files enable automatic deployment of the generated Worker via GitHub Actions.
+
+    // wrangler.toml and package.json
     const compatibilityDate = new Date().toISOString().split('T')[0];
-    const wranglerToml = [
+    siteFiles['wrangler.toml'] = [
       `name = "${repoName}"`,
       `main = "worker/index.ts"`,
       `compatibility_date = "${compatibilityDate}"`,
@@ -247,16 +206,13 @@ export async function generateHandler(request, env) {
       'bucket = "./worker/static"',
       '',
     ].join('\n');
-    siteFiles['wrangler.toml'] = wranglerToml;
-    // Create a minimal package.json so package managers have something to work with
-    const pkg = {
-      name: repoName,
-      version: '0.0.1',
-      private: true,
-      type: 'module',
-    };
-    siteFiles['package.json'] = JSON.stringify(pkg, null, 2);
-    // Define the GitHub Actions workflow to deploy the Worker.  Use real newlines for YAML.
+    siteFiles['package.json'] = JSON.stringify(
+      { name: repoName, version: '0.0.1', private: true, type: 'module' },
+      null,
+      2,
+    );
+
+    // GitHub Actions workflow uses CLOUDFLARE_API_TOKEN
     const deployWorkflow =
       'name: Deploy Worker\n\n' +
       'on:\n  push:\n    branches: [main]\n\n' +
@@ -268,7 +224,8 @@ export async function generateHandler(request, env) {
       '          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n' +
       '          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}\n';
     siteFiles['.github/workflows/deploy.yml'] = deployWorkflow;
-    // Upload files
+
+    // Upload all files
     for (const [path, content] of Object.entries(siteFiles)) {
       const encoded = btoa(unescape(encodeURIComponent(content)));
       const uploadRes = await fetch(
@@ -289,14 +246,14 @@ export async function generateHandler(request, env) {
       );
       if (!uploadRes.ok) {
         const errorText = await uploadRes.text();
-        console.error(`❌ Failed to upload ${path}`, errorText);
         return jsonResponse(
           { error: `Failed to upload ${path}`, details: errorText },
           uploadRes.status,
         );
       }
     }
-    // Determine the workers.dev subdomain for the account so we can construct the Worker URL.
+
+    // Compute workers.dev URL
     let workerUrl = null;
     try {
       const subdomainRes = await fetch(
@@ -311,15 +268,15 @@ export async function generateHandler(request, env) {
         }
       }
     } catch (_) {
-      // ignore failure to fetch subdomain
+      // ignore
     }
+
     return jsonResponse({
       ideaId,
       repoUrl: `https://github.com/${owner}/${repoName}`,
       workerUrl,
     });
   } catch (err) {
-    console.error('❌ Unhandled error in generateHandler', err);
     return jsonResponse(
       { error: 'Unhandled error', details: err.message },
       500,
