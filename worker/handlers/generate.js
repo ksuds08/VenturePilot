@@ -39,9 +39,7 @@ function verifyGeneratedBackendFiles(components, allFiles, indexTs) {
       // Ensure each backend file exports an onRequest wrapper so Cloudflare Pages
       // recognises it as a valid function.  Without this, Pages will ignore
       // the file and no routes will be deployed.  We expect the file to
-      // contain an export statement assigning the handler to onRequest.  See
-      // Cloudflare documentation: a Pages Function must export `onRequest` or
-      // `onRequestGet/Post` to be invoked.
+      // contain an export statement assigning the handler to onRequest.
       const code = allFiles[filePath];
       if (
         typeof code !== 'string' ||
@@ -201,11 +199,14 @@ export async function generateHandler(request, env) {
     let repoName = repoNameBase;
     let suffix = 0;
     const token = env.PAT_GITHUB || env.GITHUB_PAT;
-    const ghUser = env.GITHUB_USERNAME; // retained for backward compatibility
     const owner = env.GITHUB_ORG || env.GITHUB_USERNAME;
     const createRepoUrl = env.GITHUB_ORG
       ? `https://api.github.com/orgs/${env.GITHUB_ORG}/repos`
       : 'https://api.github.com/user/repos';
+
+    // Cloudflare token: prefer CLOUDFLARE_API_TOKEN, fall back to CF_API_TOKEN
+    const cfToken = env.CLOUDFLARE_API_TOKEN || env.CF_API_TOKEN;
+
     let repoCreated = false;
     while (!repoCreated) {
       const repoRes = await fetch(createRepoUrl, {
@@ -256,17 +257,17 @@ export async function generateHandler(request, env) {
     };
     siteFiles['package.json'] = JSON.stringify(pkg, null, 2);
     // Define the GitHub Actions workflow to deploy the Worker.  It installs wrangler via npm
-    // (no need for bun) and deploys the script.
+    // (no need for bun) and deploys the script.  Use CLOUDFLARE_API_TOKEN in the workflow.
     const deployWorkflow =
-      'name: Deploy Worker\n\n' +
-      'on:\n  push:\n    branches: [main]\n\n' +
-      'jobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n' +
-      '      - uses: actions/checkout@v3\n' +
-      '      - run: npm install -g wrangler\n' +
-      '      - run: wrangler deploy\n' +
-      '        env:\n' +
-      '          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}\n' +
-      '          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}\n';
+      'name: Deploy Worker\\n\\n' +
+      'on:\\n  push:\\n    branches: [main]\\n\\n' +
+      'jobs:\\n  deploy:\\n    runs-on: ubuntu-latest\\n    steps:\\n' +
+      '      - uses: actions/checkout@v3\\n' +
+      '      - run: npm install -g wrangler\\n' +
+      '      - run: wrangler deploy\\n' +
+      '        env:\\n' +
+      '          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\\n' +
+      '          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}\\n';
     siteFiles['.github/workflows/deploy.yml'] = deployWorkflow;
     // Upload files
     for (const [path, content] of Object.entries(siteFiles)) {
@@ -301,7 +302,7 @@ export async function generateHandler(request, env) {
     try {
       const subdomainRes = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/subdomain`,
-        { headers: { Authorization: `Bearer ${env.CF_API_TOKEN}` } },
+        { headers: { Authorization: `Bearer ${cfToken}` } },
       );
       if (subdomainRes.ok) {
         const data = await subdomainRes.json();
