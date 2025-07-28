@@ -1,15 +1,26 @@
 import Layout from "../components/layout";
 import { motion } from "framer-motion";
 import ChatAssistant from "../components/ChatAssistant";
+import Image from "next/image";
 
 export default function LandingPage() {
   return (
     <Layout>
       <>
         {/* Hero Section */}
-        <section className="flex flex-col items-center text-center gap-6 py-16 px-4">
+        <section className="relative flex flex-col items-center text-center gap-6 py-12 px-4">
+          {/* Large faint watermark */}
+          <div className="absolute inset-0 flex justify-center">
+            <Image
+              src="/hero-watermark.png"
+              alt="Decorative swirl"
+              width={350}
+              height={350}
+              className="opacity-10 mt-[-3rem] pointer-events-none select-none"
+            />
+          </div>
           <motion.h1
-            className="text-5xl md:text-6xl font-extrabold leading-tight text-slate-900 dark:text-white"
+            className="relative text-5xl md:text-6xl font-extrabold leading-tight text-slate-900 dark:text-white"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
@@ -17,7 +28,7 @@ export default function LandingPage() {
             Launch Your Startup on AI Wings
           </motion.h1>
           <motion.p
-            className="text-xl md:text-2xl max-w-2xl text-slate-700 dark:text-slate-300"
+            className="relative text-xl md:text-2xl max-w-2xl text-slate-700 dark:text-slate-300"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
