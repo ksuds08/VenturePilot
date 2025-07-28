@@ -1,7 +1,7 @@
 // mvpUtils.js provides helper functions for decomposing an MVP spec into
 // frontend and backend components and for generating code files from those
 // components.  It instructs the model to include an `onRequest` export in
-// each backend handler so Cloudflare Pages can recognise it【552761521993816†L300-L313】.  The
+// each backend handler so Cloudflare Pages can recognise it.  The
 // file also contains utilities for generating frontend files and assembling
 // a router to dispatch requests to the appropriate handler.  Comments at
 // the top of the file were converted to line comments to avoid build
@@ -14,7 +14,7 @@ import { componentListSchema } from './schemas.js';
 // Remove disallowed imports from backend code
 function sanitizeImports(code) {
   return code.replace(
-    /import\s+\{[^}]+\}\s+from\s+['\"](cloudflare-worker-types|some-cloudflare-package|undici|worktop)['\"];?\n?/g,
+    /import\s+\{[^}]+\}\s+from\s+['"](cloudflare-worker-types|some-cloudflare-package|undici|worktop)['"];?\n?/g,
     '',
   );
 }
@@ -67,9 +67,21 @@ export async function generateBackendComponentFiles(component, plan, env) {
       throw new Error('Missing main backend file in response');
     }
     const output = {};
+    // Copy over each returned file.  For worker handlers, fix relative imports
+    // so that imports from ../functions/api/ are rewritten to ../../functions/api/
+    // (the handler is under worker/api so it needs to go up two directories).
+    // For helper files under functions/api/, strip any disallowed imports.
     for (const [fname, code] of Object.entries(files)) {
-      if (fname.startsWith('functions/api/') && typeof code === 'string') {
-        output[fname] = sanitizeImports(code);
+      if (typeof code === 'string') {
+        let updated = code;
+        if (fname.startsWith('worker/api/')) {
+          // Replace references like "../functions/api/" with "../../functions/api/".
+          updated = updated.replace(/\.\.\/functions\/api\//g, '../../functions/api/');
+        }
+        if (fname.startsWith('functions/api/')) {
+          updated = sanitizeImports(updated);
+        }
+        output[fname] = updated;
       } else {
         output[fname] = code;
       }
@@ -139,10 +151,26 @@ export async function generateComponentWithRetry(component, plan, env) {
       if (!parsed?.files || !parsed.files[filePath]) {
         throw new Error('Missing expected file in response');
       }
-      const sanitized = { files: { ...parsed.files } };
-      const code = sanitized.files[filePath];
-      if (typeof code === 'string') {
-        sanitized.files[filePath] = sanitizeImports(code);
+      const sanitized = { files: {} };
+      // Iterate over all returned files.  Apply the same import path fix for
+      // worker handlers and sanitize helper files under functions/api/.
+      for (const [fname, fileCode] of Object.entries(parsed.files)) {
+        if (typeof fileCode === 'string') {
+          let updated = fileCode;
+          if (fname.startsWith('worker/api/')) {
+            updated = updated.replace(/\.\.\/functions\/api\//g, '../../functions/api/');
+          }
+          if (fname.startsWith('functions/api/')) {
+            updated = sanitizeImports(updated);
+          }
+          sanitized.files[fname] = updated;
+        } else {
+          sanitized.files[fname] = fileCode;
+        }
+      }
+      // Ensure the expected file exists after sanitization
+      if (!sanitized.files[filePath]) {
+        throw new Error('Missing expected file in sanitized response');
       }
       // For Worker deployments we do not append an onRequest alias.  The entrypoint
       // will import and invoke the handler directly.
@@ -166,42 +194,42 @@ export async function generateFrontendFiles(plan, branding, logoUrl, env) {
     {
       role: 'system',
       content: `
-    You are a full‑stack developer tasked with generating the frontend for a new MVP.
+        You are a full‑stack developer tasked with generating the frontend for a new MVP.
 
-    Use Tailwind CSS. Create clean, professional HTML/CSS and optionally JavaScript. Prioritise usability, accessibility and mobile responsiveness.
+        Use Tailwind CSS. Create clean, professional HTML/CSS and optionally JavaScript. Prioritise usability, accessibility and mobile responsiveness.
 
-    Write production‑ready, maintainable code: use semantic HTML5 tags, a clear component structure, descriptive class and id names, and modular scripts. Avoid inline styles unless absolutely necessary. Provide interactive UI elements (forms, buttons, modals, chat bubbles) that match the described features.
+        Write production‑ready, maintainable code: use semantic HTML5 tags, a clear component structure, descriptive class and id names, and modular scripts. Avoid inline styles unless absolutely necessary. Provide interactive UI elements (forms, buttons, modals, chat bubbles) that match the described features.
 
-    Before writing code, think through the user journey and page layout step by step. Apply a progressive elaboration approach: plan the structure internally and then output only the final implementation without your reasoning.
+        Before writing code, think through the user journey and page layout step by step. Apply a progressive elaboration approach: plan the structure internally and then output only the final implementation without your reasoning.
 
-    If a backend API is needed (e.g., to fetch or submit data), wire the frontend to call the appropriate endpoint under /functions/api/.
+        If a backend API is needed (e.g., to fetch or submit data), wire the frontend to call the appropriate endpoint under /functions/api/.
 
-    Return only valid JSON in this structure:
-    {
-      "files": {
-        "index.html": "...",
-        "style.css": "...",            // optional, Tailwind preferred
-        "script.js": "...",            // optional
-        ...
-      }
-    }
-    `.trim(),
+        Return only valid JSON in this structure:
+        {
+          "files": {
+            "index.html": "...",
+            "style.css": "...",            // optional, Tailwind preferred
+            "script.js": "...",            // optional
+            ...
+          }
+        }
+        `.trim(),
     },
     {
       role: 'user',
       content: `
-    MVP:
-    ${JSON.stringify(plan.mvp, null, 2)}
+        MVP:
+        ${JSON.stringify(plan.mvp, null, 2)}
 
-    Branding:
-    - Name: ${branding.name}
-    - Tagline: ${branding.tagline}
-    - Colors: ${branding.colors?.join(', ')}
-    - Logo: ${branding.logoDesc}
-    - Logo URL: ${logoUrl || 'none'}
+        Branding:
+        - Name: ${branding.name}
+        - Tagline: ${branding.tagline}
+        - Colors: ${branding.colors?.join(', ')}
+        - Logo: ${branding.logoDesc}
+        - Logo URL: ${logoUrl || 'none'}
 
-    When relevant, include frontend wiring to call a backend API at /functions/api/handler.ts.
-          `.trim(),
+        When relevant, include frontend wiring to call a backend API at /functions/api/handler.ts.
+              `.trim(),
     },
   ];
   const json = await openaiChatJson(env.OPENAI_API_KEY, prompt);
@@ -463,10 +491,7 @@ export function generateWorkerEntryFile(allComponentFiles, frontendFiles) {
   }
   // Inline static assets.  Escape backticks and `${` sequences to avoid
   // breaking template literals.  Undefined files default to empty strings.
-  const escapeContent = (text) =>
-    (text || '')
-      .replace(/`/g, '\\`')
-      .replace(/\$\{/g, '\\${');
+  const escapeContent = (text) => (text || '').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
   const indexHtml = escapeContent(frontendFiles['index.html']);
   const styleCss = escapeContent(frontendFiles['style.css']);
   const scriptJs = escapeContent(frontendFiles['script.js']);
