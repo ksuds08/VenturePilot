@@ -17,7 +17,14 @@ const mvpUrl = `${baseUrl}/mvp`;
 /**
  * ChatAssistant orchestrates the chat flow and stage progression.
  */
-export default function ChatAssistant({ onReady }: { onReady?: () => void }) {
+
+type ChatAssistantProps = {
+  onReady?: () => void;
+};
+
+export default function ChatAssistant(props: ChatAssistantProps) {
+  const { onReady } = props;
+
   const [ideas, setIdeas] = useState<any[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -46,7 +53,6 @@ export default function ChatAssistant({ onReady }: { onReady?: () => void }) {
     setOpenPanels((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Initialize starter idea on first render and call onReady
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
       const id = uuidv4();
@@ -68,8 +74,7 @@ export default function ChatAssistant({ onReady }: { onReady?: () => void }) {
       setActiveIdeaId(id);
       if (onReady) onReady();
     }
-  }, [activeIdeaId, ideas.length, onReady]);
-  // Helper to update an idea by id
+  }, [activeIdeaId, ideas.length, onReady]);  // Helper to update an idea by id
   const updateIdea = (id: any, updates: any) => {
     setIdeas((prev) =>
       prev.map((i) => (i.id === id ? { ...i, ...updates } : i))
@@ -314,9 +319,10 @@ export default function ChatAssistant({ onReady }: { onReady?: () => void }) {
       repoUrl: data.repoUrl,
       pagesUrl: deployedUrl,
     });
-  };  return (
-    <div className="flex flex-col gap-8 mt-6 px-2">
-      {/* Chat container */}
+  };
+
+  return (
+    <div className="flex flex-col gap-8 mt-6 px-2">      {/* Chat container */}
       <div className="flex flex-col w-full">
         {ideas.map((idea) => (
           <div key={idea.id} className="mb-6">
@@ -334,11 +340,9 @@ export default function ChatAssistant({ onReady }: { onReady?: () => void }) {
             />
           </div>
         ))}
-        {/* marker div to scroll to when a new message is sent */}
         <div ref={messageEndRef} />
       </div>
 
-      {/* Panel stack: each panel always rendered; current stage expands its content */}
       {activeIdea && (
         <div className="w-full space-y-4" ref={panelRef}>
           {/* Refined Idea panel */}
@@ -479,4 +483,9 @@ export default function ChatAssistant({ onReady }: { onReady?: () => void }) {
     </div>
   );
 }
+
+
+
+
+
 
