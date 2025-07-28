@@ -144,10 +144,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
                 ],
                 current.currentStage
               );
-              const summaryReply =
-                summaryRes?.reply ||
-                summaryRes?.summary ||
-                summaryRes?.content;
+              const summaryReply = summaryRes?.reply;
               if (summaryReply) {
                 finalRefined = {
                   name: (current.title || content).slice(0, 60),
