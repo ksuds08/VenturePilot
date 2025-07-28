@@ -1,3 +1,4 @@
+// ChatAssistant.tsx
 import React, { useState, useEffect, useRef } from "react";
 import ChatPanel from "./ChatPanel";
 import { sendToAssistant } from "../lib/assistantClient";
@@ -231,9 +232,7 @@ export default function ChatAssistant() {
         body: JSON.stringify({ idea: idea.title, ideaId: idea.id }),
       });
       const data = await res.json();
-      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${
-        data.tagline
-      }\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
+      const brandingSummary = `✅ Branding complete!\n\n• Name: ${data.name}\n• Tagline: ${data.tagline}\n• Colors: ${data.colors?.join(", ")}\n• Logo: ${data.logoDesc}`;
       const messages = [...idea.messages, { role: "assistant", content: brandingSummary }];
       updateIdea(id, {
         messages,
@@ -282,11 +281,13 @@ export default function ChatAssistant() {
       updateIdea(id, { deploying: false, deployError: data.error || "Unknown error" });
       return;
     }
+    // Prefer workerUrl from the backend if present, otherwise fall back to pagesUrl for legacy support.
+    const deployedUrl = data.workerUrl || data.pagesUrl;
     updateIdea(id, {
       deploying: false,
       deployed: true,
       repoUrl: data.repoUrl,
-      pagesUrl: data.pagesUrl,
+      pagesUrl: deployedUrl,
     });
   };
 
