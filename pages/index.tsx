@@ -1,9 +1,27 @@
+import { useRef, useState, useEffect } from "react";
 import Layout from "../components/layout";
 import { motion } from "framer-motion";
 import ChatAssistant from "../components/ChatAssistant";
 import Image from "next/image";
 
+/**
+ * Landing page component with smooth scroll-to-chat functionality.
+ */
 export default function LandingPage() {
+  // Ref to the chat section (initially null until mounted)
+  const chatRef = useRef<HTMLDivElement | null>(null);
+
+  // Flag to trigger scrolling; toggled by the button click
+  const [scrollToChat, setScrollToChat] = useState(false);
+
+  // Scroll into view once the chat section is mounted and the flag is true
+  useEffect(() => {
+    if (scrollToChat && chatRef.current) {
+      chatRef.current.scrollIntoView({ behavior: "smooth" });
+      setScrollToChat(false);
+    }
+  }, [scrollToChat]);
+
   return (
     <Layout>
       <>
@@ -41,9 +59,7 @@ export default function LandingPage() {
             transition={{ delay: 0.3 }}
           >
             <button
-              onClick={() =>
-                document.getElementById("start")?.scrollIntoView({ behavior: "smooth" })
-              }
+              onClick={() => setScrollToChat(true)}
               className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-8 py-3 rounded-2xl text-lg shadow-lg font-semibold hover:scale-105 hover:shadow-xl transition-all duration-200"
             >
               Launch Your Startup Now
@@ -52,7 +68,7 @@ export default function LandingPage() {
         </section>
 
         {/* Onboarding Assistant Section */}
-        <section id="start" className="py-12">
+        <section ref={chatRef} id="start" className="py-12">
           <h2 className="text-3xl font-bold mb-6 text-center text-slate-900 dark:text-white">
             Your AI Co-Founder Is Ready
           </h2>
