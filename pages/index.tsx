@@ -14,7 +14,7 @@ export default function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            Your AI Co-Founder for Startups
+            Launch Your Startup on AI Wings
           </motion.h1>
           <motion.p
             className="text-xl md:text-2xl max-w-2xl text-slate-700 dark:text-slate-300"
@@ -22,7 +22,7 @@ export default function LandingPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
-            Instantly generate your business plan, branding, and MVP demo — all powered by AI.
+            Instantly build your business plan, brand, and working MVP with your AI co‑founder.
           </motion.p>
           <motion.div
             initial={{ opacity: 0 }}
@@ -33,7 +33,7 @@ export default function LandingPage() {
               onClick={() =>
                 document.getElementById("start")?.scrollIntoView({ behavior: "smooth" })
               }
-              className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-8 py-3 rounded-2xl text-lg shadow-lg font-semibold hover:scale-105 hover:shadow-xl transition-all duration-200"
+              className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-8 py-3 rounded-2xl text-lg shadow-lg font-semibold hover:scale-105 hover:shadow-xl transition-all duration-200"
             >
               Launch Your Startup Now
             </button>
