@@ -355,8 +355,8 @@ export default function ChatAssistant() {
             <div
               className={`rounded border border-gray-200 p-2 ${
                 activeIdea.currentStage === "validation" || openPanels.validation
-                  ? "bg-green-100"
-                  : "bg-green-50"
+                  ? "bg-blue-100"
+                  : "bg-blue-50"
               }`}
             >
               <div
@@ -387,8 +387,8 @@ export default function ChatAssistant() {
             <div
               className={`rounded border border-gray-200 p-2 ${
                 activeIdea.currentStage === "branding" || openPanels.branding
-                  ? "bg-purple-100"
-                  : "bg-purple-50"
+                  ? "bg-blue-100"
+                  : "bg-blue-50"
               }`}
             >
               <div
