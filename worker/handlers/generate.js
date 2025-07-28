@@ -16,6 +16,19 @@ import {
   generateWorkerEntryFile,
 } from '../utils/mvpUtils.js';
 
+// Helper to convert arbitrary branding names into valid Worker/repo slugs.
+// Cloudflare worker names must be 1–63 characters, lower case, and may only
+// contain alphanumeric characters and hyphens. Spaces and other characters are
+// replaced with hyphens and consecutive hyphens are collapsed.
+function slugify(text) {
+  return String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63);
+}
+
 function verifyGeneratedBackendFiles(components, allFiles, indexTs) {
   for (const comp of components) {
     if (comp.type === 'backend') {
@@ -67,9 +80,7 @@ export async function generateHandler(request, env) {
       },
       {
         role: 'user',
-        content: messages
-          .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
-          .join('\n\n'),
+        content: messages.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n'),
       },
     ];
     const functions = [
@@ -81,13 +92,7 @@ export async function generateHandler(request, env) {
     ];
     let plan;
     try {
-      const res = await openaiChat(
-        env.OPENAI_API_KEY,
-        planMessages,
-        'gpt-4o',
-        0.7,
-        functions,
-      );
+      const res = await openaiChat(env.OPENAI_API_KEY, planMessages, 'gpt-4o', 0.7, functions);
       const msg = res.choices?.[0]?.message;
       if (msg?.function_call && msg.function_call.name === 'extract_mvp_plan') {
         const args = msg.function_call.arguments || '{}';
@@ -132,12 +137,7 @@ export async function generateHandler(request, env) {
     // Generate frontend
     let frontendFiles;
     try {
-      frontendFiles = await generateFrontendFiles(
-        plan,
-        branding,
-        logoUrl,
-        env,
-      );
+      frontendFiles = await generateFrontendFiles(plan, branding, logoUrl, env);
     } catch (err) {
       return jsonResponse(
         { error: 'Failed to generate frontend', details: err.message },
@@ -145,10 +145,7 @@ export async function generateHandler(request, env) {
       );
     }
     // Worker entrypoint
-    const { entryFile } = generateWorkerEntryFile(
-      allComponentFiles,
-      frontendFiles,
-    );
+    const { entryFile } = generateWorkerEntryFile(allComponentFiles, frontendFiles);
     allComponentFiles['worker/index.ts'] = entryFile;
 
     // Assemble site files
@@ -158,9 +155,16 @@ export async function generateHandler(request, env) {
     }
     Object.assign(siteFiles, allComponentFiles);
 
-    // Create repo in user or org
-    const repoNameBase = `${ideaId}-app`;
+    // Derive a human-friendly name from the branding for the repo and Worker.
+    const brandingName = branding?.name || plan.mvp.name || String(ideaId);
+    const baseSlug = slugify(brandingName);
+    let repoNameBase = `${baseSlug}-app`;
+    // If the slug is empty after sanitization, fall back to ideaId
+    if (!repoNameBase || repoNameBase === '-app') {
+      repoNameBase = `${ideaId}-app`;
+    }
     let repoName = repoNameBase;
+
     const token = env.PAT_GITHUB || env.GITHUB_PAT;
     const owner = env.GITHUB_ORG || env.GITHUB_USERNAME;
     const createRepoUrl = env.GITHUB_ORG
@@ -253,7 +257,10 @@ export async function generateHandler(request, env) {
       }
     }
 
-    // Compute workers.dev URL
+    // Compute workers.dev URL.  Try fetching the account subdomain via the
+    // Cloudflare API; if that fails, fall back to an environment variable or a
+    // predictable pattern based on the account's known subdomain.  The
+    // resulting URL will be <repoName>.<subdomain>.workers.dev.
     let workerUrl = null;
     try {
       const subdomainRes = await fetch(
@@ -270,8 +277,14 @@ export async function generateHandler(request, env) {
     } catch (_) {
       // ignore
     }
+    // Fallback: use provided WORKERS_SUBDOMAIN environment or leave null
+    if (!workerUrl && env.WORKERS_SUBDOMAIN) {
+      workerUrl = `https://${repoName}.${env.WORKERS_SUBDOMAIN}.workers.dev`;
+    }
 
     return jsonResponse({
+      status: 'success',
+      message: 'Deployment completed successfully.',
       ideaId,
       repoUrl: `https://github.com/${owner}/${repoName}`,
       workerUrl,
