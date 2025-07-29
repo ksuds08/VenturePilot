@@ -82,7 +82,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
 
     const trimmed = content.trim().toLowerCase();
 
-    // Commands in branding stage
+    // Handle branding commands
     if (current.currentStage === "branding") {
       if (trimmed.includes("accept") && trimmed.includes("branding")) {
         updateIdea(current.id, {
@@ -107,7 +107,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
       }
     }
 
-    // Command in MVP stage
+    // Handle deploy command in MVP stage
     if (current.currentStage === "mvp" && trimmed.includes("deploy")) {
       updateIdea(current.id, {
         messages: [...current.messages, { role: "user", content }],
@@ -122,7 +122,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
       return;
     }
 
-    // Normal assistant interaction
+    // Regular chat with assistant
     const userMsg = { role: "user", content };
     const placeholder = { role: "assistant", content: "" };
     const baseMessages = [...current.messages, userMsg, placeholder];
@@ -189,7 +189,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
                 };
               }
             } catch {
-              // ignore and keep fallback
+              // keep fallback
             }
           }
 
@@ -288,21 +288,21 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
       });
       const data = await res.json();
 
-      const brandingMessage = [
-        "✅ **Branding complete!**",
-        "",
-        `**Name:** ${data.name}`,
-        `**Tagline:** ${data.tagline}`,
-        `**Colors:** ${data.colors?.join(", ")}`,
-        `**Logo Concept:** ${data.logoDesc}`,
-        data.logoUrl ? `![Generated Logo](${data.logoUrl})` : "",
-        "",
-        'Type "accept branding" to proceed to the MVP stage, "regenerate branding" to try again, or "start over" to revisit your idea.',
-      ].join("\n");
+      const brandingMessage =
+        "✅ **Branding complete!**\n\n" +
+        `**Name:** ${data.name}\n` +
+        `**Tagline:** ${data.tagline}\n` +
+        `**Colors:** ${data.colors?.join(", ")}\n` +
+        `**Logo Concept:** ${data.logoDesc}\n\n` +
+        'Type "accept branding" to proceed to the MVP stage, "regenerate branding" to try again, or "start over" to revisit your idea.';
 
       const messages = [
         ...idea.messages,
-        { role: "assistant", content: brandingMessage },
+        {
+          role: "assistant",
+          content: brandingMessage,
+          imageUrl: data.logoUrl || undefined,
+        },
       ];
       updateIdea(id, {
         messages,
@@ -523,8 +523,6 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
               )}
             </div>
           )}
-
-          {/* Branding panel has been removed; branding information appears in chat */}
         </div>
       )}
     </div>
