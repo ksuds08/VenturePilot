@@ -82,7 +82,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
 
     const trimmed = content.trim().toLowerCase();
 
-    // Handle branding commands
+    // Commands for branding stage
     if (current.currentStage === "branding") {
       if (trimmed.includes("accept") && trimmed.includes("branding")) {
         updateIdea(current.id, {
@@ -107,7 +107,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
       }
     }
 
-    // Handle deploy command in MVP stage
+    // Command for MVP stage
     if (current.currentStage === "mvp" && trimmed.includes("deploy")) {
       updateIdea(current.id, {
         messages: [...current.messages, { role: "user", content }],
@@ -122,7 +122,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
       return;
     }
 
-    // Regular chat with assistant
+    // Standard assistant interaction
     const userMsg = { role: "user", content };
     const placeholder = { role: "assistant", content: "" };
     const baseMessages = [...current.messages, userMsg, placeholder];
@@ -189,7 +189,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
                 };
               }
             } catch {
-              // keep fallback
+              // ignore
             }
           }
 
@@ -349,19 +349,28 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
       "Packaging files…",
       "Deploying to Cloudflare Pages…",
     ];
-    let stepIndex = 0;
+
+    // Immediately add the first progress message
+    if (steps.length > 0) {
+      messageAccumulator = [
+        ...messageAccumulator,
+        { role: "assistant", content: steps[0] },
+      ];
+      updateIdea(id, { messages: [...messageAccumulator] });
+    }
+
+    let stepIndex = 1; // start from second step
     const interval = setInterval(() => {
-      const log = steps[stepIndex];
-      if (log) {
+      if (stepIndex < steps.length) {
+        const log = steps[stepIndex];
         setDeployLogs((prev) => [...prev, log]);
         messageAccumulator = [
           ...messageAccumulator,
           { role: "assistant", content: log },
         ];
         updateIdea(id, { messages: [...messageAccumulator] });
-      }
-      stepIndex++;
-      if (stepIndex >= steps.length) {
+        stepIndex++;
+      } else {
         clearInterval(interval);
       }
     }, 10000);
@@ -383,7 +392,10 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
         const errorMsg = data.error || "Unknown error";
         messageAccumulator = [
           ...messageAccumulator,
-          { role: "assistant", content: `❌ Deployment failed: ${errorMsg}` },
+          {
+            role: "assistant",
+            content: `❌ Deployment failed: ${errorMsg}`,
+          },
         ];
         updateIdea(id, {
           deploying: false,
