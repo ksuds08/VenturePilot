@@ -435,6 +435,8 @@ export default function useChatStages(onReady?: () => void) {
   /**
    * Confirm the build and deploy the MVP. Shows progress logs in
    * real time and updates the chat on success or failure.
+   * This version keeps posting deployment steps even if the API
+   * responds early, so users see more detail about the build.
    */
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
@@ -450,7 +452,7 @@ export default function useChatStages(onReady?: () => void) {
     setDeployLogs([]);
     let messageAccumulator = [...idea.messages];
 
-    // Start with the first progress step immediately
+    // Immediately show the first progress step
     if (DEPLOYMENT_STEPS.length > 0) {
       messageAccumulator = [
         ...messageAccumulator,
@@ -459,7 +461,8 @@ export default function useChatStages(onReady?: () => void) {
       updateIdea(id, { messages: [...messageAccumulator] });
     }
 
-    // Add subsequent steps at 10‑second intervals
+    // Post subsequent steps at 10‑second intervals,
+    // continuing until all steps are displayed.
     let stepIndex = 1;
     const interval = setInterval(() => {
       if (stepIndex < DEPLOYMENT_STEPS.length) {
@@ -471,6 +474,9 @@ export default function useChatStages(onReady?: () => void) {
         ];
         updateIdea(id, { messages: [...messageAccumulator] });
         stepIndex++;
+        if (stepIndex >= DEPLOYMENT_STEPS.length) {
+          clearInterval(interval);
+        }
       } else {
         clearInterval(interval);
       }
@@ -484,11 +490,12 @@ export default function useChatStages(onReady?: () => void) {
         idea.messages,
       );
       const data = await res.json();
-      clearInterval(interval);
 
-      // Handle any HTTP errors
+      // Note: we do not clear the interval here, so progress messages continue.
+      // On error, include the API's error text in the chat.
       if (!res.ok) {
-        const errorMsg = data.error || "Unknown error during deployment.";
+        const errorMsg =
+          data.error || "Unknown error during deployment.";
         messageAccumulator = [
           ...messageAccumulator,
           {
@@ -504,7 +511,7 @@ export default function useChatStages(onReady?: () => void) {
         return;
       }
 
-      // On success, show both the live and repo URLs (if provided)
+      // Success: append site URL and repo URL if provided.
       const deployedUrl = data.workerUrl || data.pagesUrl;
       const repoUrl = data.repoUrl || "";
       messageAccumulator = [
@@ -524,8 +531,7 @@ export default function useChatStages(onReady?: () => void) {
         messages: [...messageAccumulator],
       });
     } catch (err: any) {
-      // Catch network or unexpected errors and show details
-      clearInterval(interval);
+      // Include any network/exception details in the chat.
       const errorMsg = err instanceof Error ? err.message : String(err);
       messageAccumulator = [
         ...messageAccumulator,
