@@ -33,7 +33,7 @@ export default function useChatStages(onReady?: () => void) {
 
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
-  // Panel flags retained for API compatibility; they no longer drive UI behaviour.
+  // Panel flags retained for API compatibility; no longer used for UI panels.
   const [openPanels, setOpenPanels] = useState({
     ideation: false,
     validation: false,
@@ -52,7 +52,7 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdea?.currentStage]);
 
-  // Initialise the conversation with a greeting message.
+  // Initialise conversation with a greeting on first render.
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
       const id = uuidv4();
@@ -99,7 +99,7 @@ export default function useChatStages(onReady?: () => void) {
 
     const trimmed = content.trim().toLowerCase();
 
-    // Ideation stage commands triggered by summary buttons
+    // Ideation stage commands via summary buttons
     if (current.currentStage === "ideation") {
       if (trimmed === "continue") {
         updateIdea(current.id, {
@@ -116,7 +116,7 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
-    // Validation stage commands
+    // Validation stage commands via summary buttons
     if (current.currentStage === "validation") {
       if (trimmed === "continue") {
         updateIdea(current.id, {
@@ -134,7 +134,7 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
-    // Branding stage commands
+    // Branding stage commands via summary buttons
     if (current.currentStage === "branding") {
       if (trimmed === "accept branding") {
         updateIdea(current.id, {
@@ -174,7 +174,7 @@ export default function useChatStages(onReady?: () => void) {
       return;
     }
 
-    // Otherwise perform a normal assistant request
+    // Otherwise perform a normal assistant interaction
     const userMsg = { role: "user", content };
     const placeholder = { role: "assistant", content: "" };
     const baseMessages = [...current.messages, userMsg, placeholder];
@@ -212,17 +212,25 @@ export default function useChatStages(onReady?: () => void) {
           summaryDesc = (reply || content).slice(0, 150);
         }
 
-        // Provide defaults if refinedIdea isn't supplied
+        // Provide defaults if refinedIdea isn't supplied. Use the most
+        // informative text available (assistant reply or user input) to
+        // populate both the name and description, so they never show
+        // undefined or empty placeholders.
+        const primarySource = (reply || content || summaryDesc || "") as string;
         const fallbackRefined = {
           name:
-            (current.title || content).slice(0, 60) || "Untitled Idea",
-          description: summaryDesc || "No description available",
+            ((current.title || primarySource) as string).slice(0, 60) ||
+            "Untitled Idea",
+          description:
+            summaryDesc || primarySource || "No description available",
         };
 
         (async () => {
           let finalRefined =
             refinedIdea || current.takeaways.refinedIdea || fallbackRefined;
 
+          // If no refinedIdea from the assistant and we’re still in ideation,
+          // request a concise summary.
           if (!refinedIdea && current.currentStage === "ideation") {
             try {
               const summaryRes = await sendToAssistant(
@@ -232,8 +240,7 @@ export default function useChatStages(onReady?: () => void) {
                   { role: "assistant", content: reply },
                   {
                     role: "user",
-                    content:
-                      "Please summarise the above idea concisely.",
+                    content: "Please summarise the above idea concisely.",
                   },
                 ],
                 current.currentStage,
@@ -282,10 +289,7 @@ export default function useChatStages(onReady?: () => void) {
         }, 100);
 
         if (nextStage && nextStage !== current.currentStage) {
-          setTimeout(
-            () => handleAdvanceStage(current.id, nextStage),
-            1000,
-          );
+          setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
         }
       }
     };
@@ -313,7 +317,7 @@ export default function useChatStages(onReady?: () => void) {
     const nextStage =
       forcedStage || STAGE_ORDER[Math.min(currentIndex + 1, STAGE_ORDER.length - 1)];
 
-    // Collapse old panel flags (no visual effect).
+    // Collapse panel flags (no visual effect in the current UI).
     if (
       idea.currentStage === "ideation" ||
       idea.currentStage === "validation" ||
@@ -327,7 +331,7 @@ export default function useChatStages(onReady?: () => void) {
 
     updateIdea(id, { currentStage: nextStage });
 
-    // Validation stage: show full details and actions
+    // Validation stage: display full details and actions
     if (nextStage === "validation") {
       try {
         const data = await postValidate(idea.title, idea.id);
@@ -536,7 +540,7 @@ export default function useChatStages(onReady?: () => void) {
     loading,
     deployLogs,
     openPanels,
-    togglePanel: () => {}, // no-op; retained for compatibility
+    togglePanel: () => {}, // retained for API compatibility, no longer used
     messageEndRef,
     panelRef,
     handleSend,
