@@ -17,10 +17,7 @@ import {
  * Custom hook encapsulating all of the state and behaviour for the chat
  * assistant. Components that need to drive the chat interface can
  * import and call this hook rather than implementing state, side
- * effects and network calls directly. Doing so keeps the
- * presentation layer lean and improves testability.
- *
- * @param onReady Optional callback invoked when the first idea is created.
+ * effects and network calls directly.
  */
 export default function useChatStages(onReady?: () => void) {
   const [ideas, setIdeas] = useState<any[]>([]);
@@ -33,7 +30,7 @@ export default function useChatStages(onReady?: () => void) {
 
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
-  // Panel flags retained for API compatibility; no longer used for UI panels.
+  // Panel flags retained for API compatibility; not used for UI now.
   const [openPanels, setOpenPanels] = useState({
     ideation: false,
     validation: false,
@@ -435,8 +432,9 @@ export default function useChatStages(onReady?: () => void) {
   /**
    * Confirm the build and deploy the MVP. Shows progress logs in
    * real time and updates the chat on success or failure.
-   * This version keeps posting deployment steps even if the API
-   * responds early, so users see more detail about the build.
+   * This version schedules each deployment step on a shorter delay
+   * (3 seconds) so users see every stage of the build even if the
+   * API returns quickly.
    */
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
@@ -461,26 +459,18 @@ export default function useChatStages(onReady?: () => void) {
       updateIdea(id, { messages: [...messageAccumulator] });
     }
 
-    // Post subsequent steps at 10‑second intervals,
-    // continuing until all steps are displayed.
-    let stepIndex = 1;
-    const interval = setInterval(() => {
-      if (stepIndex < DEPLOYMENT_STEPS.length) {
-        const log = DEPLOYMENT_STEPS[stepIndex];
-        setDeployLogs((prev) => [...prev, log]);
+    // Post subsequent steps on a 3‑second delay per step
+    const delayMs = 3000;
+    DEPLOYMENT_STEPS.slice(1).forEach((step, index) => {
+      setTimeout(() => {
+        setDeployLogs((prev) => [...prev, step]);
         messageAccumulator = [
           ...messageAccumulator,
-          { role: "assistant", content: log },
+          { role: "assistant", content: step },
         ];
         updateIdea(id, { messages: [...messageAccumulator] });
-        stepIndex++;
-        if (stepIndex >= DEPLOYMENT_STEPS.length) {
-          clearInterval(interval);
-        }
-      } else {
-        clearInterval(interval);
-      }
-    }, 10000);
+      }, (index + 1) * delayMs);
+    });
 
     try {
       // Make the API call to build and deploy
@@ -491,7 +481,6 @@ export default function useChatStages(onReady?: () => void) {
       );
       const data = await res.json();
 
-      // Note: we do not clear the interval here, so progress messages continue.
       // On error, include the API's error text in the chat.
       if (!res.ok) {
         const errorMsg =
