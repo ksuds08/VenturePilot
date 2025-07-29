@@ -17,7 +17,6 @@ const mvpUrl = `${baseUrl}/mvp`;
 /**
  * ChatAssistant orchestrates the chat flow and stage progression.
  */
-
 type ChatAssistantProps = {
   onReady?: () => void;
 };
@@ -28,6 +27,10 @@ export default function ChatAssistant(props: ChatAssistantProps) {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+
+  // Logs emitted during the MVP build streaming process
+  const [deployLogs, setDeployLogs] = useState<string[]>([]);
+
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
@@ -74,7 +77,9 @@ export default function ChatAssistant(props: ChatAssistantProps) {
       setActiveIdeaId(id);
       if (onReady) onReady();
     }
-  }, [activeIdeaId, ideas.length, onReady]);  // Helper to update an idea by id
+  }, [activeIdeaId, ideas.length, onReady]);
+
+  // Helper to update an idea by id
   const updateIdea = (id: any, updates: any) => {
     setIdeas((prev) =>
       prev.map((i) => (i.id === id ? { ...i, ...updates } : i))
@@ -181,7 +186,9 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     };
 
     reveal(1, baseMessages);
-  };  // Advance to the next stage; clicking Continue/Confirm/Accept triggers this
+  };
+
+  // Advance to the next stage; clicking Continue/Confirm/Accept triggers this
   const handleAdvanceStage = async (id: any, forcedStage?: StageType) => {
     setLoading(true);
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -278,7 +285,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     setLoading(false);
   };
 
-  // Deploy the generated MVP
+  // Deploy the generated MVP, streaming progress if available
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -289,37 +296,80 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     }
 
     updateIdea(id, { deploying: true });
+    // Reset logs at the start of each deployment
+    setDeployLogs([]);
 
-    const res = await fetch(mvpUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ideaId: idea.id,
-        branding: idea.takeaways.branding,
-        messages: idea.messages,
-      }),
-    });
+    try {
+      const res = await fetch(mvpUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          ideaId: idea.id,
+          branding: idea.takeaways.branding,
+          messages: idea.messages,
+        }),
+      });
 
-    const data = await res.json();
-    if (!res.ok) {
+      // Check whether the response is streaming
+      const contentType = res.headers.get("Content-Type") || "";
+      if (contentType.includes("text/event-stream")) {
+        // Read the SSE stream and append each message to deployLogs
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+          for (const raw of parts) {
+            if (raw.startsWith("data:")) {
+              const msg = raw.substring(5).trim();
+              setDeployLogs((prev) => [...prev, msg]);
+            }
+          }
+        }
+        // When streaming completes, assume the last line is the deployment URL
+        const final = deployLogs[deployLogs.length - 1] ?? "";
+        updateIdea(id, {
+          deploying: false,
+          deployed: true,
+          pagesUrl: final,
+        });
+        return;
+      }
+
+      // Fallback: non-streaming JSON response
+      const data = await res.json();
+      if (!res.ok) {
+        updateIdea(id, {
+          deploying: false,
+          deployError: data.error || "Unknown error",
+        });
+        return;
+      }
+      const deployedUrl = data.workerUrl || data.pagesUrl;
       updateIdea(id, {
         deploying: false,
-        deployError: data.error || "Unknown error",
+        deployed: true,
+        repoUrl: data.repoUrl,
+        pagesUrl: deployedUrl,
       });
-      return;
+    } catch (err) {
+      updateIdea(id, {
+        deploying: false,
+        deployError: err instanceof Error ? err.message : String(err),
+      });
     }
-
-    const deployedUrl = data.workerUrl || data.pagesUrl;
-    updateIdea(id, {
-      deploying: false,
-      deployed: true,
-      repoUrl: data.repoUrl,
-      pagesUrl: deployedUrl,
-    });
   };
 
   return (
-    <div className="flex flex-col gap-8 mt-6 px-2">      {/* Chat container */}
+    <div className="flex flex-col gap-8 mt-6 px-2">
+      {/* Chat container */}
       <div className="flex flex-col w-full">
         {ideas.map((idea) => (
           <div key={idea.id} className="mb-6">
@@ -472,6 +522,8 @@ export default function ChatAssistant(props: ChatAssistantProps) {
                 deploying={activeIdea.deploying}
                 deployedUrl={activeIdea.pagesUrl}
                 deployError={activeIdea.deployError}
+                // Pass progress logs down to the preview so users can see activity
+                logs={deployLogs}
               />
             </div>
           )}
@@ -480,9 +532,3 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     </div>
   );
 }
-
-
-
-
-
-
