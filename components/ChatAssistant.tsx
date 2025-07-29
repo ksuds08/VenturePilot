@@ -1,5 +1,5 @@
-import ChatPanel from "../ChatPanel";
-import useChatStages from "../../hooks/useChatStages";
+import ChatPanel from "./ChatPanel";
+import useChatStages from "../hooks/useChatStages";
 
 /**
  * Props accepted by the ChatAssistant component. A single optional
