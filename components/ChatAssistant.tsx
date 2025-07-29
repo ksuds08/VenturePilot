@@ -1,11 +1,8 @@
-import type { VentureStage as StageType } from "../types";
-import ChatPanel from "./ChatPanel";
-import RefinedIdeaCard from "./RefinedIdeaCard";
-// ValidationSummary is no longer used because validation results are displayed within the chat.
-import useChatStages from "../hooks/useChatStages";
+import ChatPanel from "../ChatPanel";
+import useChatStages from "../../hooks/useChatStages";
 
 /**
- * Props accepted by the ChatAssistant component.  A single optional
+ * Props accepted by the ChatAssistant component. A single optional
  * callback can be provided which is invoked when the very first
  * conversation is initialised.
  */
@@ -15,9 +12,9 @@ type ChatAssistantProps = {
 
 /**
  * The ChatAssistant ties together the presentation of the chat panels
- * with the underlying stateful logic defined in `useChatStages`.  It
+ * with the underlying stateful logic defined in `useChatStages`. It
  * forwards callbacks and data down to child components and ensures
- * scroll behaviour is preserved.  Splitting the state logic into a
+ * scroll behaviour is preserved. Splitting the state logic into a
  * custom hook keeps this component declarative and easy to follow.
  */
 export default function ChatAssistant({ onReady }: ChatAssistantProps) {
@@ -26,12 +23,8 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
     activeIdeaId,
     setActiveIdeaId,
     loading,
-    openPanels,
-    togglePanel,
     messageEndRef,
-    panelRef,
     handleSend,
-    handleAdvanceStage,
   } = useChatStages(onReady);
 
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
@@ -57,48 +50,7 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
         ))}
         <div ref={messageEndRef} />
       </div>
-
-      {activeIdea && (
-        <div className="w-full space-y-4" ref={panelRef}>
-          {activeIdea.takeaways?.refinedIdea && (
-            <div
-              className={`rounded border border-gray-200 p-2 ${
-                activeIdea.currentStage === "ideation" || openPanels.ideation
-                  ? "bg-blue-100"
-                  : "bg-blue-50"
-              }`}
-            >
-              <div
-                className="font-medium mb-1 flex items-center justify-between cursor-pointer"
-                onClick={() => togglePanel("ideation")}
-              >
-                <span>Idea</span>
-                <span className="text-gray-400">
-                  {activeIdea.currentStage === "ideation" || openPanels.ideation
-                    ? "▲"
-                    : "▼"}
-                </span>
-              </div>
-              {(activeIdea.currentStage === "ideation" || openPanels.ideation) && (
-                <RefinedIdeaCard
-                  name={activeIdea.takeaways.refinedIdea.name}
-                  description={activeIdea.takeaways.refinedIdea.description}
-                  onConfirm={() =>
-                    handleAdvanceStage(activeIdea.id, "validation" as StageType)
-                  }
-                  onEdit={() => {
-                    setActiveIdeaId(activeIdea.id);
-                    messageEndRef.current?.scrollIntoView({
-                      behavior: "smooth",
-                    });
-                  }}
-                />
-              )}
-            </div>
-          )}
-          {/* The validation summary panel has been removed; validation results appear in the chat. */}
-        </div>
-      )}
+      {/* All summaries are now integrated into the chat via interactive messages. */}
     </div>
   );
 }
