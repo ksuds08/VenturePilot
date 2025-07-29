@@ -24,7 +24,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  // Holds simulated progress messages during deployment
+  // We still track logs, but they are now duplicated into chat messages
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
 
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -273,7 +273,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     }
 
     if (nextStage === "mvp") {
-      const replyText = `✅ You're ready to deploy your MVP!\n\nClick below to deploy it to a live site.`;
+      const replyText = `✅ You're ready to deploy your MVP!\n\nType "deploy" when you're ready to launch it to a live site.`;
       const messages = [...idea.messages, { role: "assistant", content: replyText }];
       updateIdea(id, { messages });
     }
@@ -281,7 +281,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     setLoading(false);
   };
 
-  // Deploy the generated MVP with simulated progress logs
+  // Deploy the generated MVP with simulated progress logs, appending messages to chat
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -294,7 +294,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     updateIdea(id, { deploying: true });
     setDeployLogs([]);
 
-    // Define simulated progress steps; adjust timing/messages to taste
+    // Progress messages to display during deployment
     const steps = [
       "Planning project structure…",
       "Generating backend code…",
@@ -304,15 +304,25 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     ];
     let stepIndex = 0;
     const interval = setInterval(() => {
-      const next = steps[stepIndex];
-      if (next) {
-        setDeployLogs((prev) => [...prev, next]);
+      const log = steps[stepIndex];
+      if (log) {
+        setDeployLogs((prev) => [...prev, log]);
+        // Append to chat
+        const currentIdea = ideas.find((i) => i.id === id);
+        if (currentIdea) {
+          updateIdea(id, {
+            messages: [
+              ...currentIdea.messages,
+              { role: "assistant", content: log },
+            ],
+          });
+        }
       }
       stepIndex++;
       if (stepIndex >= steps.length) {
         clearInterval(interval);
       }
-    }, 10000); // 10 seconds per step
+    }, 10000);
 
     try {
       const res = await fetch(mvpUrl, {
@@ -328,38 +338,55 @@ export default function ChatAssistant(props: ChatAssistantProps) {
       clearInterval(interval);
 
       if (!res.ok) {
+        const errorMsg = data.error || "Unknown error";
+        // Append failure message
+        const currentIdea = ideas.find((i) => i.id === id);
         updateIdea(id, {
           deploying: false,
-          deployError: data.error || "Unknown error",
+          deployError: errorMsg,
+          messages: [
+            ...(currentIdea ? currentIdea.messages : []),
+            {
+              role: "assistant",
+              content: `❌ Deployment failed: ${errorMsg}`,
+            },
+          ],
         });
-        setDeployLogs((prev) => [
-          ...prev,
-          `❌ Deployment failed: ${data.error || "Unknown error"}`,
-        ]);
         return;
       }
 
       const deployedUrl = data.workerUrl || data.pagesUrl;
+      // Append success message
+      const currentIdea = ideas.find((i) => i.id === id);
       updateIdea(id, {
         deploying: false,
         deployed: true,
         repoUrl: data.repoUrl,
         pagesUrl: deployedUrl,
+        messages: [
+          ...(currentIdea ? currentIdea.messages : []),
+          {
+            role: "assistant",
+            content: `✅ Deployment successful! Your site is live at ${deployedUrl}`,
+          },
+        ],
       });
-      setDeployLogs((prev) => [
-        ...prev,
-        `✅ Deployment successful: ${deployedUrl}`,
-      ]);
     } catch (err) {
       clearInterval(interval);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      // Append network failure message
+      const currentIdea = ideas.find((i) => i.id === id);
       updateIdea(id, {
         deploying: false,
-        deployError: err instanceof Error ? err.message : String(err),
+        deployError: errorMsg,
+        messages: [
+          ...(currentIdea ? currentIdea.messages : []),
+          {
+            role: "assistant",
+            content: `❌ Deployment failed: ${errorMsg}`,
+          },
+        ],
       });
-      setDeployLogs((prev) => [
-        ...prev,
-        `❌ Deployment failed: ${err instanceof Error ? err.message : String(err)}`,
-      ]);
     }
   };
 
@@ -474,7 +501,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
               }`}
             >
               <div
-                className="font-medium mb-1 flex items-center justify-between cursor-pointer"
+                className="font-medium mb-1 flex items elegantly justify-between cursor-pointer"
                 onClick={() => togglePanel("branding")}
               >
                 <span>Branding</span>
@@ -518,8 +545,6 @@ export default function ChatAssistant(props: ChatAssistantProps) {
                 deploying={activeIdea.deploying}
                 deployedUrl={activeIdea.pagesUrl}
                 deployError={activeIdea.deployError}
-                // Pass simulated progress messages
-                logs={deployLogs}
               />
             </div>
           )}
