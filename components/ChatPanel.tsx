@@ -1,6 +1,7 @@
 // Updated ChatPanel.tsx with chat bubbles and animated spinner
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw"; // enable raw HTML in markdown
 
 // Lazy load remark-gfm with dynamic import for compatibility
 const loadRemarkGfm = async () => {
@@ -78,7 +79,9 @@ export default function ChatPanel({
 
   return (
     <div
-      className={`rounded-xl border border-gray-200 p-4 shadow-sm ${isActive ? "ring-2 ring-blue-500" : ""}`}
+      className={`rounded-xl border border-gray-200 p-4 shadow-sm ${
+        isActive ? "ring-2 ring-blue-500" : ""
+      }`}
       onClick={onClick}
     >
       <div
@@ -88,14 +91,22 @@ export default function ChatPanel({
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`mb-2 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            className={`mb-2 flex ${
+              msg.role === "user" ? "justify-end" : "justify-start"
+            }`}
           >
             <div
               className={`${
-                msg.role === "user" ? "bg-primary text-white" : "bg-gray-200 text-gray-800"
+                msg.role === "user"
+                  ? "bg-primary text-white"
+                  : "bg-gray-200 text-gray-800"
               } px-3 py-2 rounded-lg max-w-xs break-words`}
             >
-              <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
+              <ReactMarkdown
+                remarkPlugins={remarkPlugins}
+                rehypePlugins={[rehypeRaw]} // parse raw HTML tags (e.g. <img>)
+                className="prose prose-sm"
+              >
                 {msg.content}
               </ReactMarkdown>
             </div>
@@ -109,7 +120,11 @@ export default function ChatPanel({
         {streamedContent && (
           <div className="mb-2 flex justify-start">
             <div className="bg-gray-200 text-gray-800 px-3 py-2 rounded-lg max-w-xs break-words">
-              <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
+              <ReactMarkdown
+                remarkPlugins={remarkPlugins}
+                rehypePlugins={[rehypeRaw]}
+                className="prose prose-sm"
+              >
                 {streamedContent}
               </ReactMarkdown>
             </div>
