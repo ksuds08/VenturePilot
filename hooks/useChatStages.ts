@@ -445,11 +445,12 @@ export default function useChatStages(onReady?: () => void) {
       return;
     }
 
+    // Indicate that deployment is starting
     updateIdea(id, { deploying: true });
     setDeployLogs([]);
     let messageAccumulator = [...idea.messages];
 
-    // Show initial step immediately
+    // Start with the first progress step immediately
     if (DEPLOYMENT_STEPS.length > 0) {
       messageAccumulator = [
         ...messageAccumulator,
@@ -458,6 +459,7 @@ export default function useChatStages(onReady?: () => void) {
       updateIdea(id, { messages: [...messageAccumulator] });
     }
 
+    // Add subsequent steps at 10‑second intervals
     let stepIndex = 1;
     const interval = setInterval(() => {
       if (stepIndex < DEPLOYMENT_STEPS.length) {
@@ -475,6 +477,7 @@ export default function useChatStages(onReady?: () => void) {
     }, 10000);
 
     try {
+      // Make the API call to build and deploy
       const res = await postMvp(
         idea.id,
         idea.takeaways.branding,
@@ -483,8 +486,9 @@ export default function useChatStages(onReady?: () => void) {
       const data = await res.json();
       clearInterval(interval);
 
+      // Handle any HTTP errors
       if (!res.ok) {
-        const errorMsg = data.error || "Unknown error";
+        const errorMsg = data.error || "Unknown error during deployment.";
         messageAccumulator = [
           ...messageAccumulator,
           {
@@ -500,22 +504,27 @@ export default function useChatStages(onReady?: () => void) {
         return;
       }
 
+      // On success, show both the live and repo URLs (if provided)
       const deployedUrl = data.workerUrl || data.pagesUrl;
+      const repoUrl = data.repoUrl || "";
       messageAccumulator = [
         ...messageAccumulator,
         {
           role: "assistant",
-          content: `✅ Deployment successful! Your site is live at ${deployedUrl}`,
+          content:
+            `✅ Deployment successful! Your site is live at ${deployedUrl}` +
+            (repoUrl ? `\nRepository URL: ${repoUrl}` : ""),
         },
       ];
       updateIdea(id, {
         deploying: false,
         deployed: true,
-        repoUrl: data.repoUrl,
+        repoUrl: repoUrl,
         pagesUrl: deployedUrl,
         messages: [...messageAccumulator],
       });
     } catch (err: any) {
+      // Catch network or unexpected errors and show details
       clearInterval(interval);
       const errorMsg = err instanceof Error ? err.message : String(err);
       messageAccumulator = [
