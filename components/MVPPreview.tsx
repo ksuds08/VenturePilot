@@ -7,6 +7,8 @@ interface MVPPreviewProps {
   deploying?: boolean;
   deployedUrl?: string;
   deployError?: string;
+  // New: array of progress messages emitted by the agent while building
+  logs?: string[];
 }
 
 export default function MVPPreview({
@@ -15,6 +17,7 @@ export default function MVPPreview({
   deploying,
   deployedUrl,
   deployError,
+  logs = [],
 }: MVPPreviewProps) {
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-lg mt-6 max-w-3xl mx-auto">
@@ -41,6 +44,19 @@ export default function MVPPreview({
               <p className="text-sm text-slate-500 dark:text-slate-400 text-center">
                 This may take a few minutes. Hang tight while we set up your site.
               </p>
+              {/* Render progress messages, if any */}
+              {logs.length > 0 && (
+                <div className="mt-3 w-full rounded bg-gray-50 dark:bg-slate-800 p-2 text-left">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Build progress:
+                  </p>
+                  <ul className="list-disc pl-5 text-sm text-gray-600 dark:text-gray-400 max-h-40 overflow-y-auto">
+                    {logs.map((log, i) => (
+                      <li key={i}>{log}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           ) : (
             <button
