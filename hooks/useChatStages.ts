@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { sendToAssistant } from "../lib/assistantClient";
 import type { VentureStage as StageType } from "../types";
-
 import {
   GREETING,
   STAGE_ORDER,
@@ -24,29 +23,17 @@ import {
  * @param onReady Optional callback invoked when the first idea is created.
  */
 export default function useChatStages(onReady?: () => void) {
-  // The list of ideas the user is working on. Each idea contains
-  // metadata such as its title, conversation messages and derived
-  // takeaways (validation summary, branding, etc.).
   const [ideas, setIdeas] = useState<any[]>([]);
-  // Id of the currently active idea. When a user interacts with
-  // a ChatPanel it sets this id so that subsequent messages are
-  // appended to the correct idea.
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
-  // Whether the assistant is busy performing an async operation. Used
-  // to disable inputs and show loading indicators.
   const [loading, setLoading] = useState(false);
-  // Logs generated during the MVP deployment. The UI can display
-  // these logs to give the user progress feedback.
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
 
-  // Refs used for scrolling the chat into view when content changes.
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  // Derived property: the currently active idea object.
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
-  // Track panel state for backward compatibility; no longer used in the UI.
+  // Panel flags retained for backward compatibility; no longer used in the UI.
   const [openPanels, setOpenPanels] = useState({
     ideation: false,
     validation: false,
@@ -54,7 +41,6 @@ export default function useChatStages(onReady?: () => void) {
   });
 
   useEffect(() => {
-    // Update panel flags whenever stage changes, though the panels are no longer shown.
     if (activeIdea) {
       setOpenPanels((prev) => ({
         ...prev,
@@ -66,7 +52,7 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdea?.currentStage]);
 
-  // Initialise the very first idea on mount with a greeting.
+  // Initialise the first conversation with a greeting.
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
       const id = uuidv4();
@@ -89,11 +75,6 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdeaId, ideas.length, onReady]);
 
-  /**
-   * Apply arbitrary updates to an idea by id. Accepts either a plain
-   * object of updates or a function that receives the previous idea
-   * and returns a new set of updates.
-   */
   const updateIdea = (id: any, updates: any) => {
     setIdeas((prev) =>
       prev.map((i) =>
@@ -107,18 +88,13 @@ export default function useChatStages(onReady?: () => void) {
     );
   };
 
-  /**
-   * Handle sending a message from the user. Depending on the current
-   * stage and the contents of the message, this may trigger a stage
-   * transition, deployment or simply a standard assistant reply.
-   */
   const handleSend = async (content: string) => {
     const current = activeIdea;
     if (!current) return;
 
     const trimmed = content.trim().toLowerCase();
 
-    // Commands valid in the ideation stage. Triggered by buttons in the summary.
+    // Ideation commands via summary buttons
     if (current.currentStage === "ideation") {
       if (trimmed === "continue") {
         updateIdea(current.id, {
@@ -135,7 +111,7 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
-    // Commands valid in the validation stage.
+    // Validation commands via summary buttons
     if (current.currentStage === "validation") {
       if (trimmed === "continue") {
         updateIdea(current.id, {
@@ -153,7 +129,7 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
-    // Commands valid in the branding stage.
+    // Branding commands via summary buttons
     if (current.currentStage === "branding") {
       if (trimmed === "accept branding") {
         updateIdea(current.id, {
@@ -178,12 +154,11 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
-    // Command valid in the MVP stage.
+    // MVP stage command
     if (current.currentStage === "mvp" && trimmed === "deploy") {
       updateIdea(current.id, {
         messages: [...current.messages, { role: "user", content }],
       });
-      // Immediately append a message indicating deployment has begun.
       updateIdea(current.id, (prev: any) => ({
         messages: [
           ...prev.messages,
@@ -194,7 +169,7 @@ export default function useChatStages(onReady?: () => void) {
       return;
     }
 
-    // Otherwise perform a standard assistant interaction.
+    // Otherwise handle as a normal assistant request
     const userMsg = { role: "user", content };
     const placeholder = { role: "assistant", content: "" };
     const baseMessages = [...current.messages, userMsg, placeholder];
@@ -208,11 +183,6 @@ export default function useChatStages(onReady?: () => void) {
     );
     setLoading(false);
 
-    /**
-     * Recursively reveal the assistant's reply one character at a time.
-     * Once the entire reply has been displayed, summarise the reply and
-     * update idea metadata accordingly.
-     */
     const reveal = (index: number, msgs: any[]) => {
       const updatedMsgs = msgs.map((m, i) =>
         i === msgs.length - 1 ? { ...m, content: reply.slice(0, index) } : m,
@@ -239,10 +209,10 @@ export default function useChatStages(onReady?: () => void) {
         };
 
         (async () => {
-          // Determine the refined idea. Attempt to summarise if no refinedIdea returned.
           let finalRefined =
             refinedIdea || current.takeaways.refinedIdea || fallbackRefined;
 
+          // Summarise if no refinedIdea returned (ideation stage only).
           if (!refinedIdea && current.currentStage === "ideation") {
             try {
               const summaryRes = await sendToAssistant(
@@ -265,11 +235,11 @@ export default function useChatStages(onReady?: () => void) {
                 };
               }
             } catch {
-              // ignore errors when requesting summary
+              // ignore errors
             }
           }
 
-          // Build an interactive summary message for the ideation stage.
+          // Build interactive summary if still in ideation.
           let finalMessages = updatedMsgs;
           if (current.currentStage === "ideation") {
             const summaryMsg = {
@@ -310,12 +280,6 @@ export default function useChatStages(onReady?: () => void) {
     reveal(1, baseMessages);
   };
 
-  /**
-   * Progress an idea to the next venture stage. If a forced stage is
-   * provided it will override the natural ordering. The function
-   * performs any network requests required by the new stage and
-   * updates the idea's messages and takeaways accordingly.
-   */
   const handleAdvanceStage = async (id: any, forcedStage?: StageType) => {
     setLoading(true);
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -332,7 +296,7 @@ export default function useChatStages(onReady?: () => void) {
     const nextStage =
       forcedStage || STAGE_ORDER[Math.min(currentIndex + 1, STAGE_ORDER.length - 1)];
 
-    // Collapse the panel corresponding to the previous stage (no longer visible).
+    // Collapse panel flags (not visible).
     if (
       idea.currentStage === "ideation" ||
       idea.currentStage === "validation" ||
@@ -346,7 +310,7 @@ export default function useChatStages(onReady?: () => void) {
 
     updateIdea(id, { currentStage: nextStage });
 
-    // Validation stage: call the validation API and provide actions.
+    // Validation stage summary
     if (nextStage === "validation") {
       try {
         const data = await postValidate(idea.title, idea.id);
@@ -382,7 +346,7 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
-    // Branding stage: call the branding API and provide actions.
+    // Branding stage summary
     if (nextStage === "branding") {
       try {
         const data = await postBranding(idea.title, idea.id);
@@ -394,7 +358,7 @@ export default function useChatStages(onReady?: () => void) {
             `**Tagline:** ${data.tagline}\n` +
             `**Colors:** ${data.colors?.join(", ")}\n` +
             `**Logo Concept:** ${data.logoDesc}\n\n`,
-        imageUrl: data.logoUrl || undefined,
+          imageUrl: data.logoUrl || undefined,
           actions: [
             { label: "Accept Branding", command: "accept branding" },
             { label: "Regenerate Branding", command: "regenerate branding" },
@@ -429,7 +393,7 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
-    // MVP stage: inform the user they can deploy their MVP and provide a button.
+    // MVP stage summary
     if (nextStage === "mvp") {
       const mvpMsg = {
         role: "assistant" as const,
@@ -445,11 +409,6 @@ export default function useChatStages(onReady?: () => void) {
     setLoading(false);
   };
 
-  /**
-   * Confirm the build and deploy the MVP. Shows progress logs in
-   * real time while waiting for the API to finish. At the end it
-   * updates the chat with success or error feedback.
-   */
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -463,7 +422,6 @@ export default function useChatStages(onReady?: () => void) {
     setDeployLogs([]);
     let messageAccumulator = [...idea.messages];
 
-    // Immediately append the first step so users see progress.
     if (DEPLOYMENT_STEPS.length > 0) {
       messageAccumulator = [
         ...messageAccumulator,
@@ -472,7 +430,6 @@ export default function useChatStages(onReady?: () => void) {
       updateIdea(id, { messages: [...messageAccumulator] });
     }
 
-    // Iterate over the remaining steps every 10 seconds.
     let stepIndex = 1;
     const interval = setInterval(() => {
       if (stepIndex < DEPLOYMENT_STEPS.length) {
@@ -555,7 +512,7 @@ export default function useChatStages(onReady?: () => void) {
     loading,
     deployLogs,
     openPanels,
-    togglePanel,
+    togglePanel: () => {}, // no-op; kept for API compatibility
     messageEndRef,
     panelRef,
     handleSend,
