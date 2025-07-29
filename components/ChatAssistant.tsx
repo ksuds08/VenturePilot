@@ -6,7 +6,6 @@ import type { VentureStage as StageType } from "../types";
 import RefinedIdeaCard from "./RefinedIdeaCard";
 import ValidationSummary from "./ValidationSummary";
 import BrandingCard from "./BrandingCard";
-import MVPPreview from "./MVPPreview";
 
 const baseUrl =
   process.env.NEXT_PUBLIC_API_URL || "https://venturepilot-api.promptpulse.workers.dev";
@@ -24,7 +23,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  // We still track logs, but they are now duplicated into chat messages
+  // Optional: still track logs if you need them elsewhere
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
 
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -86,6 +85,26 @@ export default function ChatAssistant(props: ChatAssistantProps) {
   const handleSend = async (content: string) => {
     const current = activeIdea;
     if (!current) return;
+
+    // NEW: intercept "deploy" during the MVP stage
+    if (
+      current.currentStage === "mvp" &&
+      content.trim().toLowerCase().includes("deploy")
+    ) {
+      // Echo the user's deploy request
+      updateIdea(current.id, {
+        messages: [...current.messages, { role: "user", content }],
+      });
+      // Optionally insert an immediate "Deploying..." message
+      updateIdea(current.id, (prev: any) => ({
+        messages: [
+          ...prev.messages,
+          { role: "assistant", content: "🚀 Deploying your MVP…" },
+        ],
+      }));
+      handleConfirmBuild(current.id);
+      return;
+    }
 
     const userMsg = { role: "user", content };
     const placeholder = { role: "assistant", content: "" };
@@ -281,7 +300,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     setLoading(false);
   };
 
-  // Deploy the generated MVP with simulated progress logs, appending messages to chat
+  // Deploy the generated MVP with simulated progress logs; append to chat
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -294,7 +313,9 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     updateIdea(id, { deploying: true });
     setDeployLogs([]);
 
-    // Progress messages to display during deployment
+    // Local accumulator to persist all messages
+    let messageAccumulator = [...idea.messages];
+
     const steps = [
       "Planning project structure…",
       "Generating backend code…",
@@ -307,16 +328,11 @@ export default function ChatAssistant(props: ChatAssistantProps) {
       const log = steps[stepIndex];
       if (log) {
         setDeployLogs((prev) => [...prev, log]);
-        // Append to chat
-        const currentIdea = ideas.find((i) => i.id === id);
-        if (currentIdea) {
-          updateIdea(id, {
-            messages: [
-              ...currentIdea.messages,
-              { role: "assistant", content: log },
-            ],
-          });
-        }
+        messageAccumulator = [
+          ...messageAccumulator,
+          { role: "assistant", content: log },
+        ];
+        updateIdea(id, { messages: [...messageAccumulator] });
       }
       stepIndex++;
       if (stepIndex >= steps.length) {
@@ -339,53 +355,47 @@ export default function ChatAssistant(props: ChatAssistantProps) {
 
       if (!res.ok) {
         const errorMsg = data.error || "Unknown error";
-        // Append failure message
-        const currentIdea = ideas.find((i) => i.id === id);
+        messageAccumulator = [
+          ...messageAccumulator,
+          { role: "assistant", content: `❌ Deployment failed: ${errorMsg}` },
+        ];
         updateIdea(id, {
           deploying: false,
           deployError: errorMsg,
-          messages: [
-            ...(currentIdea ? currentIdea.messages : []),
-            {
-              role: "assistant",
-              content: `❌ Deployment failed: ${errorMsg}`,
-            },
-          ],
+          messages: [...messageAccumulator],
         });
         return;
       }
 
       const deployedUrl = data.workerUrl || data.pagesUrl;
-      // Append success message
-      const currentIdea = ideas.find((i) => i.id === id);
+      messageAccumulator = [
+        ...messageAccumulator,
+        {
+          role: "assistant",
+          content: `✅ Deployment successful! Your site is live at ${deployedUrl}`,
+        },
+      ];
       updateIdea(id, {
         deploying: false,
         deployed: true,
         repoUrl: data.repoUrl,
         pagesUrl: deployedUrl,
-        messages: [
-          ...(currentIdea ? currentIdea.messages : []),
-          {
-            role: "assistant",
-            content: `✅ Deployment successful! Your site is live at ${deployedUrl}`,
-          },
-        ],
+        messages: [...messageAccumulator],
       });
     } catch (err) {
       clearInterval(interval);
       const errorMsg = err instanceof Error ? err.message : String(err);
-      // Append network failure message
-      const currentIdea = ideas.find((i) => i.id === id);
+      messageAccumulator = [
+        ...messageAccumulator,
+        {
+          role: "assistant",
+          content: `❌ Deployment failed: ${errorMsg}`,
+        },
+      ];
       updateIdea(id, {
         deploying: false,
         deployError: errorMsg,
-        messages: [
-          ...(currentIdea ? currentIdea.messages : []),
-          {
-            role: "assistant",
-            content: `❌ Deployment failed: ${errorMsg}`,
-          },
-        ],
+        messages: [...messageAccumulator],
       });
     }
   };
@@ -501,7 +511,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
               }`}
             >
               <div
-                className="font-medium mb-1 flex items elegantly justify-between cursor-pointer"
+                className="font-medium mb-1 flex items-center justify-between cursor-pointer"
                 onClick={() => togglePanel("branding")}
               >
                 <span>Branding</span>
@@ -535,19 +545,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
             </div>
           )}
 
-          {/* MVP panel */}
-          {activeIdea.currentStage === "mvp" && (
-            <div className="rounded border border-gray-200 p-2 bg-yellow-100">
-              <div className="font-medium mb-1">MVP Preview</div>
-              <MVPPreview
-                ideaName={activeIdea.title || "Your Idea"}
-                onDeploy={() => handleConfirmBuild(activeIdea.id)}
-                deploying={activeIdea.deploying}
-                deployedUrl={activeIdea.pagesUrl}
-                deployError={activeIdea.deployError}
-              />
-            </div>
-          )}
+          {/* Note: The MVP preview panel is removed; deployment is triggered via "deploy" keyword */}
         </div>
       )}
     </div>
