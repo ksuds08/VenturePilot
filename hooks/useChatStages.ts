@@ -35,9 +35,9 @@ export default function useChatStages(onReady?: () => void) {
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
   const [openPanels, setOpenPanels] = useState({
-    ideation: false,
-    validation: false,
-    branding: false,
+  ideation: false,
+  validation: false,
+  branding: false,
   });
 
   useEffect(() => {
@@ -97,6 +97,7 @@ export default function useChatStages(onReady?: () => void) {
 
     const trimmed = content.trim().toLowerCase();
 
+    // Commands valid only in the branding stage
     if (current.currentStage === "branding") {
       if (trimmed.includes("accept") && trimmed.includes("branding")) {
         updateIdea(current.id, {
@@ -121,6 +122,27 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
+    // Commands valid only in the validation stage
+    if (current.currentStage === "validation") {
+      // Continue to branding
+      if (trimmed.includes("continue")) {
+        updateIdea(current.id, {
+          messages: [...current.messages, { role: "user", content }],
+        });
+        handleAdvanceStage(current.id, "branding");
+        return;
+      }
+      // Restart the flow back to ideation
+      if (trimmed.includes("restart")) {
+        updateIdea(current.id, {
+          messages: [...current.messages, { role: "user", content }],
+        });
+        handleAdvanceStage(current.id, "ideation");
+        return;
+      }
+    }
+
+    // Command valid only in the MVP stage
     if (current.currentStage === "mvp" && trimmed.includes("deploy")) {
       updateIdea(current.id, {
         messages: [...current.messages, { role: "user", content }],
@@ -256,15 +278,20 @@ export default function useChatStages(onReady?: () => void) {
 
     updateIdea(id, { currentStage: nextStage });
 
+    // Validation stage: call the validation API and update messages
     if (nextStage === "validation") {
       try {
         const data = await postValidate(idea.title, idea.id);
         const summary = data?.validation?.split("\n")[0] || "";
+        // Compose a chat message that includes instructions for the user
+        const validationContent =
+          `✅ Validation complete. Here's what we found:\n\n${summary}` +
+          `\n\nType \"continue\" to proceed to the branding stage or \"restart\" to revisit your idea.`;
         const messages = [
           ...idea.messages,
           {
             role: "assistant",
-            content: `✅ Validation complete. Here's what we found:\n\n${summary}`,
+            content: validationContent,
           },
         ];
         updateIdea(id, {
@@ -288,6 +315,7 @@ export default function useChatStages(onReady?: () => void) {
       }
     }
 
+    // Branding stage: unchanged
     if (nextStage === "branding") {
       try {
         const data = await postBranding(idea.title, idea.id);
