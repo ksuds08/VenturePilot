@@ -1,7 +1,6 @@
 // Updated ChatPanel.tsx with chat bubbles and animated spinner
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
-import rehypeRaw from "rehype-raw"; // enable raw HTML in markdown
 
 // Lazy load remark-gfm with dynamic import for compatibility
 const loadRemarkGfm = async () => {
@@ -12,6 +11,7 @@ const loadRemarkGfm = async () => {
 interface ChatMessage {
   role: "user" | "assistant" | string;
   content: string;
+  imageUrl?: string; // new optional field for images
 }
 
 interface ChatPanelProps {
@@ -102,13 +102,17 @@ export default function ChatPanel({
                   : "bg-gray-200 text-gray-800"
               } px-3 py-2 rounded-lg max-w-xs break-words`}
             >
-              <ReactMarkdown
-                remarkPlugins={remarkPlugins}
-                rehypePlugins={[rehypeRaw]} // parse raw HTML tags (e.g. <img>)
-                className="prose prose-sm"
-              >
+              <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
                 {msg.content}
               </ReactMarkdown>
+              {/* Render an image if one is provided */}
+              {msg.imageUrl && (
+                <img
+                  src={msg.imageUrl}
+                  alt="Embedded"
+                  className="mt-2 max-w-full rounded-lg"
+                />
+              )}
             </div>
           </div>
         ))}
@@ -120,11 +124,7 @@ export default function ChatPanel({
         {streamedContent && (
           <div className="mb-2 flex justify-start">
             <div className="bg-gray-200 text-gray-800 px-3 py-2 rounded-lg max-w-xs break-words">
-              <ReactMarkdown
-                remarkPlugins={remarkPlugins}
-                rehypePlugins={[rehypeRaw]}
-                className="prose prose-sm"
-              >
+              <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
                 {streamedContent}
               </ReactMarkdown>
             </div>
