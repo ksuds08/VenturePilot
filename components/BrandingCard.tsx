@@ -5,7 +5,6 @@ import { v4 as uuidv4 } from "uuid";
 import type { VentureStage as StageType } from "../types";
 import RefinedIdeaCard from "./RefinedIdeaCard";
 import ValidationSummary from "./ValidationSummary";
-import BrandingCard from "./BrandingCard"; // you can remove this import if it's no longer used
 
 const baseUrl =
   process.env.NEXT_PUBLIC_API_URL || "https://venturepilot-api.promptpulse.workers.dev";
@@ -90,7 +89,6 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     // Intercept commands during branding stage
     if (current.currentStage === "branding") {
       if (trimmed.includes("accept") && trimmed.includes("branding")) {
-        // Echo the user's response
         updateIdea(current.id, {
           messages: [...current.messages, { role: "user", content }],
         });
@@ -121,7 +119,6 @@ export default function ChatAssistant(props: ChatAssistantProps) {
       updateIdea(current.id, {
         messages: [...current.messages, { role: "user", content }],
       });
-      // Optional: inform user that deployment is starting
       updateIdea(current.id, (prev: any) => ({
         messages: [
           ...prev.messages,
@@ -230,7 +227,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     reveal(1, baseMessages);
   };
 
-  // Advance to the next stage; clicking Continue/Confirm/Accept triggers this
+  // Advance to the next stage; clicking Continue/Confirm triggers this
   const handleAdvanceStage = async (id: any, forcedStage?: StageType) => {
     setLoading(true);
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -299,7 +296,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
       });
       const data = await res.json();
 
-      // Build a chat-friendly summary of the branding data
+      // Compose branding message with logo
       const brandingMessage = [
         "✅ **Branding complete!**",
         "",
@@ -341,7 +338,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     setLoading(false);
   };
 
-  // Deploy the generated MVP with simulated progress logs; append to chat
+  // Deploy the generated MVP with simulated progress; append to chat
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -353,7 +350,6 @@ export default function ChatAssistant(props: ChatAssistantProps) {
 
     updateIdea(id, { deploying: true });
     setDeployLogs([]);
-    // Capture the current chat history
     let messageAccumulator = [...idea.messages];
 
     const steps = [
@@ -444,28 +440,28 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     <div className="flex flex-col gap-8 mt-6 px-2">
       {/* Chat container */}
       <div className="flex flex-col w-full">
-      {ideas.map((idea) => (
-        <div key={idea.id} className="mb-6">
-          <ChatPanel
-            messages={idea.messages}
-            onSend={(msg) => {
-              setActiveIdeaId(idea.id);
-              handleSend(msg);
-            }}
-            loading={loading && idea.id === activeIdeaId}
-            idea={idea}
-            isActive={idea.id === activeIdeaId}
-            onClick={() => setActiveIdeaId(idea.id)}
-            disabled={idea.locked}
-          />
-        </div>
-      ))}
-      <div ref={messageEndRef} />
+        {ideas.map((idea) => (
+          <div key={idea.id} className="mb-6">
+            <ChatPanel
+              messages={idea.messages}
+              onSend={(msg) => {
+                setActiveIdeaId(idea.id);
+                handleSend(msg);
+              }}
+              loading={loading && idea.id === activeIdeaId}
+              idea={idea}
+              isActive={idea.id === activeIdeaId}
+              onClick={() => setActiveIdeaId(idea.id)}
+              disabled={idea.locked}
+            />
+          </div>
+        ))}
+        <div ref={messageEndRef} />
       </div>
 
       {activeIdea && (
         <div className="w-full space-y-4" ref={panelRef}>
-          {/* You can optionally leave the panels collapsed or remove them altogether */}
+          {/* Optional: retain collapsed panels for reference */}
           {activeIdea.takeaways?.refinedIdea && (
             <div
               className={`rounded border border-gray-200 p-2 ${
@@ -540,49 +536,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
             </div>
           )}
 
-          {/* Branding panel is now optional; results are shown in chat */}
-          {activeIdea.takeaways?.branding && (
-            <div
-              className={`rounded border border-gray-200 p-2 ${
-                activeIdea.currentStage === "branding" || openPanels.branding
-                  ? "bg-blue-100"
-                  : "bg-blue-50"
-              }`}
-            >
-              <div
-                className="font-medium mb-1 flex items-center justify-between cursor-pointer"
-                onClick={() => togglePanel("branding")}
-              >
-                <span>Branding</span>
-                <span className="text-gray-400">
-                  {activeIdea.currentStage === "branding" || openPanels.branding
-                    ? "▲"
-                    : "▼"}
-                </span>
-              </div>
-              {(activeIdea.currentStage === "branding" || openPanels.branding) && (
-                <BrandingCard
-                  name={activeIdea.takeaways.branding.name}
-                  tagline={activeIdea.takeaways.branding.tagline}
-                  colors={activeIdea.takeaways.branding.colors}
-                  logoDesc={activeIdea.takeaways.branding.logoDesc}
-                  logoUrl={activeIdea.takeaways.branding.logoUrl}
-                  onAccept={() =>
-                    handleAdvanceStage(activeIdea.id, "mvp")
-                  }
-                  onRegenerate={() =>
-                    handleAdvanceStage(activeIdea.id, "branding")
-                  }
-                  onRestart={() => {
-                    setActiveIdeaId(activeIdea.id);
-                    messageEndRef.current?.scrollIntoView({
-                      behavior: "smooth",
-                    });
-                  }}
-                />
-              )}
-            </div>
-          )}
+          {/* Branding panel removed from UI; branding is now in chat */}
         </div>
       )}
     </div>
