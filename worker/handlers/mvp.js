@@ -15,7 +15,8 @@
  *
  * If the client requests streaming (via `Accept: text/event-stream` or
  * `?stream=true` in the URL), this handler proxies the agent’s SSE
- * stream directly.  Otherwise it returns only the final message.
+ * stream directly.  Otherwise it returns only the final message wrapped
+ * in a JSON object with a `plan` field.
  *
  * @param {Request} request
  * @param {Object} env Environment bindings passed in by Cloudflare (unused)
@@ -50,11 +51,7 @@ export async function mvpHandler(request, env) {
   }
 
   try {
-    // Determine whether the client expects a streaming response.  We check
-    // both the Accept header and a `stream` query parameter.  If either
-    // indicates streaming, we'll call the agent's streaming endpoint and
-    // forward the SSE body directly to the client.  Otherwise we use the
-    // synchronous endpoint and return only the final message.
+    // Determine whether the client expects a streaming response.
     const url = new URL(request.url);
     const wantsStream =
       request.headers.get('accept')?.includes('text/event-stream') ||
@@ -73,7 +70,6 @@ export async function mvpHandler(request, env) {
     });
 
     if (!agentRes.ok) {
-      // If the agent returned an error, forward the status and body
       const errorText = await agentRes.text();
       return new Response(`Agent error: ${errorText}`, {
         status: agentRes.status,
@@ -81,9 +77,7 @@ export async function mvpHandler(request, env) {
       });
     }
 
-    // Streaming mode: pipe the SSE stream through without reading it.  The
-    // Cloudflare Worker will handle streaming the ReadableStream to the
-    // client.  Set the appropriate content type.
+    // Streaming mode: pipe the SSE stream through without reading it.
     if (wantsStream) {
       return new Response(agentRes.body, {
         status: 200,
@@ -93,12 +87,13 @@ export async function mvpHandler(request, env) {
       });
     }
 
-    // Non‑streaming mode: parse the JSON and return the final message.
+    // Non‑streaming mode: parse the JSON and wrap the final message
+    // in an object with a `plan` field so the frontend can parse it.
     const data = await agentRes.json();
     const message = data?.message ?? '';
-    return new Response(message, {
+    return new Response(JSON.stringify({ plan: message }), {
       status: 200,
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
