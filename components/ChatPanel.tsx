@@ -1,152 +1,139 @@
-// Updated ChatPanel.tsx with chat bubbles and animated spinner
-import React, { useState, useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
+import { useState, KeyboardEvent, useRef, useEffect } from "react";
 
-// Lazy load remark-gfm with dynamic import for compatibility
-const loadRemarkGfm = async () => {
-  const mod = await import("remark-gfm");
-  return mod.default || mod;
-};
+/**
+ * Represents a single action that can be rendered as a button in the chat.
+ * Each action has a label for display and a command string which is sent
+ * back to the parent via the onSend callback when clicked.
+ */
+export interface ChatAction {
+  label: string;
+  command: string;
+}
 
-interface ChatMessage {
-  role: "user" | "assistant" | string;
+/**
+ * Represents a chat message. In addition to the role and content, a
+ * message may include an optional imageUrl to display an image and an
+ * optional list of actions. When actions are present the UI will
+ * render buttons for each action.
+ */
+export interface ChatMessage {
+  role: "user" | "assistant";
   content: string;
-  imageUrl?: string; // new optional field for images
+  actions?: ChatAction[];
+  imageUrl?: string;
 }
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   onSend: (content: string) => void;
   loading: boolean;
-  onStreamComplete?: (content: string) => void;
   idea: any;
   isActive: boolean;
   onClick: () => void;
   disabled: boolean;
 }
 
+/**
+ * ChatPanel renders a scrollable list of messages along with an input box
+ * for the user to type new messages. Assistant messages with actions
+ * will render buttons that call back to the parent with their command.
+ */
 export default function ChatPanel({
   messages,
   onSend,
   loading,
-  onStreamComplete,
   idea,
   isActive,
   onClick,
   disabled,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
-  const [streamedContent, setStreamedContent] = useState("");
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [remarkPlugins, setRemarkPlugins] = useState<any[]>([]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Scroll to bottom whenever messages change
   useEffect(() => {
-    loadRemarkGfm().then((plugin) => {
-      setRemarkPlugins([plugin]);
-    });
-  }, []);
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [messages]);
 
-  const handleSend = () => {
-    if (input.trim() === "") return;
-    onSend(input);
+  const sendMessage = () => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    onSend(trimmed);
     setInput("");
   };
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
     }
-  }, [messages, streamedContent]);
-
-  useEffect(() => {
-    if (onStreamComplete && streamedContent !== "") {
-      onStreamComplete(streamedContent);
-    }
-  }, [streamedContent, onStreamComplete]);
-
-  // Helper to render spinner with three bouncing dots
-  const Spinner = () => (
-    <div className="flex space-x-1 py-1">
-      {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          className="h-2 w-2 rounded-full bg-gray-500 animate-bounce"
-          style={{ animationDelay: `${i * 0.2}s` }}
-        ></div>
-      ))}
-    </div>
-  );
+  };
 
   return (
     <div
-      className={`rounded-xl border border-gray-200 p-4 shadow-sm ${
-        isActive ? "ring-2 ring-blue-500" : ""
-      }`}
+      className={`border rounded p-4 ${isActive ? "border-blue-400" : "border-gray-200"}`}
       onClick={onClick}
     >
       <div
-        ref={scrollRef}
-        className="max-h-64 overflow-y-auto rounded bg-gray-50 p-2 text-sm"
+        ref={containerRef}
+        className="mb-4 max-h-64 overflow-y-auto space-y-4"
       >
-        {messages.map((msg, index) => (
-          <div
-            key={index}
-            className={`mb-2 flex ${
-              msg.role === "user" ? "justify-end" : "justify-start"
-            }`}
-          >
+        {messages.map((msg, idx) => (
+          <div key={idx} className="space-y-1">
             <div
-              className={`${
+              className={`p-2 rounded-md whitespace-pre-wrap ${
                 msg.role === "user"
-                  ? "bg-primary text-white"
-                  : "bg-gray-200 text-gray-800"
-              } px-3 py-2 rounded-lg max-w-xs break-words`}
+                  ? "bg-gray-100 self-end text-right"
+                  : "bg-blue-50"
+              }`}
             >
-              <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
-                {msg.content}
-              </ReactMarkdown>
-              {/* Render an image if one is provided */}
+              {msg.content}
               {msg.imageUrl && (
-                <img
-                  src={msg.imageUrl}
-                  alt="Embedded"
-                  className="mt-2 max-w-full rounded-lg"
-                />
+                <div className="mt-2">
+                  <img
+                    src={msg.imageUrl}
+                    alt=""
+                    className="max-w-full h-auto rounded"
+                  />
+                </div>
               )}
             </div>
+            {msg.actions && (
+              <div className="flex flex-wrap gap-2 mt-1">
+                {msg.actions.map((action, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onSend(action.command)}
+                    className="px-3 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
+                    disabled={loading || disabled}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         {loading && (
-          <div className="mb-2 flex justify-start">
-            <Spinner />
-          </div>
-        )}
-        {streamedContent && (
-          <div className="mb-2 flex justify-start">
-            <div className="bg-gray-200 text-gray-800 px-3 py-2 rounded-lg max-w-xs break-words">
-              <ReactMarkdown remarkPlugins={remarkPlugins} className="prose prose-sm">
-                {streamedContent}
-              </ReactMarkdown>
-            </div>
-          </div>
+          <div className="text-gray-400">Thinking…</div>
         )}
       </div>
-      <div className="mt-4 flex items-center gap-2">
-        <input
-          type="text"
-          placeholder="Type your message..."
-          className="flex-1 rounded border border-gray-300 p-2 text-sm"
+      <div className="flex items-end gap-2">
+        <textarea
+          className="flex-1 border rounded p-2 resize-none"
+          rows={2}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleSend();
-          }}
-          disabled={disabled}
+          onKeyDown={handleKeyDown}
+          disabled={disabled || loading}
+          placeholder={disabled ? "Conversation locked" : "Type a message…"}
         />
         <button
-          onClick={handleSend}
-          className="rounded bg-primary px-4 py-2 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
-          disabled={disabled || input.trim() === ""}
+          className="px-4 py-2 rounded bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
+          onClick={sendMessage}
+          disabled={disabled || loading || !input.trim()}
         >
           Send
         </button>
