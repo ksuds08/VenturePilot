@@ -14,9 +14,6 @@ const validateUrl = `${baseUrl}/validate`;
 const brandUrl = `${baseUrl}/brand`;
 const mvpUrl = `${baseUrl}/mvp`;
 
-/**
- * ChatAssistant orchestrates the chat flow and stage progression.
- */
 type ChatAssistantProps = {
   onReady?: () => void;
 };
@@ -27,8 +24,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
   const [ideas, setIdeas] = useState<any[]>([]);
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-
-  // Logs emitted during the MVP build streaming process
+  // Holds simulated progress messages during deployment
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
 
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -285,7 +281,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     setLoading(false);
   };
 
-  // Deploy the generated MVP, streaming progress if available
+  // Deploy the generated MVP with simulated progress logs
   const handleConfirmBuild = async (id: any) => {
     const idea = ideas.find((i) => i.id === id);
     if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -296,62 +292,53 @@ export default function ChatAssistant(props: ChatAssistantProps) {
     }
 
     updateIdea(id, { deploying: true });
-    // Reset logs at the start of each deployment
     setDeployLogs([]);
+
+    // Define simulated progress steps; adjust timing/messages to taste
+    const steps = [
+      "Planning project structure…",
+      "Generating backend code…",
+      "Generating frontend code…",
+      "Packaging files…",
+      "Deploying to Cloudflare Pages…",
+    ];
+    let stepIndex = 0;
+    const interval = setInterval(() => {
+      const next = steps[stepIndex];
+      if (next) {
+        setDeployLogs((prev) => [...prev, next]);
+      }
+      stepIndex++;
+      if (stepIndex >= steps.length) {
+        clearInterval(interval);
+      }
+    }, 10000); // 10 seconds per step
 
     try {
       const res = await fetch(mvpUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ideaId: idea.id,
           branding: idea.takeaways.branding,
           messages: idea.messages,
         }),
       });
-
-      // Check whether the response is streaming
-      const contentType = res.headers.get("Content-Type") || "";
-      if (contentType.includes("text/event-stream")) {
-        // Read the SSE stream and append each message to deployLogs
-        const reader = res.body!.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let buffer = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() ?? "";
-          for (const raw of parts) {
-            if (raw.startsWith("data:")) {
-              const msg = raw.substring(5).trim();
-              setDeployLogs((prev) => [...prev, msg]);
-            }
-          }
-        }
-        // When streaming completes, assume the last line is the deployment URL
-        const final = deployLogs[deployLogs.length - 1] ?? "";
-        updateIdea(id, {
-          deploying: false,
-          deployed: true,
-          pagesUrl: final,
-        });
-        return;
-      }
-
-      // Fallback: non-streaming JSON response
       const data = await res.json();
+      clearInterval(interval);
+
       if (!res.ok) {
         updateIdea(id, {
           deploying: false,
           deployError: data.error || "Unknown error",
         });
+        setDeployLogs((prev) => [
+          ...prev,
+          `❌ Deployment failed: ${data.error || "Unknown error"}`,
+        ]);
         return;
       }
+
       const deployedUrl = data.workerUrl || data.pagesUrl;
       updateIdea(id, {
         deploying: false,
@@ -359,11 +346,20 @@ export default function ChatAssistant(props: ChatAssistantProps) {
         repoUrl: data.repoUrl,
         pagesUrl: deployedUrl,
       });
+      setDeployLogs((prev) => [
+        ...prev,
+        `✅ Deployment successful: ${deployedUrl}`,
+      ]);
     } catch (err) {
+      clearInterval(interval);
       updateIdea(id, {
         deploying: false,
         deployError: err instanceof Error ? err.message : String(err),
       });
+      setDeployLogs((prev) => [
+        ...prev,
+        `❌ Deployment failed: ${err instanceof Error ? err.message : String(err)}`,
+      ]);
     }
   };
 
@@ -522,7 +518,7 @@ export default function ChatAssistant(props: ChatAssistantProps) {
                 deploying={activeIdea.deploying}
                 deployedUrl={activeIdea.pagesUrl}
                 deployError={activeIdea.deployError}
-                // Pass progress logs down to the preview so users can see activity
+                // Pass simulated progress messages
                 logs={deployLogs}
               />
             </div>
