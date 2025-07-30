@@ -5,40 +5,19 @@ export interface BuildPayload {
     description: string;
   };
   branding: any;
-  plan: string;
+  plan?: string; // <-- now optional
   messages: { role: string; content: string }[];
 }
 
 export async function buildAndDeployApp(payload: BuildPayload) {
-  // Skip calling a build agent for now and fallback to static app
-  let files = generateSimpleApp(payload.plan, payload.branding);
+  // Fallback in case plan is undefined
+  const fallbackPlan =
+    payload.plan || payload.ideaSummary?.description || "No plan provided";
 
-  // ✅ Validate file structure
-  files = Object.fromEntries(
-    Object.entries(files).filter(([path, content]) => {
-      if (
-        typeof path !== "string" ||
-        typeof content !== "string" ||
-        path.length > 200 ||
-        !/^[^/\\?%*:|"<>]+(?:\/[^/\\?%*:|"<>]+)*$/.test(path)
-      ) {
-        console.warn("❌ Skipping invalid file:", path);
-        return false;
-      }
-      return true;
-    })
-  );
-
-  const fileCount = Object.keys(files).length;
-  if (fileCount === 0) {
-    throw new Error("No valid files to deploy");
-  }
-
-  console.log("✅ Validated files:", Object.keys(files));
-
+  const files = generateSimpleApp(fallbackPlan, payload.branding);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
   const pagesUrl = await deployToPages(repoUrl);
-  return { pagesUrl, repoUrl, plan: payload.plan };
+  return { pagesUrl, repoUrl, plan: fallbackPlan };
 }
 
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
@@ -70,65 +49,80 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
   for (const [path, content] of Object.entries(files)) {
-    const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/blobs`, {
+    const blobRes = await fetch(
+      `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `token ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: Buffer.from(content).toString("base64"),
+          encoding: "base64",
+        }),
+      }
+    );
+    const { sha } = await blobRes.json();
+    blobs.push({ path, mode: "100644", type: "blob", sha });
+  }
+
+  const refRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`,
+    {
+      headers: { Authorization: `token ${token}` },
+    }
+  );
+  const refData = await refRes.json();
+  const baseCommitSha = refData.object?.sha;
+
+  const treeRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
+    {
       method: "POST",
       headers: {
         Authorization: `token ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        content: Buffer.from(content).toString("base64"),
-        encoding: "base64",
+        tree: blobs,
+        base_tree: baseCommitSha || undefined,
       }),
-    });
-    const { sha } = await blobRes.json();
-    blobs.push({ path, mode: "100644", type: "blob", sha });
-  }
-
-  const refRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`, {
-    headers: { Authorization: `token ${token}` },
-  });
-  const refData = await refRes.json();
-  const baseCommitSha = refData.object?.sha;
-
-  const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/trees`, {
-    method: "POST",
-    headers: {
-      Authorization: `token ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      tree: blobs,
-      base_tree: baseCommitSha || undefined,
-    }),
-  });
+    }
+  );
   const { sha: newTreeSha } = await treeRes.json();
 
-  const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/commits`, {
-    method: "POST",
-    headers: {
-      Authorization: `token ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      message: "Initial MVP commit",
-      tree: newTreeSha,
-      parents: baseCommitSha ? [baseCommitSha] : [],
-    }),
-  });
+  const commitRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repoName}/git/commits`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `token ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: "Initial MVP commit",
+        tree: newTreeSha,
+        parents: baseCommitSha ? [baseCommitSha] : [],
+      }),
+    }
+  );
   const { sha: newCommitSha } = await commitRes.json();
 
-  await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `token ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      sha: newCommitSha,
-      force: true,
-    }),
-  });
+  await fetch(
+    `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `token ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sha: newCommitSha,
+        force: true,
+      }),
+    }
+  );
 
   return `https://github.com/${owner}/${repoName}`;
 }
@@ -176,7 +170,9 @@ async function deployToPages(repoUrl: string) {
   const data = await res.json();
   if (!res.ok || data.success === false) {
     throw new Error(
-      `Pages deployment error: ${data.errors ? JSON.stringify(data.errors) : res.statusText}`
+      `Pages deployment error: ${
+        data.errors ? JSON.stringify(data.errors) : res.statusText
+      }`
     );
   }
 
@@ -186,7 +182,7 @@ async function deployToPages(repoUrl: string) {
 function generateSimpleApp(plan: string, branding: any): Record<string, string> {
   const appName = branding?.name || "My AI App";
   const tagline = branding?.tagline || "An AI‑powered experience";
-  let primaryColour = branding?.palette?.primary || "#0066cc";
+  const primaryColour = branding?.palette?.primary || "#0066cc";
 
   const escapedPlan = plan
     .replace(/&/g, "&amp;")
