@@ -28,8 +28,3 @@ id = "321cb5c5f8824536aab90293d7ed127e"
 [[kv_namespaces]]
 binding = "KV"
 id = "cac0ef385d8e4be49b9cc014e23bbd4c"
-
-[vars]
-PAT_GITHUB = ""
-GITHUB_USERNAME = ""
-GITHUB_ORG = ""
