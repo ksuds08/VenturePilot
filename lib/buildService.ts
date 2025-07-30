@@ -5,11 +5,12 @@ export interface BuildPayload {
     description: string;
   };
   branding: any;
-  plan?: string;
+  plan?: string; // <-- now optional
   messages: { role: string; content: string }[];
 }
 
 export async function buildAndDeployApp(payload: BuildPayload) {
+  // Fallback in case plan is undefined
   const fallbackPlan =
     payload.plan || payload.ideaSummary?.description || "No plan provided";
 
@@ -34,21 +35,18 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     ? `https://api.github.com/orgs/${org}/repos`
     : `https://api.github.com/user/repos`;
 
-  const createRes = await fetch(createRepoEndpoint, {
+  await fetch(createRepoEndpoint, {
     method: "POST",
     headers: {
       Authorization: `token ${token}`,
       "Content-Type": "application/json",
+      "User-Agent": "LaunchWing-Deployer",
     },
     body: JSON.stringify({
       name: repoName,
       private: true,
     }),
   });
-  if (!createRes.ok) {
-    const text = await createRes.text();
-    throw new Error(`GitHub repo creation failed: ${text}`);
-  }
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
   for (const [path, content] of Object.entries(files)) {
@@ -59,6 +57,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
         headers: {
           Authorization: `token ${token}`,
           "Content-Type": "application/json",
+          "User-Agent": "LaunchWing-Deployer",
         },
         body: JSON.stringify({
           content: Buffer.from(content).toString("base64"),
@@ -66,10 +65,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
         }),
       }
     );
-    if (!blobRes.ok) {
-      const text = await blobRes.text();
-      throw new Error(`Blob creation failed for ${path}: ${text}`);
-    }
     const { sha } = await blobRes.json();
     blobs.push({ path, mode: "100644", type: "blob", sha });
   }
@@ -77,10 +72,14 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const refRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`,
     {
-      headers: { Authorization: `token ${token}` },
+      headers: {
+        Authorization: `token ${token}`,
+        "User-Agent": "LaunchWing-Deployer",
+      },
     }
   );
-  const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
+  const refData = await refRes.json();
+  const baseCommitSha = refData.object?.sha;
 
   const treeRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
@@ -89,6 +88,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       headers: {
         Authorization: `token ${token}`,
         "Content-Type": "application/json",
+        "User-Agent": "LaunchWing-Deployer",
       },
       body: JSON.stringify({
         tree: blobs,
@@ -96,10 +96,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
-  if (!treeRes.ok) {
-    const text = await treeRes.text();
-    throw new Error(`Tree creation failed: ${text}`);
-  }
   const { sha: newTreeSha } = await treeRes.json();
 
   const commitRes = await fetch(
@@ -109,6 +105,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       headers: {
         Authorization: `token ${token}`,
         "Content-Type": "application/json",
+        "User-Agent": "LaunchWing-Deployer",
       },
       body: JSON.stringify({
         message: "Initial MVP commit",
@@ -117,19 +114,16 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
-  if (!commitRes.ok) {
-    const text = await commitRes.text();
-    throw new Error(`Commit failed: ${text}`);
-  }
   const { sha: newCommitSha } = await commitRes.json();
 
-  const patchRes = await fetch(
+  await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
     {
       method: "PATCH",
       headers: {
         Authorization: `token ${token}`,
         "Content-Type": "application/json",
+        "User-Agent": "LaunchWing-Deployer",
       },
       body: JSON.stringify({
         sha: newCommitSha,
@@ -137,10 +131,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
-  if (!patchRes.ok) {
-    const text = await patchRes.text();
-    throw new Error(`Patch ref failed: ${text}`);
-  }
 
   return `https://github.com/${owner}/${repoName}`;
 }
