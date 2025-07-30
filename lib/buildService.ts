@@ -11,7 +11,31 @@ export interface BuildPayload {
 
 export async function buildAndDeployApp(payload: BuildPayload) {
   // Skip calling a build agent for now and fallback to static app
-  const files = generateSimpleApp(payload.plan, payload.branding);
+  let files = generateSimpleApp(payload.plan, payload.branding);
+
+  // ✅ Validate file structure
+  files = Object.fromEntries(
+    Object.entries(files).filter(([path, content]) => {
+      if (
+        typeof path !== "string" ||
+        typeof content !== "string" ||
+        path.length > 200 ||
+        !/^[^/\\?%*:|"<>]+(?:\/[^/\\?%*:|"<>]+)*$/.test(path)
+      ) {
+        console.warn("❌ Skipping invalid file:", path);
+        return false;
+      }
+      return true;
+    })
+  );
+
+  const fileCount = Object.keys(files).length;
+  if (fileCount === 0) {
+    throw new Error("No valid files to deploy");
+  }
+
+  console.log("✅ Validated files:", Object.keys(files));
+
   const repoUrl = await commitToGitHub(payload.ideaId, files);
   const pagesUrl = await deployToPages(repoUrl);
   return { pagesUrl, repoUrl, plan: payload.plan };
