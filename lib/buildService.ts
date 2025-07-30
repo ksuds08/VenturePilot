@@ -1,5 +1,3 @@
-import JSZip from "jszip";
-
 export interface BuildPayload {
   ideaId: string;
   ideaSummary: {
@@ -12,44 +10,11 @@ export interface BuildPayload {
 }
 
 export async function buildAndDeployApp(payload: BuildPayload) {
-  const buildRes = await fetch((globalThis as any).BUILD_AGENT_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!buildRes.ok) {
-    const err = await buildRes.text();
-    throw new Error(`build agent error: ${err}`);
-  }
-
-  const buildData = await buildRes.json();
-
-  if (!buildData.archive) {
-    const files = generateSimpleApp(buildData.plan || payload.plan, payload.branding);
-    const repoUrl = await commitToGitHub(payload.ideaId, files);
-    const pagesUrl = await deployToPages(repoUrl);
-    return { pagesUrl, repoUrl, plan: buildData.plan || payload.plan };
-  }
-
-  const zip = new JSZip();
-  const bytes = Uint8Array.from(atob(buildData.archive), (c) => c.charCodeAt(0));
-  const project = await zip.loadAsync(bytes);
-
-  const files: Record<string, string> = {};
-  await Promise.all(
-    Object.keys(project.files).map(async (filePath) => {
-      const file = project.files[filePath];
-      if (!file.dir) {
-        const content = await file.async("string");
-        files[filePath] = content;
-      }
-    })
-  );
-
+  // Skip calling a build agent for now and fallback to static app
+  const files = generateSimpleApp(payload.plan, payload.branding);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
   const pagesUrl = await deployToPages(repoUrl);
-  return { pagesUrl, repoUrl };
+  return { pagesUrl, repoUrl, plan: payload.plan };
 }
 
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
