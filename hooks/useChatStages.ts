@@ -504,7 +504,7 @@ const handleConfirmBuild = async (id: any) => {
   updateIdea(id, { messages: messageAccumulator });
 
   const appendLog = (line: string) => {
-    simulateStreamingLog(id, messageAccumulator, line);
+    simulateStreamingLog(id, line);
     messageAccumulator = [
       ...messageAccumulator,
       {
