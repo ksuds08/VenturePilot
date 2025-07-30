@@ -37,7 +37,7 @@ export async function postBranding(idea: string, ideaId: any) {
 }
 
 /**
- * Deploy an MVP for the given idea.
+ * Deploy an MVP for the given idea (standard request).
  */
 export async function postMvp(
   ideaId: any,
@@ -50,4 +50,64 @@ export async function postMvp(
     body: JSON.stringify({ ideaId, branding, messages }),
   });
   return res;
+}
+
+/**
+ * Stream real-time deployment logs using Server-Sent Events.
+ */
+export async function getMvpStream(
+  ideaId: any,
+  branding: any,
+  messages: any[],
+  onLog: (message: string) => void,
+  onDone: (result: { pagesUrl?: string; repoUrl?: string; plan?: string }) => void,
+  onError: (error: string) => void,
+) {
+  const response = await fetch(`${mvpUrl}?stream=true`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({ ideaId, branding, messages }),
+  });
+
+  if (!response.ok || !response.body) {
+    onError(`HTTP error: ${response.status}`);
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    while (buffer.includes("\n\n")) {
+      const chunk = buffer.slice(0, buffer.indexOf("\n\n"));
+      buffer = buffer.slice(buffer.indexOf("\n\n") + 2);
+
+      const lines = chunk.split("\n");
+      const eventType = lines.find((l) => l.startsWith("event:"))?.slice(6).trim();
+      const dataLine = lines.find((l) => l.startsWith("data:"));
+      if (!dataLine) continue;
+
+      const data = dataLine.slice(5).trim();
+      if (eventType === "log") {
+        onLog(data);
+      } else if (eventType === "done") {
+        try {
+          const result = JSON.parse(data);
+          onDone(result);
+        } catch {
+          onError("Failed to parse final result");
+        }
+      } else if (eventType === "error") {
+        onError(data);
+      }
+    }
+  }
 }
