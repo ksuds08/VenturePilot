@@ -441,34 +441,7 @@ export default function useChatStages(onReady?: () => void) {
     setLoading(false);
   };
 
-const simulateStreamingLog = (
-  ideaId: string,
-  baseMessages: ChatMessage[],
-  content: string
-) => {
-  const id = ideaId;
-  let index = 1;
-  const placeholder: ChatMessage = { role: "assistant", content: "" };
-  const updatedMsgs = [...baseMessages, placeholder];
 
-  updateIdea(id, { messages: updatedMsgs });
-
-  const reveal = () => {
-    const newMsgs = updatedMsgs.map((m, i) =>
-      i === updatedMsgs.length - 1
-        ? { ...m, content: content.slice(0, index) }
-        : m
-    );
-    updateIdea(id, { messages: newMsgs });
-
-    if (index < content.length) {
-      index += 1;
-      setTimeout(reveal, 10);
-    }
-  };
-
-  reveal();
-};
 
   /**
    * Confirm the build and deploy the MVP. Shows progress logs in
