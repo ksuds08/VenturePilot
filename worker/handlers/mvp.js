@@ -51,7 +51,7 @@ export async function mvpHandler(request, env) {
         const send = (text) =>
           controller.enqueue(encoder.encode(`data: ${text}\n\n`));
 
-        const parts = ["frontend", "backend", "assets", "config"];
+        const parts = ['frontend', 'backend', 'assets', 'config'];
         const allFiles = [];
 
         send("🤔 Analyzing your prompt and starting chunked generation...");
@@ -74,14 +74,8 @@ export async function mvpHandler(request, env) {
               continue;
             }
 
-            const json = await res.json();
-            const { files } = json;
-            if (!files || !Array.isArray(files)) {
-              send(`⚠️ No valid ${part} files returned`);
-              continue;
-            }
-
-            if (files.length === 0) {
+            const { files } = await res.json();
+            if (!Array.isArray(files) || files.length === 0) {
               send(`⚠️ No ${part} files returned`);
               continue;
             }
@@ -100,21 +94,21 @@ export async function mvpHandler(request, env) {
           return;
         }
 
-        // Filter safe files only
-        const safeFiles = allFiles.filter(
+        // Validate files before deployment
+        const validFiles = allFiles.filter(
           (f) => f && typeof f.path === "string" && typeof f.content === "string"
         );
 
-        if (safeFiles.length < allFiles.length) {
-          send(`⚠️ Skipped ${allFiles.length - safeFiles.length} malformed files`);
+        if (validFiles.length !== allFiles.length) {
+          send(`⚠️ Skipped ${allFiles.length - validFiles.length} malformed file(s)`);
         }
 
-        send(`🧾 Deploying ${safeFiles.length} files...`);
-        console.log("Deploying with files:", safeFiles.map(f => f.path));
+        send(`🧾 Deploying ${validFiles.length} files...`);
+        await delay(500);
 
         const ideaId = body.ideaId || Math.random().toString(36).substring(2, 8);
         const ideaSummary = {
-          name: (body.branding && body.branding.name) || 'AI MVP',
+          name: (body.branding && body.branding.name) || "AI MVP",
           description: requirements,
         };
         const branding = body.branding || {};
@@ -126,14 +120,8 @@ export async function mvpHandler(request, env) {
             ideaSummary,
             branding,
             messages,
-            files: safeFiles,
+            files: validFiles,
           });
-
-          if (!result || typeof result !== "object") {
-            send("❌ Deployment failed: No response returned.");
-            controller.close();
-            return;
-          }
 
           if (result.pagesUrl) {
             send("✅ Deployment successful!");
@@ -142,7 +130,7 @@ export async function mvpHandler(request, env) {
               send(`repoUrl:${result.repoUrl}`);
             }
           } else {
-            send("❌ Deployment failed: No pages URL returned.");
+            send("❌ Deployment failed. No pages URL returned.");
           }
         } catch (err) {
           send(`❌ Deployment error: ${err.message}`);
@@ -154,10 +142,10 @@ export async function mvpHandler(request, env) {
 
     return new Response(stream, {
       headers: {
-        'Content-Type': 'text/event-stream',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        "Content-Type": "text/event-stream",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
       },
     });
   }
@@ -165,8 +153,8 @@ export async function mvpHandler(request, env) {
   return new Response("This endpoint only supports streaming", {
     status: 400,
     headers: {
-      'Content-Type': 'text/plain',
-      'Access-Control-Allow-Origin': '*',
+      "Content-Type": "text/plain",
+      "Access-Control-Allow-Origin": "*",
     },
   });
 }
