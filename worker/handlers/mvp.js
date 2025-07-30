@@ -1,26 +1,12 @@
 // SPDX-License-Identifier: MIT
 
-// Updated MVP handler for VenturePilot.
-//
-// This implementation replaces the previous call to the internal
-// `generateHandler` with a remote call to the Launchwing agent.  The
-// Launchwing service accepts a simple `requirements` string and returns either
-// a JSON payload with a `message` property or an SSE stream of progress
-// updates.  If the call fails, the error status and response are
-// forwarded directly to the client.
-
 /**
  * Handle POST requests to `/mvp`.  Parse the incoming body to extract a
  * human‑readable requirements string and forward it to the Launchwing agent.
  *
  * If the client requests streaming (via `Accept: text/event-stream` or
  * `?stream=true` in the URL), this handler proxies the agent’s SSE
- * stream directly.  Otherwise it returns only the final message wrapped
- * in a JSON object with a `plan` field.
- *
- * @param {Request} request
- * @param {Object} env Environment bindings passed in by Cloudflare (unused)
- * @returns {Promise<Response>}
+ * stream directly. Otherwise it returns a JSON object with a `plan` field.
  */
 export async function mvpHandler(request, env) {
   if (request.method.toUpperCase() !== 'POST') {
@@ -34,7 +20,7 @@ export async function mvpHandler(request, env) {
     return new Response('Invalid JSON body', { status: 400 });
   }
 
-  // Attempt to derive a requirements string from the provided payload.
+  // Derive the requirements string from the payload
   let requirements;
   if (typeof body.requirements === 'string') {
     requirements = body.requirements;
@@ -43,15 +29,11 @@ export async function mvpHandler(request, env) {
   } else if (typeof body.prompt === 'string') {
     requirements = body.prompt;
   } else {
-    try {
-      requirements = JSON.stringify(body);
-    } catch (_) {
-      requirements = '';
-    }
+    requirements = JSON.stringify(body) ?? '';
   }
 
   try {
-    // Determine whether the client expects a streaming response.
+    // Determine if the client wants a streaming response
     const url = new URL(request.url);
     const wantsStream =
       request.headers.get('accept')?.includes('text/event-stream') ||
@@ -63,9 +45,7 @@ export async function mvpHandler(request, env) {
 
     const agentRes = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ requirements }),
     });
 
@@ -77,18 +57,15 @@ export async function mvpHandler(request, env) {
       });
     }
 
-    // Streaming mode: pipe the SSE stream through without reading it.
+    // Stream through SSE if requested
     if (wantsStream) {
       return new Response(agentRes.body, {
         status: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-        },
+        headers: { 'Content-Type': 'text/event-stream' },
       });
     }
 
-    // Non‑streaming mode: parse the JSON and wrap the final message
-    // in an object with a `plan` field so the frontend can parse it.
+    // Otherwise return the message wrapped in JSON with a `plan` key
     const data = await agentRes.json();
     const message = data?.message ?? '';
     return new Response(JSON.stringify({ plan: message }), {
