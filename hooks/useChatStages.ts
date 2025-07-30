@@ -587,3 +587,4 @@ return {
   handleAdvanceStage,
   handleConfirmBuild,
 };
+}
