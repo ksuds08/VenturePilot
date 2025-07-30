@@ -543,7 +543,8 @@ const handleConfirmBuild = async (id: any) => {
       deployError: errMsg,
     });
   }
-};return {
+};
+return {
   ideas,
   activeIdeaId,
   setActiveIdeaId,
