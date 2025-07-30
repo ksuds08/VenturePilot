@@ -479,6 +479,34 @@ const simulateStreamingLog = (
    * occurs.
    */
 
+const simulateStreamingLog = (
+  ideaId: string,
+  baseMessages: any[],
+  content: string
+) => {
+  let index = 1;
+  const placeholder = { role: "assistant", content: "" };
+  const updatedMsgs = [...baseMessages, placeholder];
+
+  updateIdea(ideaId, { messages: updatedMsgs });
+
+  const reveal = () => {
+    const newMsgs = updatedMsgs.map((m, i) =>
+      i === updatedMsgs.length - 1
+        ? { ...m, content: content.slice(0, index) }
+        : m
+    );
+    updateIdea(ideaId, { messages: newMsgs });
+
+    if (index < content.length) {
+      index += 1;
+      setTimeout(reveal, 10);
+    }
+  };
+
+  reveal();
+};
+
 const handleConfirmBuild = async (id: any) => {
   const idea = ideas.find((i) => i.id === id);
   if (!idea || !idea.takeaways?.branding || !idea.messages?.length) {
@@ -504,6 +532,7 @@ const handleConfirmBuild = async (id: any) => {
   updateIdea(id, { messages: messageAccumulator });
 
   const appendLog = (line: string) => {
+    simulateStreamingLog(id, messageAccumulator, line);
     messageAccumulator = [
       ...messageAccumulator,
       {
@@ -511,9 +540,6 @@ const handleConfirmBuild = async (id: any) => {
         content: line,
       },
     ];
-    updateIdea(id, {
-      messages: messageAccumulator,
-    });
   };
 
   try {
@@ -531,10 +557,10 @@ const handleConfirmBuild = async (id: any) => {
         const { pagesUrl, repoUrl, plan } = data || {};
 
         if (pagesUrl) {
-          appendLog(
+          const finalLine =
             `✅ Deployment successful! Your site is live at ${pagesUrl}` +
-              (repoUrl ? `\nGitHub repo: ${repoUrl}` : "")
-          );
+            (repoUrl ? `\nGitHub repo: ${repoUrl}` : "");
+          appendLog(finalLine);
           updateIdea(id, {
             deploying: false,
             deployed: true,
@@ -573,6 +599,7 @@ const handleConfirmBuild = async (id: any) => {
     });
   }
 };
+
 return {
   ideas,
   activeIdeaId,
@@ -587,4 +614,3 @@ return {
   handleAdvanceStage,
   handleConfirmBuild,
 };
-}
