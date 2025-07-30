@@ -4,8 +4,6 @@ compatibility_date = "2025-07-15"
 workers_dev = true
 
 account_id = "6ec57290cbb52c27cda0bd089bae05a0"
-
-# Keep dashboard-defined variables on deploy
 keep_vars = true
 
 [observability.logs]
@@ -27,7 +25,11 @@ id = "9657bb9052234e70a2c9e5f59554f185"
 binding = "GITHUB_KEYS_KV"
 id = "321cb5c5f8824536aab90293d7ed127e"
 
-# Alias THREAD_KV to KV so env.KV is defined
 [[kv_namespaces]]
 binding = "KV"
 id = "cac0ef385d8e4be49b9cc014e23bbd4c"
+
+[vars]
+PAT_GITHUB = ""
+GITHUB_USERNAME = ""
+GITHUB_ORG = ""
