@@ -452,32 +452,31 @@ export default function useChatStages(onReady?: () => void) {
    * occurs.
    */
 
-const simulateStreamingLog = (
-  ideaId: string,
-  baseMessages: any[],
-  content: string
-) => {
-  let index = 1;
-  const placeholder = { role: "assistant", content: "" };
-  const updatedMsgs = [...baseMessages, placeholder];
+const simulateStreamingLog = (ideaId: string, line: string) => {
+  setIdeas((prevIdeas) => {
+    return prevIdeas.map((idea) => {
+      if (idea.id !== ideaId) return idea;
 
-  updateIdea(ideaId, { messages: updatedMsgs });
+      const existing = idea.messages || [];
+      const last = existing[existing.length - 1];
 
-  const reveal = () => {
-    const newMsgs = updatedMsgs.map((m, i) =>
-      i === updatedMsgs.length - 1
-        ? { ...m, content: content.slice(0, index) }
-        : m
-    );
-    updateIdea(ideaId, { messages: newMsgs });
+      let newMessages;
+      if (last?.content?.startsWith("🚀") && existing.length >= 1) {
+        newMessages = [...existing, { role: "assistant", content: line }];
+      } else if (last?.role === "assistant") {
+        newMessages = existing.map((m: any, i: number) =>
+          i === existing.length - 1 ? { ...m, content: line } : m
+        );
+      } else {
+        newMessages = [...existing, { role: "assistant", content: line }];
+      }
 
-    if (index < content.length) {
-      index += 1;
-      setTimeout(reveal, 10);
-    }
-  };
-
-  reveal();
+      return {
+        ...idea,
+        messages: newMessages,
+      };
+    });
+  });
 };
 
 const handleConfirmBuild = async (id: any) => {
