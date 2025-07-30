@@ -5,12 +5,11 @@ export interface BuildPayload {
     description: string;
   };
   branding: any;
-  plan?: string; // <-- now optional
+  plan?: string;
   messages: { role: string; content: string }[];
 }
 
 export async function buildAndDeployApp(payload: BuildPayload) {
-  // Fallback in case plan is undefined
   const fallbackPlan =
     payload.plan || payload.ideaSummary?.description || "No plan provided";
 
@@ -24,6 +23,12 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
   const org = (globalThis as any).GITHUB_ORG;
+
+  console.log("🔑 GitHub Credential Debug:");
+  console.log("PAT_GITHUB starts with:", token?.slice(0, 5) || "[undefined]");
+  console.log("GITHUB_USERNAME:", username || "[undefined]");
+  console.log("GITHUB_ORG:", org || "[undefined]");
+
   if (!token || (!username && !org)) {
     throw new Error("GitHub credentials are not configured");
   }
@@ -41,88 +46,67 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       Authorization: `token ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      name: repoName,
-      private: true,
-    }),
+    body: JSON.stringify({ name: repoName, private: true }),
   });
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
   for (const [path, content] of Object.entries(files)) {
-    const blobRes = await fetch(
-      `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `token ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          content: Buffer.from(content).toString("base64"),
-          encoding: "base64",
-        }),
-      }
-    );
+    const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/blobs`, {
+      method: "POST",
+      headers: {
+        Authorization: `token ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        content: Buffer.from(content).toString("base64"),
+        encoding: "base64",
+      }),
+    });
     const { sha } = await blobRes.json();
     blobs.push({ path, mode: "100644", type: "blob", sha });
   }
 
-  const refRes = await fetch(
-    `https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`,
-    {
-      headers: { Authorization: `token ${token}` },
-    }
-  );
+  const refRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`, {
+    headers: { Authorization: `token ${token}` },
+  });
   const refData = await refRes.json();
   const baseCommitSha = refData.object?.sha;
 
-  const treeRes = await fetch(
-    `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `token ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        tree: blobs,
-        base_tree: baseCommitSha || undefined,
-      }),
-    }
-  );
+  const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/trees`, {
+    method: "POST",
+    headers: {
+      Authorization: `token ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      tree: blobs,
+      base_tree: baseCommitSha || undefined,
+    }),
+  });
   const { sha: newTreeSha } = await treeRes.json();
 
-  const commitRes = await fetch(
-    `https://api.github.com/repos/${owner}/${repoName}/git/commits`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `token ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: "Initial MVP commit",
-        tree: newTreeSha,
-        parents: baseCommitSha ? [baseCommitSha] : [],
-      }),
-    }
-  );
+  const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/commits`, {
+    method: "POST",
+    headers: {
+      Authorization: `token ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: "Initial MVP commit",
+      tree: newTreeSha,
+      parents: baseCommitSha ? [baseCommitSha] : [],
+    }),
+  });
   const { sha: newCommitSha } = await commitRes.json();
 
-  await fetch(
-    `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `token ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sha: newCommitSha,
-        force: true,
-      }),
-    }
-  );
+  await fetch(`https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `token ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ sha: newCommitSha, force: true }),
+  });
 
   return `https://github.com/${owner}/${repoName}`;
 }
@@ -131,12 +115,17 @@ async function deployToPages(repoUrl: string) {
   const accountId = (globalThis as any).CF_ACCOUNT_ID;
   const projectName = (globalThis as any).CF_PAGES_PROJECT;
   const token = (globalThis as any).CF_API_TOKEN;
+
+  console.log("☁️ CF Pages Credential Debug:");
+  console.log("CF_API_TOKEN starts with:", token?.slice(0, 5) || "[undefined]");
+  console.log("CF_ACCOUNT_ID:", accountId || "[undefined]");
+  console.log("CF_PAGES_PROJECT:", projectName || "[undefined]");
+
   if (!accountId || !projectName || !token) {
     throw new Error("Cloudflare Pages credentials are not configured");
   }
 
-  let owner;
-  let repoName;
+  let owner, repoName;
   try {
     const urlObj = new URL(repoUrl);
     const segments = urlObj.pathname.split("/").filter(Boolean);
@@ -170,9 +159,7 @@ async function deployToPages(repoUrl: string) {
   const data = await res.json();
   if (!res.ok || data.success === false) {
     throw new Error(
-      `Pages deployment error: ${
-        data.errors ? JSON.stringify(data.errors) : res.statusText
-      }`
+      `Pages deployment error: ${data.errors ? JSON.stringify(data.errors) : res.statusText}`
     );
   }
 
@@ -184,10 +171,7 @@ function generateSimpleApp(plan: string, branding: any): Record<string, string> 
   const tagline = branding?.tagline || "An AI‑powered experience";
   const primaryColour = branding?.palette?.primary || "#0066cc";
 
-  const escapedPlan = plan
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  const escapedPlan = plan.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const paragraphs = escapedPlan
     .split(/\n+/)
     .map((p) => `<p>${p}</p>`)
