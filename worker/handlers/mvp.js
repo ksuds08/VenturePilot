@@ -50,6 +50,7 @@ export async function mvpHandler(request, env) {
     });
 
     if (!agentRes.ok) {
+      // Read the error body even if not streaming
       const errorText = await agentRes.text();
       return new Response(`Agent error: ${errorText}`, {
         status: agentRes.status,
@@ -66,7 +67,18 @@ export async function mvpHandler(request, env) {
     }
 
     // Otherwise return the message wrapped in JSON with a `plan` key
-    const data = await agentRes.json();
+    // Read raw text, log it, then parse
+    const rawText = await agentRes.text();
+    console.log('Agent raw response:', rawText);
+
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      // Fallback to plain text if JSON parsing fails
+      data = { message: rawText };
+    }
+
     const message = data?.message ?? '';
     return new Response(JSON.stringify({ plan: message }), {
       status: 200,
