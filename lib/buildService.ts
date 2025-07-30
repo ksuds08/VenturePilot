@@ -19,11 +19,6 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   return { pagesUrl, repoUrl, plan: fallbackPlan };
 }
 
-// ✅ Web-safe Base64 encoder for Cloudflare Workers
-function encodeBase64(str: string): string {
-  return btoa(unescape(encodeURIComponent(str)));
-}
-
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
@@ -39,17 +34,23 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     ? `https://api.github.com/orgs/${org}/repos`
     : `https://api.github.com/user/repos`;
 
-  await fetch(createRepoEndpoint, {
+  const createRes = await fetch(createRepoEndpoint, {
     method: "POST",
     headers: {
       Authorization: `token ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ name: repoName, private: true }),
+    body: JSON.stringify({
+      name: repoName,
+      private: true,
+    }),
   });
+  if (!createRes.ok) {
+    const text = await createRes.text();
+    throw new Error(`GitHub repo creation failed: ${text}`);
+  }
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
-
   for (const [path, content] of Object.entries(files)) {
     const blobRes = await fetch(
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
@@ -60,21 +61,26 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          content: encodeBase64(content),
+          content: Buffer.from(content).toString("base64"),
           encoding: "base64",
         }),
       }
     );
+    if (!blobRes.ok) {
+      const text = await blobRes.text();
+      throw new Error(`Blob creation failed for ${path}: ${text}`);
+    }
     const { sha } = await blobRes.json();
     blobs.push({ path, mode: "100644", type: "blob", sha });
   }
 
   const refRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`,
-    { headers: { Authorization: `token ${token}` } }
+    {
+      headers: { Authorization: `token ${token}` },
+    }
   );
-  const refData = await refRes.json();
-  const baseCommitSha = refData.object?.sha;
+  const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
 
   const treeRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
@@ -90,6 +96,10 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
+  if (!treeRes.ok) {
+    const text = await treeRes.text();
+    throw new Error(`Tree creation failed: ${text}`);
+  }
   const { sha: newTreeSha } = await treeRes.json();
 
   const commitRes = await fetch(
@@ -107,9 +117,13 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
+  if (!commitRes.ok) {
+    const text = await commitRes.text();
+    throw new Error(`Commit failed: ${text}`);
+  }
   const { sha: newCommitSha } = await commitRes.json();
 
-  await fetch(
+  const patchRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
     {
       method: "PATCH",
@@ -117,9 +131,16 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
         Authorization: `token ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ sha: newCommitSha, force: true }),
+      body: JSON.stringify({
+        sha: newCommitSha,
+        force: true,
+      }),
     }
   );
+  if (!patchRes.ok) {
+    const text = await patchRes.text();
+    throw new Error(`Patch ref failed: ${text}`);
+  }
 
   return `https://github.com/${owner}/${repoName}`;
 }
@@ -132,9 +153,11 @@ async function deployToPages(repoUrl: string) {
     throw new Error("Cloudflare Pages credentials are not configured");
   }
 
-  let owner, repoName;
+  let owner;
+  let repoName;
   try {
-    const segments = new URL(repoUrl).pathname.split("/").filter(Boolean);
+    const urlObj = new URL(repoUrl);
+    const segments = urlObj.pathname.split("/").filter(Boolean);
     owner = segments[0];
     repoName = segments[1];
   } catch {
@@ -188,8 +211,7 @@ function generateSimpleApp(plan: string, branding: any): Record<string, string> 
     .map((p) => `<p>${p}</p>`)
     .join("\n");
 
-  return {
-    "index.html": `<!DOCTYPE html>
+  const indexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -211,8 +233,9 @@ function generateSimpleApp(plan: string, branding: any): Record<string, string> 
   </footer>
   <script src="app.js"></script>
 </body>
-</html>`,
-    "styles.css": `body {
+</html>`;
+
+  const stylesCss = `body {
   font-family: sans-serif;
   background: #f5f5f5;
   color: #333;
@@ -236,10 +259,16 @@ function generateSimpleApp(plan: string, branding: any): Record<string, string> 
   padding: 1rem;
   font-size: 0.8rem;
   color: #666;
-}`,
-    "app.js": `export function init() {
+}`;
+
+  const appJs = `export function init() {
   console.log("App initialized");
 }
-window.addEventListener("DOMContentLoaded", init);`,
+window.addEventListener("DOMContentLoaded", init);`;
+
+  return {
+    "index.html": indexHtml,
+    "styles.css": stylesCss,
+    "app.js": appJs,
   };
 }
