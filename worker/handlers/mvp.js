@@ -13,7 +13,7 @@ export async function mvpHandler(request, env) {
     return new Response(null, {
       status: 204,
       headers: {
-        'Access-Control-Allow-Origin': '*',          // set to your Pages domain if you prefer
+        'Access-Control-Allow-Origin': '*', // set to your Pages domain if you prefer
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
       },
