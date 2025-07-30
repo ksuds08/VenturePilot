@@ -12,6 +12,7 @@ import {
   postBranding,
   postMvp,
 } from "../lib/api";
+import { getMvpStream } from "../lib/api";
 
 /**
  * Helper to prepare messages before sending them to the backend. The
@@ -448,7 +449,6 @@ export default function useChatStages(onReady?: () => void) {
    * It also handles "plan" responses from the agent when no deployment
    * occurs.
    */
-import { getMvpStream } from "../lib/api"; // make sure this import exists at the top
 
 const handleConfirmBuild = async (id: any) => {
   const idea = ideas.find((i) => i.id === id);
@@ -543,4 +543,18 @@ const handleConfirmBuild = async (id: any) => {
       deployError: errMsg,
     });
   }
+};return {
+  ideas,
+  activeIdeaId,
+  setActiveIdeaId,
+  loading,
+  deployLogs,
+  openPanels,
+  togglePanel: () => {}, // if unused, keep as placeholder
+  messageEndRef,
+  panelRef,
+  handleSend,
+  handleAdvanceStage,
+  handleConfirmBuild,
 };
+
