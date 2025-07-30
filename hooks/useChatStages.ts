@@ -557,4 +557,4 @@ return {
   handleSend,
   handleAdvanceStage,
   handleConfirmBuild,
-};
+}
