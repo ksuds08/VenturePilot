@@ -51,37 +51,51 @@ export async function mvpHandler(request, env) {
         const send = (text) =>
           controller.enqueue(encoder.encode(`data: ${text}\n\n`));
 
-        send("🤔 Analyzing your prompt...");
-        await delay(800);
+        const parts = ["frontend", "backend", "assets", "config"];
+        const allFiles = [];
 
-        // Call the agent
-        const agentRes = await fetch('https://launchwing-agent.onrender.com/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: requirements }),
-        });
+        send("🤔 Analyzing your prompt and starting chunked generation...");
+        await delay(500);
 
-        if (!agentRes.ok) {
-          const errorText = await agentRes.text();
-          send(`❌ Agent error: ${errorText}`);
+        for (const part of parts) {
+          send(`🧠 Generating ${part} files...`);
+          await delay(300);
+
+          try {
+            const res = await fetch("https://launchwing-agent.onrender.com/generate/chunk", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ part, prompt: requirements }),
+            });
+
+            if (!res.ok) {
+              const errText = await res.text();
+              send(`❌ ${part} generation failed: ${errText}`);
+              continue;
+            }
+
+            const { files } = await res.json();
+            if (!Array.isArray(files) || files.length === 0) {
+              send(`⚠️ No ${part} files returned`);
+              continue;
+            }
+
+            send(`✅ ${files.length} ${part} files generated`);
+            allFiles.push(...files);
+            await delay(400);
+          } catch (e) {
+            send(`❌ Error generating ${part}: ${e.message}`);
+          }
+        }
+
+        if (allFiles.length === 0) {
+          send("❌ No files generated. Cannot deploy.");
           controller.close();
           return;
         }
-
-        const json = await agentRes.json();
-        const files = json.files;
-
-        if (!Array.isArray(files) || files.length === 0) {
-          send("❌ Agent returned no files.");
-          controller.close();
-          return;
-        }
-
-        send("✅ Code files generated.");
-        await delay(600);
 
         send("🚀 Deploying your MVP...");
-        await delay(600);
+        await delay(500);
 
         const ideaId = body.ideaId || Math.random().toString(36).substring(2, 8);
         const ideaSummary = {
@@ -97,7 +111,7 @@ export async function mvpHandler(request, env) {
             ideaSummary,
             branding,
             messages,
-            files,
+            files: allFiles,
           });
 
           if (result.pagesUrl) {
@@ -107,7 +121,7 @@ export async function mvpHandler(request, env) {
               send(`repoUrl:${result.repoUrl}`);
             }
           } else {
-            send("❌ Deployment failed.");
+            send("❌ Deployment failed. No pages URL returned.");
           }
         } catch (err) {
           send(`❌ Deployment error: ${err.message}`);
@@ -127,90 +141,17 @@ export async function mvpHandler(request, env) {
     });
   }
 
-  // Non-streaming fallback
-  try {
-    const agentRes = await fetch('https://launchwing-agent.onrender.com/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: requirements }),
-    });
-
-    if (!agentRes.ok) {
-      const errorText = await agentRes.text();
-      return new Response(`Agent error: ${errorText}`, {
-        status: agentRes.status,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
-    }
-
-    const json = await agentRes.json();
-    const files = json.files;
-
-    if (!Array.isArray(files) || files.length === 0) {
-      return new Response('No files returned by agent', {
-        status: 502,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
-    }
-
-    const ideaId = body.ideaId || Math.random().toString(36).substring(2, 8);
-    const ideaSummary = {
-      name: (body.branding && body.branding.name) || 'AI MVP',
-      description: requirements,
-    };
-    const branding = body.branding || {};
-    const messages = body.messages || [];
-
-    const result = await buildAndDeployApp({
-      ideaId,
-      ideaSummary,
-      branding,
-      messages,
-      files,
-    });
-
-    if (result.pagesUrl) {
-      return new Response(
-        JSON.stringify({
-          pagesUrl: result.pagesUrl,
-          repoUrl: result.repoUrl ?? null,
-        }),
-        {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          },
-        },
-      );
-    } else {
-      return new Response('Deployment failed', {
-        status: 500,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return new Response(`MVP handler error: ${msg}`, {
-      status: 502,
-      headers: {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  }
+  // Non-stream fallback (optional)
+  return new Response("This endpoint only supports streaming", {
+    status: 400,
+    headers: {
+      'Content-Type': 'text/plain',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
 }
 
-// Helper delay function
+// Delay helper
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
