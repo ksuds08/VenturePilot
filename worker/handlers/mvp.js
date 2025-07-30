@@ -94,6 +94,15 @@ export async function mvpHandler(request, env) {
           return;
         }
 
+        // ✅ Filter malformed files to avoid deployment crash
+        const safeFiles = allFiles.filter(
+          (f) => f && typeof f.path === "string" && typeof f.content === "string"
+        );
+
+        if (safeFiles.length < allFiles.length) {
+          send(`⚠️ Skipped ${allFiles.length - safeFiles.length} malformed files`);
+        }
+
         send("🚀 Deploying your MVP...");
         await delay(500);
 
@@ -111,7 +120,7 @@ export async function mvpHandler(request, env) {
             ideaSummary,
             branding,
             messages,
-            files: allFiles,
+            files: safeFiles,
           });
 
           if (result.pagesUrl) {
@@ -141,7 +150,6 @@ export async function mvpHandler(request, env) {
     });
   }
 
-  // Non-stream fallback (optional)
   return new Response("This endpoint only supports streaming", {
     status: 400,
     headers: {
@@ -151,7 +159,6 @@ export async function mvpHandler(request, env) {
   });
 }
 
-// Delay helper
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
