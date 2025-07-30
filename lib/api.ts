@@ -80,34 +80,36 @@ export async function getMvpStream(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  const final: { pagesUrl?: string; repoUrl?: string; plan?: string } = {};
 
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
+
     buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop() || "";
 
-    while (buffer.includes("\n\n")) {
-      const chunk = buffer.slice(0, buffer.indexOf("\n\n"));
-      buffer = buffer.slice(buffer.indexOf("\n\n") + 2);
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const content = line.slice(5).trim();
 
-      const lines = chunk.split("\n");
-      const eventType = lines.find((l) => l.startsWith("event:"))?.slice(6).trim();
-      const dataLine = lines.find((l) => l.startsWith("data:"));
-      if (!dataLine) continue;
+      if (!content) continue;
 
-      const data = dataLine.slice(5).trim();
-      if (eventType === "log") {
-        onLog(data);
-      } else if (eventType === "done") {
-        try {
-          const result = JSON.parse(data);
-          onDone(result);
-        } catch {
-          onError("Failed to parse final result");
-        }
-      } else if (eventType === "error") {
-        onError(data);
+      if (content.startsWith("pagesUrl:")) {
+        final.pagesUrl = content.replace("pagesUrl:", "").trim();
+      } else if (content.startsWith("repoUrl:")) {
+        final.repoUrl = content.replace("repoUrl:", "").trim();
+      } else if (content.startsWith("plan:")) {
+        final.plan = content.replace("plan:", "").trim();
+      } else if (content.startsWith("❌")) {
+        onError(content);
+        return;
+      } else {
+        onLog(content);
       }
     }
   }
+
+  onDone(final);
 }
