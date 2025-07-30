@@ -457,23 +457,17 @@ const simulateStreamingLog = (ideaId: string, line: string) => {
     return prevIdeas.map((idea) => {
       if (idea.id !== ideaId) return idea;
 
-      const existing = idea.messages || [];
-      const last = existing[existing.length - 1];
-
-      let newMessages;
-      if (last?.content?.startsWith("🚀") && existing.length >= 1) {
-        newMessages = [...existing, { role: "assistant", content: line }];
-      } else if (last?.role === "assistant") {
-        newMessages = existing.map((m: any, i: number) =>
-          i === existing.length - 1 ? { ...m, content: line } : m
-        );
-      } else {
-        newMessages = [...existing, { role: "assistant", content: line }];
-      }
+      const existingMessages = idea.messages || [];
 
       return {
         ...idea,
-        messages: newMessages,
+        messages: [
+          ...existingMessages,
+          {
+            role: "assistant",
+            content: line,
+          },
+        ],
       };
     });
   });
