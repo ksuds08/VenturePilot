@@ -19,20 +19,15 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   return { pagesUrl, repoUrl, plan: fallbackPlan };
 }
 
-// Utility to Base64-encode in Worker environment
 function toBase64(str: string): string {
-  const utf8 = new TextEncoder().encode(str);
-  let binary = '';
-  for (let i = 0; i < utf8.length; i++) {
-    binary += String.fromCharCode(utf8[i]);
-  }
-  return btoa(binary);
+  return btoa(unescape(encodeURIComponent(str)));
 }
 
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
   const org = (globalThis as any).GITHUB_ORG;
+
   if (!token || (!username && !org)) {
     throw new Error("GitHub credentials are not configured");
   }
@@ -40,20 +35,23 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const repoName = `mvp-${ideaId}`;
   const owner = org || username;
 
+  const headers = {
+    Authorization: `token ${token}`,
+    "Content-Type": "application/json",
+    "User-Agent": "LaunchWing-App",
+  };
+
   const createRepoEndpoint = org
     ? `https://api.github.com/orgs/${org}/repos`
     : `https://api.github.com/user/repos`;
 
   const createRes = await fetch(createRepoEndpoint, {
     method: "POST",
-    headers: {
-      Authorization: `token ${token}`,
-      "Content-Type": "application/json",
-      "User-Agent": "LaunchWing-Agent"
-    },
+    headers,
     body: JSON.stringify({
       name: repoName,
       private: true,
+      auto_init: true,
     }),
   });
   if (!createRes.ok) {
@@ -67,11 +65,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
       {
         method: "POST",
-        headers: {
-          Authorization: `token ${token}`,
-          "Content-Type": "application/json",
-          "User-Agent": "LaunchWing-Agent"
-        },
+        headers,
         body: JSON.stringify({
           content: toBase64(content),
           encoding: "base64",
@@ -88,12 +82,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 
   const refRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`,
-    {
-      headers: {
-        Authorization: `token ${token}`,
-        "User-Agent": "LaunchWing-Agent"
-      },
-    }
+    { headers }
   );
   const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
 
@@ -101,11 +90,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
     {
       method: "POST",
-      headers: {
-        Authorization: `token ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "LaunchWing-Agent"
-      },
+      headers,
       body: JSON.stringify({
         tree: blobs,
         base_tree: baseCommitSha || undefined,
@@ -122,11 +107,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     `https://api.github.com/repos/${owner}/${repoName}/git/commits`,
     {
       method: "POST",
-      headers: {
-        Authorization: `token ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "LaunchWing-Agent"
-      },
+      headers,
       body: JSON.stringify({
         message: "Initial MVP commit",
         tree: newTreeSha,
@@ -144,11 +125,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
     {
       method: "PATCH",
-      headers: {
-        Authorization: `token ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "LaunchWing-Agent"
-      },
+      headers,
       body: JSON.stringify({
         sha: newCommitSha,
         force: true,
@@ -171,8 +148,7 @@ async function deployToPages(repoUrl: string) {
     throw new Error("Cloudflare Pages credentials are not configured");
   }
 
-  let owner;
-  let repoName;
+  let owner: string, repoName: string;
   try {
     const urlObj = new URL(repoUrl);
     const segments = urlObj.pathname.split("/").filter(Boolean);
