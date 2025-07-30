@@ -2,8 +2,6 @@ import { useState, KeyboardEvent, useRef, useEffect } from "react";
 
 /**
  * Represents a single action that can be rendered as a button in the chat.
- * Each action has a label for display and a command string which is sent
- * back to the parent via the onSend callback when clicked.
  */
 export interface ChatAction {
   label: string;
@@ -11,10 +9,7 @@ export interface ChatAction {
 }
 
 /**
- * Represents a chat message. In addition to the role and content, a
- * message may include an optional imageUrl to display an image and an
- * optional list of actions. When actions are present the UI will
- * render buttons for each action.
+ * Represents a chat message.
  */
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -33,11 +28,6 @@ interface ChatPanelProps {
   disabled: boolean;
 }
 
-/**
- * ChatPanel renders a scrollable list of messages along with an input box
- * for the user to type new messages. Assistant messages with actions
- * will render buttons that call back to the parent with their command.
- */
 export default function ChatPanel({
   messages,
   onSend,
@@ -50,7 +40,6 @@ export default function ChatPanel({
   const [input, setInput] = useState("");
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Scroll to bottom whenever messages change
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
@@ -78,28 +67,34 @@ export default function ChatPanel({
     >
       <div
         ref={containerRef}
-        className="mb-4 max-h-64 overflow-y-auto space-y-4"
+        className="mb-4 max-h-[80vh] overflow-y-auto space-y-4"
       >
         {messages.map((msg, idx) => (
           <div key={idx} className="space-y-1">
-            <div
-              className={`p-2 rounded-md whitespace-pre-wrap ${
-                msg.role === "user"
-                  ? "bg-gray-100 self-end text-right"
-                  : "bg-blue-50"
-              }`}
-            >
-              {msg.content}
-              {msg.imageUrl && (
-                <div className="mt-2">
-                  <img
-                    src={msg.imageUrl}
-                    alt=""
-                    className="max-w-full h-auto rounded"
-                  />
-                </div>
-              )}
-            </div>
+            {msg.role === "assistant" && msg.content.length > 600 ? (
+              <pre className="bg-blue-50 p-2 rounded overflow-x-auto text-sm font-mono whitespace-pre-wrap">
+                {msg.content}
+              </pre>
+            ) : (
+              <div
+                className={`p-2 rounded-md whitespace-pre-wrap ${
+                  msg.role === "user"
+                    ? "bg-gray-100 self-end text-right"
+                    : "bg-blue-50"
+                }`}
+              >
+                {msg.content}
+                {msg.imageUrl && (
+                  <div className="mt-2">
+                    <img
+                      src={msg.imageUrl}
+                      alt=""
+                      className="max-w-full h-auto rounded"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             {msg.actions && (
               <div className="flex flex-wrap gap-2 mt-1">
                 {msg.actions.map((action, i) => (
@@ -116,9 +111,7 @@ export default function ChatPanel({
             )}
           </div>
         ))}
-        {loading && (
-          <div className="text-gray-400">Thinking…</div>
-        )}
+        {loading && <div className="text-gray-400">Thinking…</div>}
       </div>
       <div className="flex items-end gap-2">
         <textarea
