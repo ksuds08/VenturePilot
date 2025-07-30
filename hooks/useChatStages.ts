@@ -504,15 +504,12 @@ const handleConfirmBuild = async (id: any) => {
   updateIdea(id, { messages: messageAccumulator });
 
   const appendLog = (line: string) => {
-    simulateStreamingLog(id, line);
-    messageAccumulator = [
-      ...messageAccumulator,
-      {
-        role: "assistant",
-        content: line,
-      },
-    ];
-  };
+  messageAccumulator = [
+    ...messageAccumulator,
+    { role: "assistant", content: line },
+  ];
+  simulateStreamingLog(id, line);
+};
 
   try {
     await getMvpStream(
