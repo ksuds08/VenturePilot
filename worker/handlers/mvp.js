@@ -74,8 +74,14 @@ export async function mvpHandler(request, env) {
               continue;
             }
 
-            const { files } = await res.json();
-            if (!Array.isArray(files) || files.length === 0) {
+            const json = await res.json();
+            const { files } = json;
+            if (!files || !Array.isArray(files)) {
+              send(`⚠️ No valid ${part} files returned`);
+              continue;
+            }
+
+            if (files.length === 0) {
               send(`⚠️ No ${part} files returned`);
               continue;
             }
@@ -94,7 +100,7 @@ export async function mvpHandler(request, env) {
           return;
         }
 
-        // ✅ Filter malformed files to avoid deployment crash
+        // Filter safe files only
         const safeFiles = allFiles.filter(
           (f) => f && typeof f.path === "string" && typeof f.content === "string"
         );
@@ -103,8 +109,8 @@ export async function mvpHandler(request, env) {
           send(`⚠️ Skipped ${allFiles.length - safeFiles.length} malformed files`);
         }
 
-        send("🚀 Deploying your MVP...");
-        await delay(500);
+        send(`🧾 Deploying ${safeFiles.length} files...`);
+        console.log("Deploying with files:", safeFiles.map(f => f.path));
 
         const ideaId = body.ideaId || Math.random().toString(36).substring(2, 8);
         const ideaSummary = {
@@ -123,6 +129,12 @@ export async function mvpHandler(request, env) {
             files: safeFiles,
           });
 
+          if (!result || typeof result !== "object") {
+            send("❌ Deployment failed: No response returned.");
+            controller.close();
+            return;
+          }
+
           if (result.pagesUrl) {
             send("✅ Deployment successful!");
             send(`pagesUrl:${result.pagesUrl}`);
@@ -130,7 +142,7 @@ export async function mvpHandler(request, env) {
               send(`repoUrl:${result.repoUrl}`);
             }
           } else {
-            send("❌ Deployment failed. No pages URL returned.");
+            send("❌ Deployment failed: No pages URL returned.");
           }
         } catch (err) {
           send(`❌ Deployment error: ${err.message}`);
