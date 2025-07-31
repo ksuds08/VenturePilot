@@ -15,19 +15,15 @@ export async function buildAndDeployApp(payload: BuildPayload) {
 
   const files = generateSimpleApp(fallbackPlan, payload.branding);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
-  const pagesUrl = await deployToPages(repoUrl);
-  return { pagesUrl, repoUrl, plan: fallbackPlan };
-}
 
-function toBase64(str: string): string {
-  return btoa(unescape(encodeURIComponent(str)));
+  // We no longer trigger deployToPages — rely on GitHub push to trigger Pages auto-deploy
+  return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
   const org = (globalThis as any).GITHUB_ORG;
-
   if (!token || (!username && !org)) {
     throw new Error("GitHub credentials are not configured");
   }
@@ -35,25 +31,24 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const repoName = `mvp-${ideaId}`;
   const owner = org || username;
 
-  const headers = {
-    Authorization: `token ${token}`,
-    "Content-Type": "application/json",
-    "User-Agent": "LaunchWing-App",
-  };
-
   const createRepoEndpoint = org
     ? `https://api.github.com/orgs/${org}/repos`
     : `https://api.github.com/user/repos`;
 
   const createRes = await fetch(createRepoEndpoint, {
     method: "POST",
-    headers,
+    headers: {
+      Authorization: `token ${token}`,
+      "Content-Type": "application/json",
+      "User-Agent": "LaunchWing-Agent"
+    },
     body: JSON.stringify({
       name: repoName,
       private: true,
-      auto_init: true,
+      auto_init: true // Ensures repo isn't empty so commits succeed
     }),
   });
+
   if (!createRes.ok) {
     const text = await createRes.text();
     throw new Error(`GitHub repo creation failed: ${text}`);
@@ -65,9 +60,13 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
       {
         method: "POST",
-        headers,
+        headers: {
+          Authorization: `token ${token}`,
+          "Content-Type": "application/json",
+          "User-Agent": "LaunchWing-Agent"
+        },
         body: JSON.stringify({
-          content: toBase64(content),
+          content: Buffer.from(content).toString("base64"),
           encoding: "base64",
         }),
       }
@@ -82,7 +81,12 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 
   const refRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`,
-    { headers }
+    {
+      headers: {
+        Authorization: `token ${token}`,
+        "User-Agent": "LaunchWing-Agent"
+      },
+    }
   );
   const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
 
@@ -90,7 +94,11 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
     {
       method: "POST",
-      headers,
+      headers: {
+        Authorization: `token ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": "LaunchWing-Agent"
+      },
       body: JSON.stringify({
         tree: blobs,
         base_tree: baseCommitSha || undefined,
@@ -107,7 +115,11 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     `https://api.github.com/repos/${owner}/${repoName}/git/commits`,
     {
       method: "POST",
-      headers,
+      headers: {
+        Authorization: `token ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": "LaunchWing-Agent"
+      },
       body: JSON.stringify({
         message: "Initial MVP commit",
         tree: newTreeSha,
@@ -125,7 +137,11 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
     {
       method: "PATCH",
-      headers,
+      headers: {
+        Authorization: `token ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": "LaunchWing-Agent"
+      },
       body: JSON.stringify({
         sha: newCommitSha,
         force: true,
@@ -138,57 +154,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   }
 
   return `https://github.com/${owner}/${repoName}`;
-}
-
-async function deployToPages(repoUrl: string) {
-  const accountId = (globalThis as any).CF_ACCOUNT_ID;
-  const projectName = (globalThis as any).CF_PAGES_PROJECT;
-  const token = (globalThis as any).CF_API_TOKEN;
-  if (!accountId || !projectName || !token) {
-    throw new Error("Cloudflare Pages credentials are not configured");
-  }
-
-  let owner: string, repoName: string;
-  try {
-    const urlObj = new URL(repoUrl);
-    const segments = urlObj.pathname.split("/").filter(Boolean);
-    owner = segments[0];
-    repoName = segments[1];
-  } catch {
-    throw new Error(`Unable to parse repoUrl: ${repoUrl}`);
-  }
-
-  const res = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}/deployments`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        deployment_trigger: {
-          type: "github",
-          config: {
-            repo_owner: owner,
-            repo_name: repoName,
-            production_branch: "main",
-          },
-        },
-      }),
-    }
-  );
-
-  const data = await res.json();
-  if (!res.ok || data.success === false) {
-    throw new Error(
-      `Pages deployment error: ${
-        data.errors ? JSON.stringify(data.errors) : res.statusText
-      }`
-    );
-  }
-
-  return data.result?.url || `https://${projectName}.pages.dev`;
 }
 
 function generateSimpleApp(plan: string, branding: any): Record<string, string> {
