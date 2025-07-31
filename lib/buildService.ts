@@ -279,6 +279,25 @@ compatibility_date = "${today}"
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   }
-}`
+}`,
+
+    ".github/workflows/deploy.yml": `name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+`
   };
 }
