@@ -16,7 +16,7 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   const files = generateSimpleApp(fallbackPlan, payload.branding);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
-  // We no longer trigger deployToPages — rely on GitHub push to trigger Pages auto-deploy
+  // Rely on GitHub push to trigger Pages auto-deploy
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
@@ -45,7 +45,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     body: JSON.stringify({
       name: repoName,
       private: true,
-      auto_init: true // Ensures repo isn't empty so commits succeed
+      auto_init: true
     }),
   });
 
@@ -56,6 +56,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
   for (const [path, content] of Object.entries(files)) {
+    const encoded = btoa(unescape(encodeURIComponent(content))); // 🌐 Web-compatible base64
     const blobRes = await fetch(
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
       {
@@ -66,7 +67,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
           "User-Agent": "LaunchWing-Agent"
         },
         body: JSON.stringify({
-          content: Buffer.from(content).toString("base64"),
+          content: encoded,
           encoding: "base64",
         }),
       }
