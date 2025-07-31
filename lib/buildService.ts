@@ -10,16 +10,12 @@ export interface BuildPayload {
 }
 
 export async function buildAndDeployApp(payload: BuildPayload) {
-  const fallbackPlan =
-    payload.plan || payload.ideaSummary?.description || "No plan provided";
-
-  const files = generateSimpleApp(fallbackPlan, payload.branding);
+  const fallbackPlan = payload.plan || payload.ideaSummary?.description || "No plan provided";
+  const files = generateSimpleApp(fallbackPlan, payload.branding, payload.ideaId);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
-
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
-// Helper: UTF-8 safe base64 encoder (no Buffer)
 function toBase64(str: string): string {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
@@ -177,7 +173,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   return `https://github.com/${owner}/${repoName}`;
 }
 
-function generateSimpleApp(plan: string, branding: any): Record<string, string> {
+function generateSimpleApp(plan: string, branding: any, ideaId: string): Record<string, string> {
   const appName = branding?.name || "My AI App";
   const tagline = branding?.tagline || "An AI‑powered experience";
   const primaryColour = branding?.palette?.primary || "#0066cc";
@@ -263,12 +259,12 @@ jobs:
         run: npm install -g wrangler
 
       - name: Deploy with Wrangler
-        run: wrangler pages deploy ./ --project-name="\${{ secrets.CF_PAGES_PROJECT }}" --branch=main
+        run: wrangler pages deploy ./ --project-name="${ideaId}" --branch=main
         env:
           CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
 `;
 
-  const wranglerToml = `name = "launchwing-app"
+  const wranglerToml = `name = "${ideaId}"
 compatibility_date = "${new Date().toISOString().split("T")[0]}"
 pages_build_output_dir = "./"
 `;
@@ -300,6 +296,6 @@ Generated via LaunchWing
     "README.md": readme,
     "wrangler.toml": wranglerToml,
     ".github/workflows/deploy.yml": deployYaml,
-    "tsconfig.json": tsconfigJson, // ✅ Added to fix downlevelIteration build error
+    "tsconfig.json": tsconfigJson,
   };
 }
