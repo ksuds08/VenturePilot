@@ -1,5 +1,3 @@
-// Full updated buildService.ts using GitHub Actions-only deployment
-
 export interface BuildPayload {
   ideaId: string;
   ideaSummary: {
@@ -22,6 +20,7 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
+// Helper: UTF-8 safe base64 encoder (no Buffer)
 function toBase64(str: string): string {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
@@ -67,6 +66,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   }
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
+
   for (const [path, content] of Object.entries(files)) {
     const blobRes = await fetch(
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
@@ -102,6 +102,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       },
     }
   );
+
   const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
 
   const treeRes = await fetch(
@@ -124,6 +125,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     const text = await treeRes.text();
     throw new Error(`Tree creation failed: ${text}`);
   }
+
   const { sha: newTreeSha } = await treeRes.json();
 
   const commitRes = await fetch(
@@ -147,6 +149,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     const text = await commitRes.text();
     throw new Error(`Commit failed: ${text}`);
   }
+
   const { sha: newCommitSha } = await commitRes.json();
 
   const patchRes = await fetch(
@@ -188,10 +191,10 @@ function generateSimpleApp(
     .replace(/>/g, "&gt;");
   const paragraphs = escapedPlan
     .split(/\n+/)
-    .map((p) => `<p>${p}</p>`) 
+    .map((p) => `<p>${p}</p>`)
     .join("\n");
 
-  const today = "2025-07-31"; // Fixed date for compatibility
+  const today = new Date().toISOString().split("T")[0];
 
   return {
     "index.html": `<!DOCTYPE html>
@@ -258,7 +261,8 @@ Generated via LaunchWing
 
     "wrangler.toml": `name = "${projectName}"
 compatibility_date = "${today}"
-pages_build_output_dir = "./"`,
+pages_build_output_dir = "./"
+`,
 
     ".github/workflows/deploy.yml": `name: Deploy to Cloudflare Pages
 
@@ -269,13 +273,27 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
     steps:
       - uses: actions/checkout@v4
-
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: 
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy ./ --project-name=${projectName}
+`,
+
+    "tsconfig.json": `{
+  "compilerOptions": {
+    "target": "es2017",
+    "downlevelIteration": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}`
+  };
+}
