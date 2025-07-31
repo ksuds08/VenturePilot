@@ -20,7 +20,6 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
-// Helper: UTF-8 safe base64 encoder (no Buffer)
 function toBase64(str: string): string {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
@@ -275,12 +274,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy
+      - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy ./ --project-name=${projectName}
+          command: pages deploy ./ --branch=main
 `,
 
     "tsconfig.json": `{
