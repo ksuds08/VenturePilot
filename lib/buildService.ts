@@ -19,6 +19,17 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
+// Helper: UTF-8 safe base64 encoder (no Buffer)
+function toBase64(str: string): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(str);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
@@ -43,7 +54,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     },
     body: JSON.stringify({
       name: repoName,
-      private: false, // <-- PUBLIC so GitHub Actions can access org-level secrets
+      private: false, // public for now so Pages GitHub Actions can run
       auto_init: true,
     }),
   });
@@ -66,7 +77,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
           "User-Agent": "LaunchWing-Agent",
         },
         body: JSON.stringify({
-          content: btoa(content),
+          content: toBase64(content),
           encoding: "base64",
         }),
       }
