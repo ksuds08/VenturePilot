@@ -14,10 +14,54 @@ export async function buildAndDeployApp(payload: BuildPayload) {
     payload.plan || payload.ideaSummary?.description || "No plan provided";
 
   const projectName = `mvp-${payload.ideaId}`;
+  await createPagesProject(projectName, projectName);
   const files = generateSimpleApp(fallbackPlan, payload.branding, projectName);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
+}
+
+async function createPagesProject(projectName: string, repoName: string) {
+  const accountId = (globalThis as any).CF_ACCOUNT_ID;
+  const token = (globalThis as any).CF_API_TOKEN;
+  const org = (globalThis as any).GITHUB_ORG;
+
+  if (!accountId || !token || !org) {
+    console.error("❌ Missing CF_ACCOUNT_ID, CF_API_TOKEN, or GITHUB_ORG");
+    throw new Error("Missing environment variables for Pages project creation");
+  }
+
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: projectName,
+        production_branch: "main",
+        source: {
+          type: "github",
+          config: {
+            owner: org,
+            repo_name: repoName,
+            production_branch: "main",
+          },
+        },
+      }),
+    }
+  );
+
+  const data = await res.json();
+  if (!res.ok || data.success === false) {
+    console.error(`❌ Failed to create Pages project: ${projectName}`);
+    console.error(`Cloudflare API response: ${JSON.stringify(data.errors || data)}`);
+    throw new Error("Cloudflare Pages project creation failed");
+  }
+
+  console.log(`✅ Created Cloudflare Pages project: ${projectName}`);
 }
 
 function toBase64(str: string): string {
@@ -102,9 +146,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     }
   );
 
-  const baseCommitSha = refRes.ok
-    ? (await refRes.json()).object?.sha
-    : undefined;
+  const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
 
   const treeRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
@@ -195,7 +237,7 @@ function generateSimpleApp(
     .map((p) => `<p>${p}</p>`)
     .join("\n");
 
-  const today = "2025-07-31"; // keep fixed for this context
+  const today = new Date().toISOString().split("T")[0];
 
   return {
     "index.html": `<!DOCTYPE html>
