@@ -14,7 +14,8 @@ export async function buildAndDeployApp(payload: BuildPayload) {
     payload.plan || payload.ideaSummary?.description || "No plan provided";
 
   const projectName = `mvp-${payload.ideaId}`;
-  const files = generateSimpleApp(fallbackPlan, payload.branding, projectName);
+  const kvId = await createKvNamespace(projectName); // 🆕 create KV namespace
+  const files = generateSimpleApp(fallbackPlan, payload.branding, projectName, kvId); // 🆕 inject ID
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
   return {
@@ -22,6 +23,27 @@ export async function buildAndDeployApp(payload: BuildPayload) {
     repoUrl,
     plan: fallbackPlan,
   };
+}
+
+async function createKvNamespace(projectName: string): Promise<string> {
+  const accountId = (globalThis as any).CF_ACCOUNT_ID;
+  const token = (globalThis as any).CF_API_TOKEN;
+
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ title: `${projectName}-ASSETS` }),
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data?.result?.id) {
+    throw new Error(`Failed to create KV namespace: ${JSON.stringify(data?.errors || data)}`);
+  }
+
+  return data.result.id;
 }
 
 function toBase64(str: string): string {
@@ -182,7 +204,8 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 function generateSimpleApp(
   plan: string,
   branding: any,
-  projectName: string
+  projectName: string,
+  kvId: string
 ): Record<string, string> {
   const appName = branding?.name || "My AI App";
   const tagline = branding?.tagline || "An AI‑powered experience";
@@ -295,7 +318,7 @@ compatibility_date = "${today}"
 
 [[kv_namespaces]]
 binding = "ASSETS"
-id = ""
+id = "${kvId}"
 `,
 
     "tsconfig.json": `{
