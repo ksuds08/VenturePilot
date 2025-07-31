@@ -20,13 +20,12 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
-// Helper: UTF-8 safe base64 encoder (no Buffer)
 function toBase64(str: string): string {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
   let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
 }
@@ -196,6 +195,8 @@ function generateSimpleApp(
     .map((p) => `<p>${p}</p>`)
     .join("\n");
 
+  const today = "2025-07-31"; // keep fixed for this context
+
   return {
     "index.html": `<!DOCTYPE html>
 <html lang="en">
@@ -260,7 +261,7 @@ Generated via LaunchWing
 `,
 
     "wrangler.toml": `name = "${projectName}"
-compatibility_date = "${new Date().toISOString().split("T")[0]}"
+compatibility_date = "${today}"
 pages_build_output_dir = "./"
 `,
 
@@ -281,7 +282,7 @@ jobs:
         run: npm install -g wrangler
 
       - name: Deploy with Wrangler
-        run: wrangler pages deploy ./ --project-name="\${{ secrets.CF_PAGES_PROJECT }}" --branch=main
+        run: wrangler pages deploy ./ --project-name="${projectName}" --branch=main
         env:
           CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
 `,
@@ -297,6 +298,6 @@ jobs:
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   }
-}`,
+}`
   };
 }
