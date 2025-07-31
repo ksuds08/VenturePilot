@@ -258,8 +258,7 @@ Generated via LaunchWing
 - Auto‑deploys using GitHub Actions & Cloudflare Pages
 `,
 
-    "wrangler.toml": `name = "${projectName}"
-compatibility_date = "${today}"
+    "wrangler.toml": `compatibility_date = "${today}"
 pages_build_output_dir = "./"
 `,
 
@@ -274,7 +273,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy to Cloudflare Pages
+      - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
