@@ -1,3 +1,5 @@
+// Full updated buildService.ts using GitHub Actions-only deployment
+
 export interface BuildPayload {
   ideaId: string;
   ideaSummary: {
@@ -14,54 +16,10 @@ export async function buildAndDeployApp(payload: BuildPayload) {
     payload.plan || payload.ideaSummary?.description || "No plan provided";
 
   const projectName = `mvp-${payload.ideaId}`;
-  await createPagesProject(projectName, projectName);
   const files = generateSimpleApp(fallbackPlan, payload.branding, projectName);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
-}
-
-async function createPagesProject(projectName: string, repoName: string) {
-  const accountId = (globalThis as any).CF_ACCOUNT_ID;
-  const token = (globalThis as any).CF_API_TOKEN;
-  const org = (globalThis as any).GITHUB_ORG;
-
-  if (!accountId || !token || !org) {
-    console.error("❌ Missing CF_ACCOUNT_ID, CF_API_TOKEN, or GITHUB_ORG");
-    throw new Error("Missing environment variables for Pages project creation");
-  }
-
-  const res = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: projectName,
-        production_branch: "main",
-        source: {
-          type: "github",
-          config: {
-            owner: org,
-            repo_name: repoName,
-            production_branch: "main",
-          },
-        },
-      }),
-    }
-  );
-
-  const data = await res.json();
-  if (!res.ok || data.success === false) {
-    console.error(`❌ Failed to create Pages project: ${projectName}`);
-    console.error(`Cloudflare API response: ${JSON.stringify(data.errors || data)}`);
-    throw new Error("Cloudflare Pages project creation failed");
-  }
-
-  console.log(`✅ Created Cloudflare Pages project: ${projectName}`);
 }
 
 function toBase64(str: string): string {
@@ -109,7 +67,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   }
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
-
   for (const [path, content] of Object.entries(files)) {
     const blobRes = await fetch(
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
@@ -145,7 +102,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       },
     }
   );
-
   const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
 
   const treeRes = await fetch(
@@ -168,7 +124,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     const text = await treeRes.text();
     throw new Error(`Tree creation failed: ${text}`);
   }
-
   const { sha: newTreeSha } = await treeRes.json();
 
   const commitRes = await fetch(
@@ -192,7 +147,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     const text = await commitRes.text();
     throw new Error(`Commit failed: ${text}`);
   }
-
   const { sha: newCommitSha } = await commitRes.json();
 
   const patchRes = await fetch(
@@ -234,10 +188,10 @@ function generateSimpleApp(
     .replace(/>/g, "&gt;");
   const paragraphs = escapedPlan
     .split(/\n+/)
-    .map((p) => `<p>${p}</p>`)
+    .map((p) => `<p>${p}</p>`) 
     .join("\n");
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = "2025-07-31"; // Fixed date for compatibility
 
   return {
     "index.html": `<!DOCTYPE html>
@@ -304,8 +258,7 @@ Generated via LaunchWing
 
     "wrangler.toml": `name = "${projectName}"
 compatibility_date = "${today}"
-pages_build_output_dir = "./"
-`,
+pages_build_output_dir = "./"`,
 
     ".github/workflows/deploy.yml": `name: Deploy to Cloudflare Pages
 
@@ -316,30 +269,13 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Install Wrangler
-        run: npm install -g wrangler
-
-      - name: Deploy with Wrangler
-        run: wrangler pages deploy ./ --project-name="${projectName}" --branch=main
-        env:
-          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`,
-
-    "tsconfig.json": `{
-  "compilerOptions": {
-    "target": "es2017",
-    "downlevelIteration": true,
-    "module": "esnext",
-    "moduleResolution": "node",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
-  }
-}`
-  };
-}
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: 
