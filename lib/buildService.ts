@@ -54,7 +54,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     },
     body: JSON.stringify({
       name: repoName,
-      private: false, // public for now so Pages GitHub Actions can run
+      private: false,
       auto_init: true,
     }),
   });
@@ -273,6 +273,19 @@ compatibility_date = "${new Date().toISOString().split("T")[0]}"
 pages_build_output_dir = "./"
 `;
 
+  const tsconfigJson = `{
+  "compilerOptions": {
+    "target": "es2017",
+    "downlevelIteration": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}`;
+
   const readme = `# ${appName}
 
 Generated via LaunchWing
@@ -287,5 +300,6 @@ Generated via LaunchWing
     "README.md": readme,
     "wrangler.toml": wranglerToml,
     ".github/workflows/deploy.yml": deployYaml,
+    "tsconfig.json": tsconfigJson, // ✅ Added to fix downlevelIteration build error
   };
 }
