@@ -16,6 +16,7 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   const files = generateSimpleApp(fallbackPlan, payload.branding);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
+  // GitHub push will trigger Cloudflare Pages deploy via GitHub Actions
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
@@ -169,9 +170,9 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 function encodeBase64(str: string): string {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(str);
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
   return globalThis.btoa(binary);
 }
