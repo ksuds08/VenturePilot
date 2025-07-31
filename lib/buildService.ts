@@ -16,7 +16,6 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   const files = generateSimpleApp(fallbackPlan, payload.branding);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
-  // GitHub push will trigger Cloudflare Pages deploy via GitHub Actions
   return { pagesUrl: null, repoUrl, plan: fallbackPlan };
 }
 
@@ -54,7 +53,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     throw new Error(`GitHub repo creation failed: ${text}`);
   }
 
-  const encoder = new TextEncoder();
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
   for (const [path, content] of Object.entries(files)) {
@@ -68,7 +66,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
           "User-Agent": "LaunchWing-Agent",
         },
         body: JSON.stringify({
-          content: btoa(content),
+          content: encodeBase64(content),
           encoding: "base64",
         }),
       }
@@ -166,6 +164,16 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   }
 
   return `https://github.com/${owner}/${repoName}`;
+}
+
+function encodeBase64(str: string): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(str);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return globalThis.btoa(binary);
 }
 
 function generateSimpleApp(plan: string, branding: any): Record<string, string> {
