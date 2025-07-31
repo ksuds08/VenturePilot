@@ -255,15 +255,23 @@ function generateSimpleApp(
 }
 window.addEventListener("DOMContentLoaded", init);`,
 
-    "functions/index.ts": `export const onRequest: PagesFunction = async (context) => {
-  return new Response("Hello from ${projectName}!", {
-    headers: { "content-type": "text/plain" },
-  });
+    "wrangler.toml": `name = "${projectName}"
+main = "functions/index.ts"
+compatibility_date = "${today}"
+`,
+
+    "functions/index.ts": `export default {
+  async fetch(request: Request): Promise<Response> {
+    return new Response("Hello from ${projectName}!", {
+      headers: { "Content-Type": "text/plain" },
+    });
+  },
 };`,
 
     "tsconfig.json": `{
   "compilerOptions": {
     "target": "es2017",
+    "downlevelIteration": true,
     "module": "esnext",
     "moduleResolution": "node",
     "strict": true,
@@ -271,34 +279,6 @@ window.addEventListener("DOMContentLoaded", init);`,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   }
-}`,
-
-    "wrangler.toml": `name = "${projectName}"
-compatibility_date = "${today}"
-main = "functions/index.ts"
-`,
-
-    ".github/workflows/deploy.yml": `name: Deploy to Cloudflare Workers
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`,
-    "README.md": `# ${appName}
-
-Generated via LaunchWing
-
-- Auto‑deploys using GitHub Actions & Cloudflare Workers
-`,
+}`
   };
 }
