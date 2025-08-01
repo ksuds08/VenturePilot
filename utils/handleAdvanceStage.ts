@@ -52,6 +52,7 @@ export default function handleAdvanceStageFactory(
 
     // Handle Branding
     if (nextStage === "branding") {
+      // Show interim message
       updateIdea(ideaId, {
         messages: [
           ...idea.messages,
@@ -64,6 +65,7 @@ export default function handleAdvanceStageFactory(
 
       try {
         const data = await postBranding(idea.title, idea.id);
+        const updatedIdea = getIdeaById(ideaId);
 
         const brandingMsg = {
           role: "assistant" as const,
@@ -82,10 +84,10 @@ export default function handleAdvanceStageFactory(
         };
 
         updateIdea(ideaId, {
-          messages: [...idea.messages, brandingMsg],
+          messages: [...updatedIdea.messages, brandingMsg],
           branding: data,
           takeaways: {
-            ...idea.takeaways,
+            ...updatedIdea.takeaways,
             branding: {
               name: data.name,
               tagline: data.tagline,
@@ -96,9 +98,10 @@ export default function handleAdvanceStageFactory(
           },
         });
       } catch {
+        const failedIdea = getIdeaById(ideaId);
         updateIdea(ideaId, {
           messages: [
-            ...idea.messages,
+            ...failedIdea.messages,
             {
               role: "assistant",
               content: "⚠️ Branding failed. Please try again later.",
