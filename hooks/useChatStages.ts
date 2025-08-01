@@ -5,7 +5,6 @@ import { sendToAssistant } from "../lib/assistantClient";
 import type { VentureStage as StageType } from "../types";
 import { GREETING, STAGE_ORDER } from "../constants/messages";
 import { getMvpStream, postBranding, postValidate } from "../lib/api";
-import { sanitizeMessages } from "../utils/sanitizeMessages";
 import revealAssistantReply from "../utils/revealAssistantReply";
 import handleAdvanceStage from "../utils/handleAdvanceStage";
 import handleConfirmBuild from "../utils/handleConfirmBuild";
@@ -39,19 +38,8 @@ export default function useChatStages(onReady?: () => void) {
 
   const updateIdea = (id: any, updates: any) => {
     setIdeas((prev) =>
-      prev.map((i) =>
-        i.id === id
-          ? { ...i, ...(typeof updates === "function" ? updates(i) : updates) }
-          : i
-      )
+      prev.map((i) => (i.id === id ? { ...i, ...(typeof updates === "function" ? updates(i) : updates) } : i))
     );
-  };
-
-  // Wrapper to adapt to revealAssistantReply expectations
-  const handleAdvanceStageWrapper = (id: string, stage?: StageType) => {
-    const idea = ideas.find((i) => i.id === id);
-    if (!idea) return;
-    handleAdvanceStage(idea, updateIdea, stage || "ideation", postValidate, postBranding);
   };
 
   const handleSend = async (content: string) => {
@@ -62,16 +50,11 @@ export default function useChatStages(onReady?: () => void) {
     const stage = current.currentStage;
 
     const shortcuts: Record<string, () => void> = {
-      continue: () =>
-        handleAdvanceStage(current, updateIdea, "validation", postValidate, postBranding),
+      continue: () => handleAdvanceStage(current, updateIdea, "validation", postValidate, postBranding),
       restart: () =>
-        updateIdea(current.id, {
-          messages: [...current.messages, { role: "user", content }],
-        }),
+        updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
       "edit idea": () =>
-        updateIdea(current.id, {
-          messages: [...current.messages, { role: "user", content }],
-        }),
+        updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
       "accept branding": () =>
         handleAdvanceStage(current, updateIdea, "mvp", postValidate, postBranding),
       "regenerate branding": () =>
@@ -79,7 +62,7 @@ export default function useChatStages(onReady?: () => void) {
       "start over": () =>
         handleAdvanceStage(current, updateIdea, "ideation", postValidate, postBranding),
       deploy: () =>
-        handleConfirmBuild(current, setIdeas, setDeployLogs, getMvpStream, sanitizeMessages),
+        handleConfirmBuild(current, setIdeas, setDeployLogs, getMvpStream), // ✅ fixed: removed 5th arg
     };
 
     if (shortcuts[trimmed]) {
@@ -109,7 +92,7 @@ export default function useChatStages(onReady?: () => void) {
       plan,
       panelRef,
       baseMessages,
-      handleAdvanceStage: handleAdvanceStageWrapper,
+      handleAdvanceStage,
       setIdeas,
     });
   };
