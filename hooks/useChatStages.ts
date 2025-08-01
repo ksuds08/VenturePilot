@@ -13,6 +13,7 @@ export default function useChatStages(onReady?: () => void) {
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
+  const [shouldStreamGreeting, setShouldStreamGreeting] = useState(false); // NEW
 
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -28,6 +29,7 @@ export default function useChatStages(onReady?: () => void) {
   const updateIdea = (id: any, updates: any) =>
     rawUpdateIdea(setIdeas, id, updates);
 
+  // Track panel open flags
   useEffect(() => {
     if (activeIdea) {
       setOpenPanels((prev) => ({
@@ -40,14 +42,60 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdea?.currentStage]);
 
+  // Initialize idea with empty assistant message
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
-      const starter = initializeIdea(uuidv4(), GREETING);
+      const id = uuidv4();
+      const starter = {
+        id,
+        title: "",
+        messages: [
+          {
+            role: "assistant",
+            content: "", // Start blank for streaming
+          },
+        ],
+        locked: false,
+        currentStage: "ideation" as StageType,
+        takeaways: {},
+      };
       setIdeas([starter]);
-      setActiveIdeaId(starter.id);
-      if (onReady) onReady();
+      setActiveIdeaId(id);
+      setShouldStreamGreeting(true); // trigger reveal
     }
-  }, [activeIdeaId, ideas.length, onReady]);
+  }, [activeIdeaId, ideas.length]);
+
+  // Stream out greeting text after idea is initialized
+  useEffect(() => {
+    if (shouldStreamGreeting && activeIdeaId && ideas.length > 0) {
+      const greeting = GREETING;
+      const ideaIndex = ideas.findIndex((i) => i.id === activeIdeaId);
+      if (ideaIndex === -1) return;
+
+      const reveal = (i: number, base: string) => {
+        const updated = ideas.map((idea, idx) => {
+          if (idx !== ideaIndex) return idea;
+          const updatedMessages = [...idea.messages];
+          updatedMessages[0] = {
+            ...updatedMessages[0],
+            content: base.slice(0, i),
+          };
+          return { ...idea, messages: updatedMessages };
+        });
+
+        setIdeas(updated);
+
+        if (i <= greeting.length) {
+          setTimeout(() => reveal(i + 1, greeting), 20);
+        } else {
+          setShouldStreamGreeting(false);
+          if (onReady) onReady(); // autoscroll now safe
+        }
+      };
+
+      reveal(1, greeting);
+    }
+  }, [shouldStreamGreeting, activeIdeaId, ideas]);
 
   const handleAdvanceStage = useStageTransition({
     ideas,
@@ -81,7 +129,7 @@ export default function useChatStages(onReady?: () => void) {
     loading,
     deployLogs,
     openPanels,
-    togglePanel: () => {}, // placeholder for future logic
+    togglePanel: () => {},
     messageEndRef,
     panelRef,
     handleSend,
