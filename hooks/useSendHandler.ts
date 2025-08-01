@@ -1,8 +1,12 @@
-// hooks/useSendHandler.ts
 import { sendToAssistant } from "../lib/assistantClient";
 import type { VentureStage as StageType } from "../types";
 
-type Message = { role: "user" | "assistant"; content: string; actions?: any; imageUrl?: string };
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  actions?: { label: string; command: string }[];
+  imageUrl?: string;
+};
 
 type UseSendHandlerParams = {
   ideas: any[];
@@ -44,7 +48,6 @@ export function useSendHandler({
         messages: [...current.messages, { role: "user", content }],
       });
 
-    // === Stage-specific commands ===
     const commandMap: Record<string, () => void> = {
       continue: () => {
         if (current.currentStage === "ideation") return stageCommand("validation");
@@ -74,7 +77,6 @@ export function useSendHandler({
 
     if (commandMap[trimmed]) return commandMap[trimmed]();
 
-    // === Normal assistant reply ===
     const userMsg = { role: "user", content };
     const placeholder = { role: "assistant", content: "" };
     const baseMessages = [...current.messages, userMsg, placeholder];
@@ -145,12 +147,12 @@ export function useSendHandler({
 
           let finalMessages = updatedMsgs;
           if (current.currentStage === "ideation") {
-            const summaryMsg = {
+            const summaryMsg: Message = {
               role: "assistant",
               content:
                 `✅ Here's the refined idea:\n\n` +
-                `**Name:** ${finalRefined?.name}\n` +
-                `**Description:** ${finalRefined?.description}\n\n`,
+                `**Name:** ${finalRefined?.name ?? "Untitled Idea"}\n` +
+                `**Description:** ${finalRefined?.description ?? "No description available"}\n\n`,
               actions: [
                 { label: "Continue to Validation", command: "continue" },
                 { label: "Edit Idea", command: "restart" },
