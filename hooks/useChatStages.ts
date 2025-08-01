@@ -2,11 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { VentureStage as StageType } from "../types";
 import { GREETING, STAGE_ORDER } from "../constants/messages";
-import { sendToAssistant } from "../lib/assistantClient";
 import { postValidate, postBranding } from "../lib/api";
 import { getMvpStream } from "../lib/api";
-import { initializeIdea, updateIdea as rawUpdateIdea } from "./useIdeaLifecycle";
 import sanitizeMessages from "../utils/sanitizeMessages";
+import { initializeIdea, updateIdea as rawUpdateIdea } from "./useIdeaLifecycle";
+import { useSendHandler } from "./useSendHandler"; // 👈 new
 
 export default function useChatStages(onReady?: () => void) {
   const [ideas, setIdeas] = useState<any[]>([]);
@@ -17,13 +17,13 @@ export default function useChatStages(onReady?: () => void) {
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
-  const activeIdea = ideas.find((i) => i.id === activeIdeaId);
-
   const [openPanels, setOpenPanels] = useState({
     ideation: false,
     validation: false,
     branding: false,
   });
+
+  const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
   const updateIdea = (id: any, updates: any) =>
     rawUpdateIdea(setIdeas, id, updates);
@@ -49,6 +49,21 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdeaId, ideas.length, onReady]);
 
+  // Placeholder handlers for now
+  const handleAdvanceStage = () => {};
+  const handleConfirmBuild = () => {};
+
+  const handleSend = useSendHandler({
+    ideas,
+    activeIdea,
+    updateIdea,
+    handleAdvanceStage,
+    handleConfirmBuild,
+    messageEndRef,
+    panelRef,
+    setLoading,
+  });
+
   return {
     ideas,
     activeIdeaId,
@@ -59,8 +74,8 @@ export default function useChatStages(onReady?: () => void) {
     togglePanel: () => {}, // placeholder
     messageEndRef,
     panelRef,
-    handleSend: () => {}, // will be filled in next step
-    handleAdvanceStage: () => {}, // will be filled in next step
-    handleConfirmBuild: () => {}, // will be filled in next step
+    handleSend,
+    handleAdvanceStage,
+    handleConfirmBuild,
   };
 }
