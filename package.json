@@ -40,18 +40,5 @@
     "eslint-plugin-react": "7.34.1",
     "eslint-plugin-react-hooks": "4.6.0",
     "prettier": "3.2.5"
-  },
-  "overrides": {
-    "react-markdown": {
-      "react": "^18.2.0"
-    },
-    "remark-gfm": {
-      "vfile": "^6.0.1",
-      "vfile-message": "^4.0.0"
-    }
-  },
-  "resolutions": {
-    "vfile": "^6.0.1",
-    "vfile-message": "^4.0.0"
   }
 }
