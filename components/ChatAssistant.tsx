@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import ChatPanel from "./ChatPanel";
 import useChatStages from "../hooks/useChatStages";
 
@@ -8,6 +9,7 @@ import useChatStages from "../hooks/useChatStages";
  */
 type ChatAssistantProps = {
   onReady?: () => void;
+  onInitGreeting?: (startGreeting: () => void) => void; // ✅ NEW
 };
 
 /**
@@ -17,7 +19,7 @@ type ChatAssistantProps = {
  * scroll behaviour is preserved. Splitting the state logic into a
  * custom hook keeps this component declarative and easy to follow.
  */
-export default function ChatAssistant({ onReady }: ChatAssistantProps) {
+export default function ChatAssistant({ onReady, onInitGreeting }: ChatAssistantProps) {
   const {
     ideas,
     activeIdeaId,
@@ -25,7 +27,15 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
     loading,
     messageEndRef,
     handleSend,
+    startGreetingStream, // ✅ capture from hook
   } = useChatStages(onReady);
+
+  // ✅ Forward it to parent after mount
+  useEffect(() => {
+    if (onInitGreeting) {
+      onInitGreeting(startGreetingStream);
+    }
+  }, [onInitGreeting, startGreetingStream]);
 
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
@@ -50,7 +60,6 @@ export default function ChatAssistant({ onReady }: ChatAssistantProps) {
         ))}
         <div ref={messageEndRef} />
       </div>
-      {/* All summaries are now integrated into the chat via interactive messages. */}
     </div>
   );
 }
