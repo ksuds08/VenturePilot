@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { VentureStage as StageType } from "../types";
-import { GREETING, STAGE_ORDER } from "../constants/messages";
-import { postValidate, postBranding } from "../lib/api";
+import { GREETING } from "../constants/messages";
 import { getMvpStream } from "../lib/api";
 import sanitizeMessages from "../utils/sanitizeMessages";
+
 import { initializeIdea, updateIdea as rawUpdateIdea } from "./useIdeaLifecycle";
-import { useSendHandler } from "./useSendHandler"; // 👈 new
+import { useSendHandler } from "./useSendHandler";
+import { useStageTransition } from "./useStageTransition";
 
 export default function useChatStages(onReady?: () => void) {
   const [ideas, setIdeas] = useState<any[]>([]);
@@ -49,9 +50,15 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdeaId, ideas.length, onReady]);
 
-  // Placeholder handlers for now
-  const handleAdvanceStage = () => {};
-  const handleConfirmBuild = () => {};
+  const handleAdvanceStage = useStageTransition({
+    ideas,
+    updateIdea,
+    setOpenPanels,
+    setLoading,
+    messageEndRef,
+  });
+
+  const handleConfirmBuild = () => {}; // next step
 
   const handleSend = useSendHandler({
     ideas,
