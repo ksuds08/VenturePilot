@@ -1,11 +1,11 @@
-// hooks/useDeploymentHandler.ts
 import { getMvpStream } from "../lib/api";
 import sanitizeMessages from "../utils/sanitizeMessages";
+import type { Dispatch, SetStateAction } from "react";
 
 type UseDeploymentHandlerParams = {
   ideas: any[];
   updateIdea: (id: string, updates: any) => void;
-  setDeployLogs: (logs: string[]) => void;
+  setDeployLogs: Dispatch<SetStateAction<string[]>>;
 };
 
 export function useDeploymentHandler({
@@ -59,10 +59,12 @@ export function useDeploymentHandler({
         idea.id,
         idea.takeaways.branding,
         sanitizeMessages(idea.messages),
+        // onLog
         (log) => {
           setDeployLogs((prev) => [...prev, log]);
           appendLog(log);
         },
+        // onDone
         (data) => {
           const { pagesUrl, repoUrl, plan } = data || {};
 
@@ -91,6 +93,7 @@ export function useDeploymentHandler({
             updateIdea(id, { deploying: false });
           }
         },
+        // onError
         (errMsg) => {
           appendLog(`❌ Deployment failed: ${errMsg}`);
           updateIdea(id, {
