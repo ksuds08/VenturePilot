@@ -1,6 +1,7 @@
 import { useState, KeyboardEvent, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-// @ts-expect-error TS incompatibility between vfile versions
+import type { PluggableList } from "react-markdown/lib/react-markdown";
+// @ts-ignore: suppress type error due to vfile version mismatch in remark-gfm
 import remarkGfm from "remark-gfm";
 
 export interface ChatAction {
@@ -78,9 +79,9 @@ export default function ChatPanel({
               }`}
             >
               <ReactMarkdown
-                // @ts-expect-error TS incompatibility between vfile versions
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm as PluggableList]}
                 className="prose prose-sm break-words max-w-full"
+                linkTarget="_blank"
               >
                 {msg.content}
               </ReactMarkdown>
