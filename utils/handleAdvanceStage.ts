@@ -1,4 +1,5 @@
-// File: utils/handleAdvanceStage.ts
+// utils/handleAdvanceStage.ts
+
 import type { VentureStage as StageType } from "../types";
 
 export default async function handleAdvanceStage(
@@ -8,13 +9,17 @@ export default async function handleAdvanceStage(
   postValidate: (title: string, id: string) => Promise<any>,
   postBranding: (title: string, id: string) => Promise<any>
 ) {
-  const STAGE_ORDER: StageType[] = ["ideation", "validation", "branding", "mvp"];
-  const currentIndex = STAGE_ORDER.indexOf(idea.currentStage || "ideation");
+  const STAGE_ORDER = ["ideation", "validation", "branding", "mvp"];
+
+  const currentIndex = STAGE_ORDER.indexOf(
+    (idea.currentStage as StageType) || ("ideation" as StageType)
+  );
   const nextStage =
     forcedStage || STAGE_ORDER[Math.min(currentIndex + 1, STAGE_ORDER.length - 1)];
 
   updateIdea(idea.id, { currentStage: nextStage });
 
+  // Validation stage
   if (nextStage === "validation") {
     try {
       const data = await postValidate(idea.title, idea.id);
@@ -49,6 +54,7 @@ export default async function handleAdvanceStage(
     }
   }
 
+  // Branding stage
   if (nextStage === "branding") {
     try {
       const data = await postBranding(idea.title, idea.id);
@@ -94,12 +100,15 @@ export default async function handleAdvanceStage(
     }
   }
 
+  // MVP stage
   if (nextStage === "mvp") {
     const mvpMsg = {
       role: "assistant" as const,
       content: "✅ You're ready to deploy your MVP!\n\n",
       actions: [{ label: "Deploy", command: "deploy" }],
     };
-    updateIdea(idea.id, { messages: [...idea.messages, mvpMsg] });
+    updateIdea(idea.id, {
+      messages: [...idea.messages, mvpMsg],
+    });
   }
 }
