@@ -85,7 +85,7 @@ export function useSendHandler({
     setLoading(true);
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
-    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
+    const { reply, nextStage, plan } = await sendToAssistant(
       [...current.messages, userMsg],
       current.currentStage
     );
@@ -101,76 +101,32 @@ export function useSendHandler({
       if (index <= reply.length) {
         setTimeout(() => reveal(index + 1, updatedMsgs), 20);
       } else {
-        let summaryDesc = reply || content;
-        try {
-          const parts = summaryDesc.split(/(?<=[.!?])\s+/);
-          summaryDesc = parts.slice(0, 2).join(" ") || summaryDesc.slice(0, 150);
-        } catch {
-          summaryDesc = summaryDesc.slice(0, 150);
+        let finalMessages = updatedMsgs;
+
+        // ➕ Add buttons directly to assistant reply
+        if (current.currentStage === "ideation") {
+          const updatedWithActions: Message[] = updatedMsgs.map((m, i) =>
+            i === updatedMsgs.length - 1
+              ? {
+                  ...m,
+                  actions: [
+                    { label: "Continue to Validation", command: "continue" },
+                    { label: "Edit Idea", command: "restart" },
+                  ],
+                }
+              : m
+          );
+          finalMessages = updatedWithActions;
         }
 
-        const primarySource = (reply || content || summaryDesc || "") as string;
-        const fallbackRefined = {
-          name: (current.title || primarySource).slice(0, 60) || "Untitled Idea",
-          description: summaryDesc || "No description available",
-        };
-
-        (async () => {
-          let finalRefined =
-            refinedIdea || current.takeaways.refinedIdea || fallbackRefined;
-
-          if (!refinedIdea && current.currentStage === "ideation") {
-            try {
-              const summaryRes = await sendToAssistant(
-                [
-                  ...current.messages,
-                  userMsg,
-                  { role: "assistant", content: reply },
-                  {
-                    role: "user",
-                    content: "Please summarise the above idea concisely.",
-                  },
-                ],
-                current.currentStage
-              );
-              const summaryReply = summaryRes?.reply;
-              if (summaryReply) {
-                finalRefined = {
-                  name: (current.title || content).slice(0, 60),
-                  description: summaryReply.trim(),
-                };
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          let finalMessages = updatedMsgs;
-          if (current.currentStage === "ideation") {
-            const summaryMsg: Message = {
-              role: "assistant",
-              content:
-                `✅ Here's the refined idea:\n\n` +
-                `**Name:** ${finalRefined?.name ?? "Untitled Idea"}\n` +
-                `**Description:** ${finalRefined?.description ?? "No description available"}\n\n`,
-              actions: [
-                { label: "Continue to Validation", command: "continue" },
-                { label: "Edit Idea", command: "restart" },
-              ],
-            };
-            finalMessages = [...updatedMsgs, summaryMsg];
-          }
-
-          updateIdea(id, {
-            title: current.title || content.slice(0, 80),
-            messages: finalMessages,
-            takeaways: {
-              ...current.takeaways,
-              refinedIdea: finalRefined,
-            },
-            ...(plan && { finalPlan: plan }),
-          });
-        })();
+        updateIdea(id, {
+          title: current.title || content.slice(0, 80),
+          messages: finalMessages,
+          takeaways: {
+            ...current.takeaways,
+          },
+          ...(plan && { finalPlan: plan }),
+        });
 
         setTimeout(() => {
           panelRef.current?.scrollIntoView({ behavior: "smooth" });
