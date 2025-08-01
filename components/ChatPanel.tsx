@@ -9,7 +9,7 @@ export interface ChatAction {
 }
 
 /**
- * Represents a chat message.
+ * Represents a chat message. Can include text, image, or actions.
  */
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -26,6 +26,15 @@ interface ChatPanelProps {
   isActive: boolean;
   onClick: () => void;
   disabled: boolean;
+}
+
+// Helper: detect and hyperlink URLs
+function linkify(text: string): string {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return text.replace(
+    urlRegex,
+    (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${url}</a>`
+  );
 }
 
 export default function ChatPanel({
@@ -62,39 +71,37 @@ export default function ChatPanel({
 
   return (
     <div
-      className={`border rounded p-4 ${isActive ? "border-blue-400" : "border-gray-200"}`}
+      className={`border rounded p-4 ${
+        isActive ? "border-blue-400" : "border-gray-200"
+      }`}
       onClick={onClick}
     >
       <div
         ref={containerRef}
-        className="mb-4 max-h-[80vh] overflow-y-auto space-y-4"
+        className="mb-4 max-h-64 overflow-y-auto space-y-4"
       >
         {messages.map((msg, idx) => (
           <div key={idx} className="space-y-1">
-            {msg.role === "assistant" && msg.content.length > 600 ? (
-              <pre className="bg-blue-50 p-2 rounded overflow-x-auto text-sm font-mono whitespace-pre-wrap">
-                {msg.content}
-              </pre>
-            ) : (
+            <div
+              className={`p-2 rounded-md whitespace-pre-wrap ${
+                msg.role === "user"
+                  ? "bg-gray-100 self-end text-right"
+                  : "bg-blue-50"
+              }`}
+            >
               <div
-                className={`p-2 rounded-md whitespace-pre-wrap ${
-                  msg.role === "user"
-                    ? "bg-gray-100 self-end text-right"
-                    : "bg-blue-50"
-                }`}
-              >
-                {msg.content}
-                {msg.imageUrl && (
-                  <div className="mt-2">
-                    <img
-                      src={msg.imageUrl}
-                      alt=""
-                      className="max-w-full h-auto rounded"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+                dangerouslySetInnerHTML={{ __html: linkify(msg.content) }}
+              />
+              {msg.imageUrl && (
+                <div className="mt-2">
+                  <img
+                    src={msg.imageUrl}
+                    alt=""
+                    className="max-w-full h-auto rounded"
+                  />
+                </div>
+              )}
+            </div>
             {msg.actions && (
               <div className="flex flex-wrap gap-2 mt-1">
                 {msg.actions.map((action, i) => (
