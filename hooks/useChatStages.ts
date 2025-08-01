@@ -221,90 +221,38 @@ export default function useChatStages(onReady?: () => void) {
           summaryDesc = (reply || content).slice(0, 150);
         }
 
-        // Provide defaults if refinedIdea isn't supplied. Use the most
-        // informative text available (assistant reply or user input) to
-        // populate both the name and description, so they never show
-        // undefined or empty placeholders.
-        const primarySource = (reply || content || summaryDesc || "") as string;
-        const fallbackRefined = {
-          name:
-            ((current.title || primarySource) as string).slice(0, 60) ||
-            "Untitled Idea",
-          description:
-            summaryDesc || primarySource || "No description available",
-        };
+        // Provide a summarizing message with actions, no refinedIdea logic
+if (current.currentStage === "ideation") {
+  const summaryMsg = {
+    role: "assistant",
+    content:
+      `✅ Got it! Here’s what you said:\n\n${reply || content}\n\n` +
+      `If this looks good, we’ll move on to validate your idea.`,
+    actions: [
+      { label: "Continue to Validation", command: "continue" },
+      { label: "Edit Idea", command: "restart" },
+    ],
+  } as any;
+  const finalMessages = [...updatedMsgs, summaryMsg];
 
-        (async () => {
-          let finalRefined =
-            refinedIdea || current.takeaways.refinedIdea || fallbackRefined;
+  updateIdea(current.id, {
+    title: current.title || content.slice(0, 80),
+    messages: finalMessages,
+    takeaways: {
+      ...current.takeaways,
+      // No refinedIdea stored
+    },
+    ...(plan && { finalPlan: plan }),
+  });
+}
 
-          // If no refinedIdea from the assistant and we’re still in ideation,
-          // request a concise summary.
-          if (!refinedIdea && current.currentStage === "ideation") {
-            try {
-              const summaryRes = await sendToAssistant(
-                [
-                  ...current.messages,
-                  userMsg,
-                  { role: "assistant", content: reply },
-                  {
-                    role: "user",
-                    content: "Please summarise the above idea concisely.",
-                  },
-                ],
-                current.currentStage,
-              );
-              const summaryReply = summaryRes?.reply;
-              if (summaryReply) {
-                finalRefined = {
-                  name: (current.title || content).slice(0, 60),
-                  description: summaryReply.trim(),
-                };
-              }
-            } catch {
-              // ignore summarisation errors
-            }
-          }
+setTimeout(() => {
+  panelRef.current?.scrollIntoView({ behavior: "smooth" });
+}, 100);
 
-          let finalMessages = updatedMsgs;
-          if (current.currentStage === "ideation") {
-            const summaryMsg = {
-              role: "assistant",
-              content:
-                `✅ Here's the refined idea:\n\n` +
-                `**Name:** ${finalRefined?.name ?? "Untitled Idea"}\n` +
-                `**Description:** ${finalRefined?.description ?? "No description available"}\n\n`,
-              actions: [
-                { label: "Continue to Validation", command: "continue" },
-                { label: "Edit Idea", command: "restart" },
-              ],
-            } as any;
-            finalMessages = [...updatedMsgs, summaryMsg];
-          }
-
-          updateIdea(current.id, {
-            title: current.title || content.slice(0, 80),
-            messages: finalMessages,
-            takeaways: {
-              ...current.takeaways,
-              refinedIdea: finalRefined,
-            },
-            ...(plan && { finalPlan: plan }),
-          });
-        })();
-
-        setTimeout(() => {
-          panelRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 100);
-
-        if (nextStage && nextStage !== current.currentStage) {
-          setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
-        }
-      }
-    };
-
-    reveal(1, baseMessages);
-  };
+if (nextStage && nextStage !== current.currentStage) {
+  setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
+}
 
   /**
    * Move an idea to the next stage (optionally forcing a specific stage).
