@@ -125,7 +125,7 @@ export default function ChatPanel({
           placeholder={disabled ? "Conversation locked" : "Type a message…"}
         />
         <button
-          className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+          className="bg-gradient-to-r from-blue-500 to-cyan-400 text-white font-medium px-4 py-2 rounded-md shadow-md hover:opacity-90 disabled:opacity-50 transition"
           onClick={sendMessage}
           disabled={disabled || loading || !input.trim()}
         >
