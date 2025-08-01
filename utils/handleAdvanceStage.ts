@@ -4,16 +4,20 @@ import type { VentureStage } from "../types";
 
 export default function handleAdvanceStageFactory(
   updateIdea: (id: any, updates: any) => void,
-  getIdeaById: (id: string) => any
+  getIdeaById: (id: string) => any,
+  setLoading: (loading: boolean) => void
 ) {
   const handleAdvanceStage = async (ideaId: string, nextStage: VentureStage) => {
     const idea = getIdeaById(ideaId);
     if (!idea) return;
 
+    console.log(`🔄 Advancing ${ideaId} to stage: ${nextStage}`);
     updateIdea(ideaId, { currentStage: nextStage });
+    setLoading(true);
 
     if (nextStage === "validation") {
       try {
+        console.log("📡 Calling postValidate...");
         const data = await postValidate(idea.title, idea.id);
         const fullValidation = data?.validation || "";
         const summary = fullValidation.split("\n")[0] || fullValidation;
@@ -21,7 +25,7 @@ export default function handleAdvanceStageFactory(
           role: "assistant" as const,
           content: `✅ Validation complete. Here's what we found:\n\n${fullValidation}`,
           actions: [
-            { label: "Continue to Branding", command: "continue" },
+            { label: "Continue to Branding", command: "continue to branding" },
             { label: "Restart", command: "restart" },
           ],
         };
@@ -33,7 +37,8 @@ export default function handleAdvanceStageFactory(
             validationSummary: summary,
           },
         });
-      } catch {
+      } catch (err) {
+        console.error("❌ Validation error:", err);
         updateIdea(ideaId, {
           messages: [
             ...idea.messages,
@@ -48,6 +53,7 @@ export default function handleAdvanceStageFactory(
 
     if (nextStage === "branding") {
       try {
+        console.log("🎨 Calling postBranding...");
         const data = await postBranding(idea.title, idea.id);
         const brandingMsg = {
           role: "assistant" as const,
@@ -78,7 +84,8 @@ export default function handleAdvanceStageFactory(
             },
           },
         });
-      } catch {
+      } catch (err) {
+        console.error("❌ Branding error:", err);
         updateIdea(ideaId, {
           messages: [
             ...idea.messages,
@@ -99,6 +106,8 @@ export default function handleAdvanceStageFactory(
       };
       updateIdea(ideaId, { messages: [...idea.messages, mvpMsg] });
     }
+
+    setLoading(false);
   };
 
   return handleAdvanceStage;
