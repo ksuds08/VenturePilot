@@ -1,4 +1,3 @@
-// hooks/useStageTransition.ts
 import { postValidate, postBranding } from "../lib/api";
 import type { VentureStage as StageType } from "../types";
 import { STAGE_ORDER } from "../constants/messages";
@@ -47,29 +46,59 @@ export function useStageTransition({
 
     updateIdea(id, { currentStage: nextStage });
 
+    // ✅ STREAMED VALIDATION STAGE
     if (nextStage === "validation") {
       try {
         const data = await postValidate(idea.title, idea.id);
         const fullValidation = data?.validation || "";
         const summary = fullValidation.split("\n")[0] || fullValidation;
-        const validationMsg = {
+
+        // 1. Add placeholder
+        const placeholder = {
           role: "assistant" as const,
-          content:
-            `✅ Validation complete. Here's what we found:\n\n${fullValidation}\n\n`,
-          actions: [
-            { label: "Continue to Branding", command: "continue" },
-            { label: "Restart", command: "restart" },
-          ],
+          content: "",
         };
-        const messages = [...idea.messages, validationMsg];
-        updateIdea(id, {
-          messages,
-          validation: fullValidation,
-          takeaways: {
-            ...idea.takeaways,
-            validationSummary: summary,
-          },
-        });
+        const messagesWithPlaceholder = [...idea.messages, placeholder];
+        updateIdea(id, { messages: messagesWithPlaceholder });
+
+        // 2. Stream reply
+        const reveal = (index: number) => {
+          const content =
+            `✅ Validation complete. Here's what we found:\n\n` +
+            fullValidation.slice(0, index);
+
+          const updatedMessages = messagesWithPlaceholder.map((m, i) =>
+            i === messagesWithPlaceholder.length - 1 ? { ...m, content } : m
+          );
+          updateIdea(id, { messages: updatedMessages });
+
+          if (index <= fullValidation.length) {
+            setTimeout(() => reveal(index + 1), 10); // stream speed
+          } else {
+            // 3. Append action buttons
+            const withActions = updatedMessages.map((m, i) =>
+              i === updatedMessages.length - 1
+                ? {
+                    ...m,
+                    actions: [
+                      { label: "Continue to Branding", command: "continue" },
+                      { label: "Restart", command: "restart" },
+                    ],
+                  }
+                : m
+            );
+            updateIdea(id, {
+              messages: withActions,
+              validation: fullValidation,
+              takeaways: {
+                ...idea.takeaways,
+                validationSummary: summary,
+              },
+            });
+          }
+        };
+
+        reveal(1);
       } catch {
         updateIdea(id, {
           messages: [
@@ -83,6 +112,7 @@ export function useStageTransition({
       }
     }
 
+    // 🚧 BRANDING (unchanged)
     if (nextStage === "branding") {
       try {
         const data = await postBranding(idea.title, idea.id);
@@ -129,6 +159,7 @@ export function useStageTransition({
       }
     }
 
+    // 🚀 MVP stage (unchanged)
     if (nextStage === "mvp") {
       const mvpMsg = {
         role: "assistant" as const,
