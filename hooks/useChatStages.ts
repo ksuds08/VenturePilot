@@ -2,12 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { VentureStage as StageType } from "../types";
 import { GREETING } from "../constants/messages";
-import { getMvpStream } from "../lib/api";
-import sanitizeMessages from "../utils/sanitizeMessages";
 
 import { initializeIdea, updateIdea as rawUpdateIdea } from "./useIdeaLifecycle";
 import { useSendHandler } from "./useSendHandler";
 import { useStageTransition } from "./useStageTransition";
+import { useDeploymentHandler } from "./useDeploymentHandler";
 
 export default function useChatStages(onReady?: () => void) {
   const [ideas, setIdeas] = useState<any[]>([]);
@@ -58,7 +57,11 @@ export default function useChatStages(onReady?: () => void) {
     messageEndRef,
   });
 
-  const handleConfirmBuild = () => {}; // next step
+  const handleConfirmBuild = useDeploymentHandler({
+    ideas,
+    updateIdea,
+    setDeployLogs,
+  });
 
   const handleSend = useSendHandler({
     ideas,
@@ -78,7 +81,7 @@ export default function useChatStages(onReady?: () => void) {
     loading,
     deployLogs,
     openPanels,
-    togglePanel: () => {}, // placeholder
+    togglePanel: () => {}, // placeholder for future logic
     messageEndRef,
     panelRef,
     handleSend,
