@@ -1,16 +1,10 @@
 import { useState, KeyboardEvent, useRef, useEffect } from "react";
 
-/**
- * Represents a single action that can be rendered as a button in the chat.
- */
 export interface ChatAction {
   label: string;
   command: string;
 }
 
-/**
- * Represents a chat message. Can include text, image, or actions.
- */
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -28,12 +22,10 @@ interface ChatPanelProps {
   disabled: boolean;
 }
 
-// Helper: detect and hyperlink URLs
 function linkify(text: string): string {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
   return text.replace(
-    urlRegex,
-    (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">${url}</a>`
+    /((https?:\/\/[^\s]+))/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">$1</a>'
   );
 }
 
@@ -71,9 +63,7 @@ export default function ChatPanel({
 
   return (
     <div
-      className={`border rounded p-4 ${
-        isActive ? "border-blue-400" : "border-gray-200"
-      }`}
+      className={`border rounded p-4 ${isActive ? "border-blue-400" : "border-gray-200"}`}
       onClick={onClick}
     >
       <div
@@ -88,20 +78,19 @@ export default function ChatPanel({
                   ? "bg-gray-100 self-end text-right"
                   : "bg-blue-50"
               }`}
-            >
-              <div
-                dangerouslySetInnerHTML={{ __html: linkify(msg.content) }}
-              />
-              {msg.imageUrl && (
-                <div className="mt-2">
-                  <img
-                    src={msg.imageUrl}
-                    alt=""
-                    className="max-w-full h-auto rounded"
-                  />
-                </div>
-              )}
-            </div>
+              dangerouslySetInnerHTML={{
+                __html: msg.role === "assistant" ? linkify(msg.content) : msg.content,
+              }}
+            />
+            {msg.imageUrl && (
+              <div className="mt-2">
+                <img
+                  src={msg.imageUrl}
+                  alt=""
+                  className="max-w-full h-auto rounded"
+                />
+              </div>
+            )}
             {msg.actions && (
               <div className="flex flex-wrap gap-2 mt-1">
                 {msg.actions.map((action, i) => (
