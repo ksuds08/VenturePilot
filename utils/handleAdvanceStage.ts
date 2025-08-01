@@ -4,31 +4,31 @@ import type { VentureStage } from "../types";
 
 export default function handleAdvanceStageFactory(
   updateIdea: (id: any, updates: any) => void,
-  getIdeaById: (id: string) => any,
-  setLoading: (loading: boolean) => void
+  getIdeaById: (id: string) => any
 ) {
   const handleAdvanceStage = async (ideaId: string, nextStage: VentureStage) => {
     const idea = getIdeaById(ideaId);
     if (!idea) return;
 
-    console.log(`🔄 Advancing ${ideaId} to stage: ${nextStage}`);
+    // Stage switch
     updateIdea(ideaId, { currentStage: nextStage });
-    setLoading(true);
 
+    // Handle Validation
     if (nextStage === "validation") {
       try {
-        console.log("📡 Calling postValidate...");
         const data = await postValidate(idea.title, idea.id);
         const fullValidation = data?.validation || "";
         const summary = fullValidation.split("\n")[0] || fullValidation;
+
         const validationMsg = {
           role: "assistant" as const,
           content: `✅ Validation complete. Here's what we found:\n\n${fullValidation}`,
           actions: [
-            { label: "Continue to Branding", command: "continue to branding" },
+            { label: "Continue to Branding", command: "continue" },
             { label: "Restart", command: "restart" },
           ],
         };
+
         updateIdea(ideaId, {
           messages: [...idea.messages, validationMsg],
           validation: fullValidation,
@@ -37,8 +37,7 @@ export default function handleAdvanceStageFactory(
             validationSummary: summary,
           },
         });
-      } catch (err) {
-        console.error("❌ Validation error:", err);
+      } catch {
         updateIdea(ideaId, {
           messages: [
             ...idea.messages,
@@ -51,10 +50,21 @@ export default function handleAdvanceStageFactory(
       }
     }
 
+    // Handle Branding
     if (nextStage === "branding") {
+      updateIdea(ideaId, {
+        messages: [
+          ...idea.messages,
+          {
+            role: "assistant",
+            content: "⏳ Generating branding assets... Please wait.",
+          },
+        ],
+      });
+
       try {
-        console.log("🎨 Calling postBranding...");
         const data = await postBranding(idea.title, idea.id);
+
         const brandingMsg = {
           role: "assistant" as const,
           content:
@@ -70,6 +80,7 @@ export default function handleAdvanceStageFactory(
             { label: "Start Over", command: "start over" },
           ],
         };
+
         updateIdea(ideaId, {
           messages: [...idea.messages, brandingMsg],
           branding: data,
@@ -84,8 +95,7 @@ export default function handleAdvanceStageFactory(
             },
           },
         });
-      } catch (err) {
-        console.error("❌ Branding error:", err);
+      } catch {
         updateIdea(ideaId, {
           messages: [
             ...idea.messages,
@@ -98,6 +108,7 @@ export default function handleAdvanceStageFactory(
       }
     }
 
+    // Handle MVP
     if (nextStage === "mvp") {
       const mvpMsg = {
         role: "assistant" as const,
@@ -106,8 +117,6 @@ export default function handleAdvanceStageFactory(
       };
       updateIdea(ideaId, { messages: [...idea.messages, mvpMsg] });
     }
-
-    setLoading(false);
   };
 
   return handleAdvanceStage;
