@@ -44,6 +44,14 @@
   "overrides": {
     "react-markdown": {
       "react": "^18.2.0"
+    },
+    "remark-gfm": {
+      "vfile": "^6.0.1",
+      "vfile-message": "^4.0.0"
     }
+  },
+  "resolutions": {
+    "vfile": "^6.0.1",
+    "vfile-message": "^4.0.0"
   }
 }
