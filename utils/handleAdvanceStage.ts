@@ -1,114 +1,110 @@
 // utils/handleAdvanceStage.ts
-
 import type { VentureStage as StageType } from "../types";
+import { STAGE_ORDER } from "../constants/messages";
+import { postValidate, postBranding } from "../lib/api";
 
-export default async function handleAdvanceStage(
-  idea: any,
+export default function handleAdvanceStage(
+  ideaId: any,
+  stage: StageType,
   updateIdea: (id: any, updates: any) => void,
-  forcedStage: StageType,
-  postValidate: (title: string, id: string) => Promise<any>,
-  postBranding: (title: string, id: string) => Promise<any>
+  ideas: any[]
 ) {
-  const STAGE_ORDER = ["ideation", "validation", "branding", "mvp"];
+  const idea = ideas.find((i) => i.id === ideaId);
+  if (!idea) return;
 
-  const currentIndex = STAGE_ORDER.indexOf(
-    (idea.currentStage as StageType) || ("ideation" as StageType)
-  );
-  const nextStage =
-    forcedStage || STAGE_ORDER[Math.min(currentIndex + 1, STAGE_ORDER.length - 1)];
+  const currentIndex = STAGE_ORDER.indexOf(stage);
+  const nextStage = STAGE_ORDER[Math.min(currentIndex + 1, STAGE_ORDER.length - 1)];
 
-  updateIdea(idea.id, { currentStage: nextStage });
+  updateIdea(ideaId, { currentStage: nextStage });
 
-  // Validation stage
   if (nextStage === "validation") {
-    try {
-      const data = await postValidate(idea.title, idea.id);
-      const fullValidation = data?.validation || "";
-      const summary = fullValidation.split("\n")[0] || fullValidation;
-      const validationMsg = {
-        role: "assistant" as const,
-        content: `✅ Validation complete. Here's what we found:\n\n${fullValidation}\n\n`,
-        actions: [
-          { label: "Continue to Branding", command: "continue" },
-          { label: "Restart", command: "restart" },
-        ],
-      };
-      updateIdea(idea.id, {
-        messages: [...idea.messages, validationMsg],
-        validation: fullValidation,
-        takeaways: {
-          ...idea.takeaways,
-          validationSummary: summary,
-        },
-      });
-    } catch {
-      updateIdea(idea.id, {
-        messages: [
-          ...idea.messages,
-          {
-            role: "assistant",
-            content: "⚠️ Validation failed. Please try again later.",
+    postValidate(idea.title, idea.id)
+      .then((data) => {
+        const fullValidation = data?.validation || "";
+        const summary = fullValidation.split("\n")[0] || fullValidation;
+        const validationMsg = {
+          role: "assistant" as const,
+          content:
+            `✅ Validation complete. Here's what we found:\n\n${fullValidation}\n\n`,
+          actions: [
+            { label: "Continue to Branding", command: "continue" },
+            { label: "Restart", command: "restart" },
+          ],
+        };
+        updateIdea(ideaId, {
+          messages: [...idea.messages, validationMsg],
+          validation: fullValidation,
+          takeaways: {
+            ...idea.takeaways,
+            validationSummary: summary,
           },
-        ],
+        });
+      })
+      .catch(() => {
+        updateIdea(ideaId, {
+          messages: [
+            ...idea.messages,
+            {
+              role: "assistant",
+              content: "⚠️ Validation failed. Please try again later.",
+            },
+          ],
+        });
       });
-    }
   }
 
-  // Branding stage
   if (nextStage === "branding") {
-    try {
-      const data = await postBranding(idea.title, idea.id);
-      const brandingMsg = {
-        role: "assistant" as const,
-        content:
-          "✅ **Branding complete!**\n\n" +
-          `**Name:** ${data.name}\n` +
-          `**Tagline:** ${data.tagline}\n` +
-          `**Colors:** ${data.colors?.join(", ")}\n` +
-          `**Logo Concept:** ${data.logoDesc}\n\n`,
-        imageUrl: data.logoUrl || undefined,
-        actions: [
-          { label: "Accept Branding", command: "accept branding" },
-          { label: "Regenerate Branding", command: "regenerate branding" },
-          { label: "Start Over", command: "start over" },
-        ],
-      };
-      updateIdea(idea.id, {
-        messages: [...idea.messages, brandingMsg],
-        branding: data,
-        takeaways: {
-          ...idea.takeaways,
-          branding: {
-            name: data.name,
-            tagline: data.tagline,
-            colors: data.colors,
-            logoDesc: data.logoDesc,
-            logoUrl: data.logoUrl || "",
+    postBranding(idea.title, idea.id)
+      .then((data) => {
+        const brandingMsg = {
+          role: "assistant" as const,
+          content:
+            "✅ **Branding complete!**\n\n" +
+            `**Name:** ${data.name}\n` +
+            `**Tagline:** ${data.tagline}\n` +
+            `**Colors:** ${data.colors?.join(", ")}\n` +
+            `**Logo Concept:** ${data.logoDesc}\n\n`,
+          imageUrl: data.logoUrl || undefined,
+          actions: [
+            { label: "Accept Branding", command: "accept branding" },
+            { label: "Regenerate Branding", command: "regenerate branding" },
+            { label: "Start Over", command: "start over" },
+          ],
+        };
+        updateIdea(ideaId, {
+          messages: [...idea.messages, brandingMsg],
+          branding: data,
+          takeaways: {
+            ...idea.takeaways,
+            branding: {
+              name: data.name,
+              tagline: data.tagline,
+              colors: data.colors,
+              logoDesc: data.logoDesc,
+              logoUrl: data.logoUrl || "",
+            },
           },
-        },
+        });
+      })
+      .catch(() => {
+        updateIdea(ideaId, {
+          messages: [
+            ...idea.messages,
+            {
+              role: "assistant",
+              content: "⚠️ Branding failed. Please try again later.",
+            },
+          ],
+        });
       });
-    } catch {
-      updateIdea(idea.id, {
-        messages: [
-          ...idea.messages,
-          {
-            role: "assistant",
-            content: "⚠️ Branding failed. Please try again later.",
-          },
-        ],
-      });
-    }
   }
 
-  // MVP stage
   if (nextStage === "mvp") {
     const mvpMsg = {
       role: "assistant" as const,
       content: "✅ You're ready to deploy your MVP!\n\n",
       actions: [{ label: "Deploy", command: "deploy" }],
     };
-    updateIdea(idea.id, {
-      messages: [...idea.messages, mvpMsg],
-    });
+    updateIdea(ideaId, { messages: [...idea.messages, mvpMsg] });
   }
 }
