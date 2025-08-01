@@ -1,6 +1,5 @@
 import { useState, KeyboardEvent, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import type { PluggableList } from "react-markdown/lib/react-markdown";
 // @ts-ignore: suppress type error due to vfile version mismatch in remark-gfm
 import remarkGfm from "remark-gfm";
 
@@ -79,7 +78,7 @@ export default function ChatPanel({
               }`}
             >
               <ReactMarkdown
-                remarkPlugins={[remarkGfm as PluggableList]}
+                remarkPlugins={[remarkGfm as any]}
                 className="prose prose-sm break-words max-w-full"
                 linkTarget="_blank"
               >
