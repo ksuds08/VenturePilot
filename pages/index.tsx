@@ -5,22 +5,26 @@ import ChatAssistant from "../components/ChatAssistant";
 import Image from "next/image";
 
 /**
- * Landing page component with smooth scroll-to-chat functionality.
+ * Landing page component with smooth scroll-to-chat functionality
+ * and streaming assistant greeting after scroll.
  */
 export default function LandingPage() {
-  // Ref to the chat section (initially null until mounted)
   const chatRef = useRef<HTMLDivElement | null>(null);
 
-  // Flag to trigger scrolling; toggled by the button click
   const [scrollToChat, setScrollToChat] = useState(false);
+  const [startGreeting, setStartGreeting] = useState<() => void>(() => {});
 
-  // Scroll into view once the chat section is mounted and the flag is true
   useEffect(() => {
     if (scrollToChat && chatRef.current) {
       chatRef.current.scrollIntoView({ behavior: "smooth" });
       setScrollToChat(false);
+
+      // Start simulated greeting after scroll finishes
+      setTimeout(() => {
+        startGreeting();
+      }, 500);
     }
-  }, [scrollToChat]);
+  }, [scrollToChat, startGreeting]);
 
   return (
     <Layout>
@@ -72,7 +76,7 @@ export default function LandingPage() {
           <h2 className="text-3xl font-bold mb-6 text-center text-slate-900 dark:text-white">
             Your AI Co-Founder Is Ready
           </h2>
-          <ChatAssistant />
+          <ChatAssistant onInitGreeting={(starter) => setStartGreeting(() => starter)} />
         </section>
       </>
     </Layout>
