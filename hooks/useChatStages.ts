@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { sendToAssistant } from "../lib/assistantClient";
 import type { VentureStage as StageType } from "../types";
-import { GREETING, STAGE_ORDER } from "../constants/messages";
+import { GREETING } from "../constants/messages";
 import { getMvpStream, postBranding, postValidate } from "../lib/api";
 import { sanitizeMessages } from "../utils/sanitizeMessages";
 import revealAssistantReply from "../utils/revealAssistantReply";
@@ -53,15 +53,14 @@ export default function useChatStages(onReady?: () => void) {
     const stage = current.currentStage;
 
     const shortcuts: Record<string, () => void> = {
-      continue: () => handleAdvanceStage(current, stage, setIdeas, updateIdea, postValidate, postBranding),
-      restart: () => updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
-      "edit idea": () => updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
-      "accept branding": () =>
-        handleAdvanceStage(current, "mvp", setIdeas, updateIdea, postValidate, postBranding),
-      "regenerate branding": () =>
-        handleAdvanceStage(current, "branding", setIdeas, updateIdea, postValidate, postBranding),
-      "start over": () =>
-        handleAdvanceStage(current, "ideation", setIdeas, updateIdea, postValidate, postBranding),
+      continue: () => handleAdvanceStage(current, updateIdea),
+      restart: () =>
+        updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
+      "edit idea": () =>
+        updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
+      "accept branding": () => handleAdvanceStage(current, updateIdea, "mvp"),
+      "regenerate branding": () => handleAdvanceStage(current, updateIdea, "branding"),
+      "start over": () => handleAdvanceStage(current, updateIdea, "ideation"),
       deploy: () =>
         handleConfirmBuild(current, setIdeas, setDeployLogs, getMvpStream, sanitizeMessages),
     };
