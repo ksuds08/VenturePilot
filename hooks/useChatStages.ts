@@ -1,10 +1,11 @@
 // hooks/useChatStages.ts
 import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { GREETING } from "../constants/messages";
+import { GREETING, STAGE_ORDER } from "../constants/messages";
 import { sendToAssistant } from "../lib/assistantClient";
+import { postValidate, postBranding, getMvpStream } from "../lib/api";
 import type { VentureStage as StageType } from "../types";
-import sanitizeMessages from "../utils/sanitizeMessages";
+import { sanitizeMessages } from "../utils/sanitizeMessages";
 import handleAdvanceStageFactory from "../utils/handleAdvanceStage";
 import handleConfirmBuildFactory from "../utils/handleConfirmBuild";
 
@@ -54,8 +55,8 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdeaId, ideas.length, onReady]);
 
-  const { handleAdvanceStage } = handleAdvanceStageFactory(updateIdea, ideas);
-  const { handleConfirmBuild } = handleConfirmBuildFactory(updateIdea, setDeployLogs, ideas);
+  const handleAdvanceStage = handleAdvanceStageFactory(updateIdea, ideas);
+  const handleConfirmBuild = handleConfirmBuildFactory(updateIdea, setDeployLogs, ideas);
 
   const handleSend = async (content: string) => {
     const current = activeIdea;
@@ -63,24 +64,18 @@ export default function useChatStages(onReady?: () => void) {
 
     const trimmed = content.trim().toLowerCase();
 
-    const shortcuts: Record<string, () => void> = {
+    const stageShortcuts: Record<string, () => void> = {
       continue: () => handleAdvanceStage(current.id, "validation"),
-      restart: () =>
-        updateIdea(current.id, {
-          messages: [...current.messages, { role: "user", content }],
-        }),
-      "edit idea": () =>
-        updateIdea(current.id, {
-          messages: [...current.messages, { role: "user", content }],
-        }),
+      restart: () => updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
+      "edit idea": () => updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
       "accept branding": () => handleAdvanceStage(current.id, "mvp"),
       "regenerate branding": () => handleAdvanceStage(current.id, "branding"),
       "start over": () => handleAdvanceStage(current.id, "ideation"),
-      deploy: () => handleConfirmBuild(current.id),
+      deploy: () => handleConfirmBuild(current.id, sanitizeMessages(current.messages), current.takeaways.branding),
     };
 
-    if (shortcuts[trimmed]) {
-      shortcuts[trimmed]();
+    if (stageShortcuts[trimmed]) {
+      stageShortcuts[trimmed]();
       return;
     }
 
@@ -91,10 +86,7 @@ export default function useChatStages(onReady?: () => void) {
     setLoading(true);
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
-    const { reply, nextStage, plan } = await sendToAssistant(
-      [...current.messages, userMsg],
-      current.currentStage
-    );
+    const { reply, nextStage, plan } = await sendToAssistant([...current.messages, userMsg], current.currentStage);
     setLoading(false);
 
     const reveal = (index: number, msgs: any[]) => {
