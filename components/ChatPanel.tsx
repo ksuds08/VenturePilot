@@ -78,9 +78,9 @@ export default function ChatPanel({
               }`}
             >
               <ReactMarkdown
+                // @ts-ignore: suppress remark-gfm type mismatch
                 remarkPlugins={[remarkGfm as any]}
                 className="prose prose-sm break-words max-w-full"
-                linkTarget="_blank"
               >
                 {msg.content}
               </ReactMarkdown>
