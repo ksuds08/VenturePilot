@@ -1,5 +1,6 @@
 import { useState, KeyboardEvent, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+// @ts-expect-error TS incompatibility between vfile versions
 import remarkGfm from "remark-gfm";
 
 export interface ChatAction {
