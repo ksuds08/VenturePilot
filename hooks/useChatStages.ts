@@ -5,7 +5,7 @@ import { sendToAssistant } from "../lib/assistantClient";
 import type { VentureStage as StageType } from "../types";
 import { GREETING, STAGE_ORDER } from "../constants/messages";
 import { getMvpStream, postBranding, postValidate } from "../lib/api";
-import sanitizeMessages from "../utils/sanitizeMessages";
+import { sanitizeMessages } from "../utils/sanitizeMessages";
 import revealAssistantReply from "../utils/revealAssistantReply";
 import handleAdvanceStage from "../utils/handleAdvanceStage";
 import handleConfirmBuild from "../utils/handleConfirmBuild";
@@ -39,7 +39,9 @@ export default function useChatStages(onReady?: () => void) {
 
   const updateIdea = (id: any, updates: any) => {
     setIdeas((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, ...(typeof updates === "function" ? updates(i) : updates) } : i))
+      prev.map((i) =>
+        i.id === id ? { ...i, ...(typeof updates === "function" ? updates(i) : updates) } : i
+      )
     );
   };
 
@@ -54,10 +56,14 @@ export default function useChatStages(onReady?: () => void) {
       continue: () => handleAdvanceStage(current, stage, setIdeas, updateIdea, postValidate, postBranding),
       restart: () => updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
       "edit idea": () => updateIdea(current.id, { messages: [...current.messages, { role: "user", content }] }),
-      "accept branding": () => handleAdvanceStage(current, "mvp", setIdeas, updateIdea, postValidate, postBranding),
-      "regenerate branding": () => handleAdvanceStage(current, "branding", setIdeas, updateIdea, postValidate, postBranding),
-      "start over": () => handleAdvanceStage(current, "ideation", setIdeas, updateIdea, postValidate, postBranding),
-      deploy: () => handleConfirmBuild(current, setIdeas, setDeployLogs, getMvpStream, sanitizeMessages),
+      "accept branding": () =>
+        handleAdvanceStage(current, "mvp", setIdeas, updateIdea, postValidate, postBranding),
+      "regenerate branding": () =>
+        handleAdvanceStage(current, "branding", setIdeas, updateIdea, postValidate, postBranding),
+      "start over": () =>
+        handleAdvanceStage(current, "ideation", setIdeas, updateIdea, postValidate, postBranding),
+      deploy: () =>
+        handleConfirmBuild(current, setIdeas, setDeployLogs, getMvpStream, sanitizeMessages),
     };
 
     if (shortcuts[trimmed]) {
@@ -72,7 +78,10 @@ export default function useChatStages(onReady?: () => void) {
     setLoading(true);
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
-    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant([...current.messages, userMsg], stage);
+    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
+      [...current.messages, userMsg],
+      stage
+    );
     setLoading(false);
 
     await revealAssistantReply({
