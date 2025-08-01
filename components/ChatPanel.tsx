@@ -78,6 +78,7 @@ export default function ChatPanel({
               }`}
             >
               <ReactMarkdown
+                // @ts-expect-error TS incompatibility between vfile versions
                 remarkPlugins={[remarkGfm]}
                 className="prose prose-sm break-words max-w-full"
               >
