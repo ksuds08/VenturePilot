@@ -1,12 +1,11 @@
 // File: hooks/useChatStages.ts
-
 import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { sendToAssistant } from "../lib/assistantClient";
 import type { VentureStage as StageType } from "../types";
 import { GREETING, STAGE_ORDER } from "../constants/messages";
-import { postBranding, postValidate } from "../lib/api";
-import { sanitizeMessages } from "../utils/sanitizeMessages"; // ✅ Fixed import
+import { getMvpStream, postBranding, postValidate } from "../lib/api";
+import { sanitizeMessages } from "../utils/sanitizeMessages";
 import revealAssistantReply from "../utils/revealAssistantReply";
 import handleAdvanceStage from "../utils/handleAdvanceStage";
 import handleConfirmBuild from "../utils/handleConfirmBuild";
@@ -48,6 +47,13 @@ export default function useChatStages(onReady?: () => void) {
     );
   };
 
+  // Wrapper to adapt to revealAssistantReply expectations
+  const handleAdvanceStageWrapper = (id: string, stage?: StageType) => {
+    const idea = ideas.find((i) => i.id === id);
+    if (!idea) return;
+    handleAdvanceStage(idea, updateIdea, stage || "ideation", postValidate, postBranding);
+  };
+
   const handleSend = async (content: string) => {
     const current = ideas.find((i) => i.id === activeIdeaId);
     if (!current) return;
@@ -73,7 +79,7 @@ export default function useChatStages(onReady?: () => void) {
       "start over": () =>
         handleAdvanceStage(current, updateIdea, "ideation", postValidate, postBranding),
       deploy: () =>
-        handleConfirmBuild(current, setIdeas, setDeployLogs, sanitizeMessages),
+        handleConfirmBuild(current, setIdeas, setDeployLogs, getMvpStream, sanitizeMessages),
     };
 
     if (shortcuts[trimmed]) {
@@ -88,11 +94,10 @@ export default function useChatStages(onReady?: () => void) {
     setLoading(true);
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
-    const { reply, nextStage, plan } = await sendToAssistant(
+    const { reply, refinedIdea, nextStage, plan } = await sendToAssistant(
       [...current.messages, userMsg],
       stage
     );
-
     setLoading(false);
 
     await revealAssistantReply({
@@ -104,7 +109,7 @@ export default function useChatStages(onReady?: () => void) {
       plan,
       panelRef,
       baseMessages,
-      handleAdvanceStage,
+      handleAdvanceStage: handleAdvanceStageWrapper,
       setIdeas,
     });
   };
