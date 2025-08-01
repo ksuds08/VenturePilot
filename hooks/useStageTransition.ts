@@ -53,29 +53,22 @@ export function useStageTransition({
         const fullValidation = data?.validation || "";
         const summary = fullValidation.split("\n")[0] || fullValidation;
 
-        // 1. Add placeholder
-        const placeholder = {
-          role: "assistant" as const,
-          content: "",
-        };
+        const placeholder = { role: "assistant" as const, content: "" };
         const messagesWithPlaceholder = [...idea.messages, placeholder];
         updateIdea(id, { messages: messagesWithPlaceholder });
 
-        // 2. Stream reply
         const reveal = (index: number) => {
           const content =
             `✅ Validation complete. Here's what we found:\n\n` +
             fullValidation.slice(0, index);
-
           const updatedMessages = messagesWithPlaceholder.map((m, i) =>
             i === messagesWithPlaceholder.length - 1 ? { ...m, content } : m
           );
           updateIdea(id, { messages: updatedMessages });
 
           if (index <= fullValidation.length) {
-            setTimeout(() => reveal(index + 1), 10); // stream speed
+            setTimeout(() => reveal(index + 1), 10);
           } else {
-            // 3. Append action buttons
             const withActions = updatedMessages.map((m, i) =>
               i === updatedMessages.length - 1
                 ? {
@@ -112,40 +105,66 @@ export function useStageTransition({
       }
     }
 
-    // 🚧 BRANDING (unchanged)
+    // ✅ STREAMED BRANDING STAGE
     if (nextStage === "branding") {
       try {
         const data = await postBranding(idea.title, idea.id);
-        const brandingMsg = {
+        const brandingText =
+          "✅ **Branding complete!**\n\n" +
+          `**Name:** ${data.name}\n` +
+          `**Tagline:** ${data.tagline}\n` +
+          `**Colors:** ${data.colors?.join(", ")}\n` +
+          `**Logo Concept:** ${data.logoDesc}\n\n`;
+
+        const placeholder = {
           role: "assistant" as const,
-          content:
-            "✅ **Branding complete!**\n\n" +
-            `**Name:** ${data.name}\n` +
-            `**Tagline:** ${data.tagline}\n` +
-            `**Colors:** ${data.colors?.join(", ")}\n` +
-            `**Logo Concept:** ${data.logoDesc}\n\n`,
+          content: "",
           imageUrl: data.logoUrl || undefined,
-          actions: [
-            { label: "Accept Branding", command: "accept branding" },
-            { label: "Regenerate Branding", command: "regenerate branding" },
-            { label: "Start Over", command: "start over" },
-          ],
         };
-        const messages = [...idea.messages, brandingMsg];
-        updateIdea(id, {
-          messages,
-          branding: data,
-          takeaways: {
-            ...idea.takeaways,
-            branding: {
-              name: data.name,
-              tagline: data.tagline,
-              colors: data.colors,
-              logoDesc: data.logoDesc,
-              logoUrl: data.logoUrl || "",
-            },
-          },
-        });
+
+        const messagesWithPlaceholder = [...idea.messages, placeholder];
+        updateIdea(id, { messages: messagesWithPlaceholder });
+
+        const reveal = (index: number) => {
+          const content = brandingText.slice(0, index);
+          const updatedMessages = messagesWithPlaceholder.map((m, i) =>
+            i === messagesWithPlaceholder.length - 1 ? { ...m, content } : m
+          );
+          updateIdea(id, { messages: updatedMessages });
+
+          if (index <= brandingText.length) {
+            setTimeout(() => reveal(index + 1), 10);
+          } else {
+            const withActions = updatedMessages.map((m, i) =>
+              i === updatedMessages.length - 1
+                ? {
+                    ...m,
+                    actions: [
+                      { label: "Accept Branding", command: "accept branding" },
+                      { label: "Regenerate Branding", command: "regenerate branding" },
+                      { label: "Start Over", command: "start over" },
+                    ],
+                  }
+                : m
+            );
+            updateIdea(id, {
+              messages: withActions,
+              branding: data,
+              takeaways: {
+                ...idea.takeaways,
+                branding: {
+                  name: data.name,
+                  tagline: data.tagline,
+                  colors: data.colors,
+                  logoDesc: data.logoDesc,
+                  logoUrl: data.logoUrl || "",
+                },
+              },
+            });
+          }
+        };
+
+        reveal(1);
       } catch {
         updateIdea(id, {
           messages: [
@@ -159,7 +178,7 @@ export function useStageTransition({
       }
     }
 
-    // 🚀 MVP stage (unchanged)
+    // 🚀 MVP stage
     if (nextStage === "mvp") {
       const mvpMsg = {
         role: "assistant" as const,
