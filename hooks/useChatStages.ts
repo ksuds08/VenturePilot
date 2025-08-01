@@ -520,9 +520,10 @@ const handleConfirmBuild = async (id: any) => {
         const { pagesUrl, repoUrl, plan } = data || {};
 
         if (pagesUrl) {
-          const finalLine =
-            `✅ Deployment successful! Your site is live at ${pagesUrl}` +
-            (repoUrl ? `\nGitHub repo: ${repoUrl}` : "");
+          const finalLine = `✅ Deployment successful!
+
+🔗 [Live Site](${pagesUrl})  
+📁 [GitHub Repo](${repoUrl || "https://github.com"})`;
           appendLog(finalLine);
           updateIdea(id, {
             deploying: false,
