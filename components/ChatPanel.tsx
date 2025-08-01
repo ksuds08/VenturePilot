@@ -94,13 +94,14 @@ export default function ChatPanel({
                 </div>
               )}
             </div>
+
             {msg.actions && (
               <div className="flex flex-wrap gap-2 mt-1">
                 {msg.actions.map((action, i) => (
                   <button
                     key={i}
                     onClick={() => onSend(action.command)}
-                    className="px-4 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50"
+                    className="bg-gradient-to-r from-blue-500 to-cyan-400 text-white font-medium px-4 py-1.5 rounded-md text-sm shadow-md hover:opacity-90 disabled:opacity-50 transition"
                     disabled={loading || disabled}
                   >
                     {action.label}
