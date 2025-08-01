@@ -197,63 +197,62 @@ export default function useChatStages(onReady?: () => void) {
     );
     setLoading(false);
 
-    /**
-     * Reveal the assistant's reply one character at a time, then
-     * summarise and update the idea.
-     */
-    const reveal = (index: number, msgs: any[]) => {
-      const updatedMsgs = msgs.map((m, i) =>
-        i === msgs.length - 1 ? { ...m, content: reply.slice(0, index) } : m,
-      );
-      updateIdea(current.id, { messages: updatedMsgs });
+  /**
+ * Reveal the assistant's reply one character at a time, then
+ * summarise and update the idea.
+ */
+const reveal = (index: number, msgs: any[]) => {
+  const updatedMsgs = msgs.map((m, i) =>
+    i === msgs.length - 1 ? { ...m, content: reply.slice(0, index) } : m
+  );
+  updateIdea(current.id, { messages: updatedMsgs });
 
-      if (index <= reply.length) {
-        setTimeout(() => reveal(index + 1, updatedMsgs), 20);
-      } else {
-        let summaryDesc = reply || content;
-        try {
-          const parts = summaryDesc.split(/(?<=[.!?])\s+/);
-          summaryDesc = parts.slice(0, 2).join(" ");
-          if (!summaryDesc) {
-            summaryDesc = (reply || content).slice(0, 150);
-          }
-        } catch {
-          summaryDesc = (reply || content).slice(0, 150);
-        }
+  if (index <= reply.length) {
+    setTimeout(() => reveal(index + 1, updatedMsgs), 20);
+  } else {
+    let summaryDesc = reply || content;
+    try {
+      const parts = summaryDesc.split(/(?<=[.!?])\s+/);
+      summaryDesc = parts.slice(0, 2).join(" ");
+      if (!summaryDesc) {
+        summaryDesc = (reply || content).slice(0, 150);
+      }
+    } catch {
+      summaryDesc = (reply || content).slice(0, 150);
+    }
 
-        // Provide a summarizing message with actions, no refinedIdea logic
-if (current.currentStage === "ideation") {
-  const summaryMsg = {
-    role: "assistant",
-    content:
-      `✅ Got it! Here’s what you said:\n\n${reply || content}\n\n` +
-      `If this looks good, we’ll move on to validate your idea.`,
-    actions: [
-      { label: "Continue to Validation", command: "continue" },
-      { label: "Edit Idea", command: "restart" },
-    ],
-  } as any;
-  const finalMessages = [...updatedMsgs, summaryMsg];
+    if (current.currentStage === "ideation") {
+      const summaryMsg = {
+        role: "assistant",
+        content:
+          `✅ Got it! Here’s what you said:\n\n${reply || content}\n\n` +
+          `If this looks good, we’ll move on to validate your idea.`,
+        actions: [
+          { label: "Continue to Validation", command: "continue" },
+          { label: "Edit Idea", command: "restart" },
+        ],
+      } as any;
+      const finalMessages = [...updatedMsgs, summaryMsg];
 
-  updateIdea(current.id, {
-    title: current.title || content.slice(0, 80),
-    messages: finalMessages,
-    takeaways: {
-      ...current.takeaways,
-      // No refinedIdea stored
-    },
-    ...(plan && { finalPlan: plan }),
-  });
-}
+      updateIdea(current.id, {
+        title: current.title || content.slice(0, 80),
+        messages: finalMessages,
+        takeaways: {
+          ...current.takeaways,
+        },
+        ...(plan && { finalPlan: plan }),
+      });
+    }
 
-setTimeout(() => {
-  panelRef.current?.scrollIntoView({ behavior: "smooth" });
-}, 100);
+    setTimeout(() => {
+      panelRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
 
-if (nextStage && nextStage !== current.currentStage) {
-  setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
-}
-
+    if (nextStage && nextStage !== current.currentStage) {
+      setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
+    }
+  }
+};
   /**
    * Move an idea to the next stage (optionally forcing a specific stage).
    * Calls relevant APIs and pushes interactive messages with actions.
