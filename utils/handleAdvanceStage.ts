@@ -1,31 +1,25 @@
 // utils/handleAdvanceStage.ts
-import type { VentureStage as StageType } from "../types";
-import { STAGE_ORDER } from "../constants/messages";
 import { postValidate, postBranding } from "../lib/api";
+import type { VentureStage } from "../types";
 
-export default function handleAdvanceStage(
-  ideaId: any,
-  stage: StageType,
+export default function handleAdvanceStageFactory(
   updateIdea: (id: any, updates: any) => void,
-  ideas: any[]
+  getIdeaById: (id: string) => any
 ) {
-  const idea = ideas.find((i) => i.id === ideaId);
-  if (!idea) return;
+  const handleAdvanceStage = async (ideaId: string, nextStage: VentureStage) => {
+    const idea = getIdeaById(ideaId);
+    if (!idea) return;
 
-  const currentIndex = STAGE_ORDER.indexOf(stage);
-  const nextStage = STAGE_ORDER[Math.min(currentIndex + 1, STAGE_ORDER.length - 1)];
+    updateIdea(ideaId, { currentStage: nextStage });
 
-  updateIdea(ideaId, { currentStage: nextStage });
-
-  if (nextStage === "validation") {
-    postValidate(idea.title, idea.id)
-      .then((data) => {
+    if (nextStage === "validation") {
+      try {
+        const data = await postValidate(idea.title, idea.id);
         const fullValidation = data?.validation || "";
         const summary = fullValidation.split("\n")[0] || fullValidation;
         const validationMsg = {
           role: "assistant" as const,
-          content:
-            `✅ Validation complete. Here's what we found:\n\n${fullValidation}\n\n`,
+          content: `✅ Validation complete. Here's what we found:\n\n${fullValidation}`,
           actions: [
             { label: "Continue to Branding", command: "continue" },
             { label: "Restart", command: "restart" },
@@ -39,8 +33,7 @@ export default function handleAdvanceStage(
             validationSummary: summary,
           },
         });
-      })
-      .catch(() => {
+      } catch {
         updateIdea(ideaId, {
           messages: [
             ...idea.messages,
@@ -50,12 +43,12 @@ export default function handleAdvanceStage(
             },
           ],
         });
-      });
-  }
+      }
+    }
 
-  if (nextStage === "branding") {
-    postBranding(idea.title, idea.id)
-      .then((data) => {
+    if (nextStage === "branding") {
+      try {
+        const data = await postBranding(idea.title, idea.id);
         const brandingMsg = {
           role: "assistant" as const,
           content:
@@ -85,8 +78,7 @@ export default function handleAdvanceStage(
             },
           },
         });
-      })
-      .catch(() => {
+      } catch {
         updateIdea(ideaId, {
           messages: [
             ...idea.messages,
@@ -96,15 +88,18 @@ export default function handleAdvanceStage(
             },
           ],
         });
-      });
-  }
+      }
+    }
 
-  if (nextStage === "mvp") {
-    const mvpMsg = {
-      role: "assistant" as const,
-      content: "✅ You're ready to deploy your MVP!\n\n",
-      actions: [{ label: "Deploy", command: "deploy" }],
-    };
-    updateIdea(ideaId, { messages: [...idea.messages, mvpMsg] });
-  }
+    if (nextStage === "mvp") {
+      const mvpMsg = {
+        role: "assistant" as const,
+        content: "✅ You're ready to deploy your MVP!",
+        actions: [{ label: "Deploy", command: "deploy" }],
+      };
+      updateIdea(ideaId, { messages: [...idea.messages, mvpMsg] });
+    }
+  };
+
+  return handleAdvanceStage;
 }
