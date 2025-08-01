@@ -1,10 +1,10 @@
 // hooks/useChatStages.ts
 import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { GREETING, STAGE_ORDER } from "../constants/messages";
+import { GREETING } from "../constants/messages";
 import { sendToAssistant } from "../lib/assistantClient";
-import type { VentureStage as StageType } from "../types";
 import { postValidate, postBranding, getMvpStream } from "../lib/api";
+import type { VentureStage as StageType } from "../types";
 import { sanitizeMessages } from "../utils/sanitizeMessages";
 import handleAdvanceStageFactory from "../utils/handleAdvanceStage";
 import handleConfirmBuildFactory from "../utils/handleConfirmBuild";
@@ -17,21 +17,27 @@ export default function useChatStages(onReady?: () => void) {
 
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-
   const activeIdea = ideas.find((i) => i.id === activeIdeaId);
 
   const updateIdea = (id: any, updates: any) => {
     setIdeas((prev) =>
       prev.map((i) =>
-        i.id === id
-          ? {
-              ...i,
-              ...(typeof updates === "function" ? updates(i) : updates),
-            }
-          : i
+        i.id === id ? { ...i, ...(typeof updates === "function" ? updates(i) : updates) } : i
       )
     );
   };
+
+  const handleAdvanceStage = handleAdvanceStageFactory(
+    updateIdea,
+    (id: string) => ideas.find((i) => i.id === id)
+  );
+
+  const handleConfirmBuild = handleConfirmBuildFactory(
+    updateIdea,
+    setDeployLogs,
+    getMvpStream,
+    sanitizeMessages
+  );
 
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
@@ -39,12 +45,7 @@ export default function useChatStages(onReady?: () => void) {
       const starter = {
         id,
         title: "",
-        messages: [
-          {
-            role: "assistant",
-            content: GREETING,
-          },
-        ],
+        messages: [{ role: "assistant", content: GREETING }],
         locked: false,
         currentStage: "ideation" as StageType,
         takeaways: {},
@@ -55,29 +56,13 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdeaId, ideas.length, onReady]);
 
-  const handleAdvanceStage = handleAdvanceStageFactory(
-    updateIdea,
-    ideas,
-    postValidate,
-    postBranding
-  );
-
-  const handleConfirmBuild = handleConfirmBuildFactory(
-    updateIdea,
-    setDeployLogs,
-    ideas,
-    getMvpStream,
-    sanitizeMessages
-  );
-
   const handleSend = async (content: string) => {
     const current = activeIdea;
     if (!current) return;
 
     const trimmed = content.trim().toLowerCase();
-
-    const stageShortcuts: Record<string, () => void> = {
-      continue: () => handleAdvanceStage(current, "validation"),
+    const commands: Record<string, () => void> = {
+      continue: () => handleAdvanceStage(current.id, "validation"),
       restart: () =>
         updateIdea(current.id, {
           messages: [...current.messages, { role: "user", content }],
@@ -86,14 +71,14 @@ export default function useChatStages(onReady?: () => void) {
         updateIdea(current.id, {
           messages: [...current.messages, { role: "user", content }],
         }),
-      "accept branding": () => handleAdvanceStage(current, "mvp"),
-      "regenerate branding": () => handleAdvanceStage(current, "branding"),
-      "start over": () => handleAdvanceStage(current, "ideation"),
+      "accept branding": () => handleAdvanceStage(current.id, "mvp"),
+      "regenerate branding": () => handleAdvanceStage(current.id, "branding"),
+      "start over": () => handleAdvanceStage(current.id, "ideation"),
       deploy: () => handleConfirmBuild(current),
     };
 
-    if (stageShortcuts[trimmed]) {
-      stageShortcuts[trimmed]();
+    if (commands[trimmed]) {
+      commands[trimmed]();
       return;
     }
 
@@ -143,7 +128,7 @@ export default function useChatStages(onReady?: () => void) {
         }, 100);
 
         if (nextStage && nextStage !== current.currentStage) {
-          setTimeout(() => handleAdvanceStage(current, nextStage), 1000);
+          setTimeout(() => handleAdvanceStage(current.id, nextStage), 1000);
         }
       }
     };
