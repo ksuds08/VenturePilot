@@ -52,7 +52,7 @@ export default function useChatStages(onReady?: () => void) {
         messages: [
           {
             role: "assistant",
-            content: "", // streaming will fill this
+            content: "", // Will be streamed
           },
         ],
         locked: false,
@@ -65,6 +65,7 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdeaId, ideas.length]);
 
+  // ✅ Stream greeting from GREETING constant
   const startGreetingStream = () => {
     if (!greetingInitialized || !activeIdeaId) return;
 
@@ -85,10 +86,10 @@ export default function useChatStages(onReady?: () => void) {
         })
       );
 
-      if (i <= greeting.length) {
-        setTimeout(() => reveal(i + 1), 20);
+      if (i < greeting.length) {
+        setTimeout(() => reveal(i + 1), 20); // ✅ correct condition
       } else {
-        if (onReady) onReady();
+        if (onReady) onReady(); // ✅ only called after final char
       }
     };
 
@@ -133,6 +134,6 @@ export default function useChatStages(onReady?: () => void) {
     handleSend,
     handleAdvanceStage,
     handleConfirmBuild,
-    startGreetingStream, // ✅ safe and manually controlled now
+    startGreetingStream,
   };
 }
