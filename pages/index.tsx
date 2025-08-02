@@ -5,26 +5,51 @@ import ChatAssistant from "../components/ChatAssistant";
 import Image from "next/image";
 
 /**
- * Landing page component with smooth scroll-to-chat functionality
- * and streaming assistant greeting after scroll.
+ * Hook to track if an element is in view using IntersectionObserver
+ */
+function useInView(ref: React.RefObject<HTMLElement>, offset = 0) {
+  const [isInView, setIsInView] = useState(false);
+
+  useEffect(() => {
+    if (!ref.current) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsInView(entry.isIntersecting);
+      },
+      {
+        rootMargin: `${offset}px`,
+      }
+    );
+
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [ref, offset]);
+
+  return isInView;
+}
+
+/**
+ * Landing page with scroll-to-chat and streaming greeting trigger.
  */
 export default function LandingPage() {
   const chatRef = useRef<HTMLDivElement | null>(null);
-
-  const [scrollToChat, setScrollToChat] = useState(false);
+  const isChatInView = useInView(chatRef);
   const [startGreeting, setStartGreeting] = useState<() => void>(() => {});
+  const [shouldScroll, setShouldScroll] = useState(false);
 
   useEffect(() => {
-    if (scrollToChat && chatRef.current) {
+    if (shouldScroll && chatRef.current) {
       chatRef.current.scrollIntoView({ behavior: "smooth" });
-      setScrollToChat(false);
-
-      // Start simulated greeting after scroll finishes
-      setTimeout(() => {
-        startGreeting();
-      }, 500);
+      setShouldScroll(false);
     }
-  }, [scrollToChat, startGreeting]);
+  }, [shouldScroll, chatRef]);
+
+  useEffect(() => {
+    if (isChatInView) {
+      startGreeting();
+    }
+  }, [isChatInView, startGreeting]);
 
   return (
     <Layout>
@@ -63,7 +88,7 @@ export default function LandingPage() {
             transition={{ delay: 0.3 }}
           >
             <button
-              onClick={() => setScrollToChat(true)}
+              onClick={() => setShouldScroll(true)}
               className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-8 py-3 rounded-2xl text-lg shadow-lg font-semibold hover:scale-105 hover:shadow-xl transition-all duration-200"
             >
               Launch Your Startup Now
