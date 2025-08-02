@@ -46,52 +46,55 @@ export function useStageTransition({
 
     updateIdea(id, { currentStage: nextStage });
 
-    // ✅ STREAMED VALIDATION STAGE
+    // === VALIDATION STAGE ===
     if (nextStage === "validation") {
       try {
         const data = await postValidate(idea.title, idea.id);
         const fullValidation = data?.validation || "";
         const summary = fullValidation.split("\n")[0] || fullValidation;
 
-        const placeholder = { role: "assistant" as const, content: "" };
-        const messagesWithPlaceholder = [...idea.messages, placeholder];
-        updateIdea(id, { messages: messagesWithPlaceholder });
+        updateIdea(id, {
+          messages: [...idea.messages, { role: "assistant", content: "Thinking" }],
+        });
 
-        const reveal = (index: number) => {
+        const reveal = (i: number) => {
           const content =
             `✅ Validation complete. Here's what we found:\n\n` +
-            fullValidation.slice(0, index);
-          const updatedMessages = messagesWithPlaceholder.map((m, i) =>
-            i === messagesWithPlaceholder.length - 1 ? { ...m, content } : m
-          );
-          updateIdea(id, { messages: updatedMessages });
+            fullValidation.slice(0, i);
 
-          if (index <= fullValidation.length) {
-            setTimeout(() => reveal(index + 1), 10);
+          updateIdea(id, (prev: any) => ({
+            ...prev,
+            messages: prev.messages.map((m: any, idx: number) =>
+              idx === prev.messages.length - 1 ? { ...m, content } : m
+            ),
+          }));
+
+          if (i < fullValidation.length) {
+            requestAnimationFrame(() => reveal(i + 1));
           } else {
-            const withActions = updatedMessages.map((m, i) =>
-              i === updatedMessages.length - 1
-                ? {
-                    ...m,
-                    actions: [
-                      { label: "Continue to Branding", command: "continue" },
-                      { label: "Restart", command: "restart" },
-                    ],
-                  }
-                : m
-            );
-            updateIdea(id, {
-              messages: withActions,
+            updateIdea(id, (prev: any) => ({
+              ...prev,
+              messages: prev.messages.map((m: any, idx: number) =>
+                idx === prev.messages.length - 1
+                  ? {
+                      ...m,
+                      actions: [
+                        { label: "Continue to Branding", command: "continue" },
+                        { label: "Restart", command: "restart" },
+                      ],
+                    }
+                  : m
+              ),
               validation: fullValidation,
               takeaways: {
-                ...idea.takeaways,
+                ...prev.takeaways,
                 validationSummary: summary,
               },
-            });
+            }));
           }
         };
 
-        reveal(1);
+        requestAnimationFrame(() => reveal(1));
       } catch {
         updateIdea(id, {
           messages: [
@@ -105,7 +108,7 @@ export function useStageTransition({
       }
     }
 
-    // ✅ STREAMED BRANDING STAGE
+    // === BRANDING STAGE ===
     if (nextStage === "branding") {
       try {
         const data = await postBranding(idea.title, idea.id);
@@ -116,42 +119,47 @@ export function useStageTransition({
           `**Colors:** ${data.colors?.join(", ")}\n` +
           `**Logo Concept:** ${data.logoDesc}\n\n`;
 
-        const placeholder = {
-          role: "assistant" as const,
-          content: "",
-          imageUrl: data.logoUrl || undefined,
-        };
+        updateIdea(id, {
+          messages: [
+            ...idea.messages,
+            {
+              role: "assistant",
+              content: "Thinking",
+              imageUrl: data.logoUrl || undefined,
+            },
+          ],
+        });
 
-        const messagesWithPlaceholder = [...idea.messages, placeholder];
-        updateIdea(id, { messages: messagesWithPlaceholder });
+        const reveal = (i: number) => {
+          const content = brandingText.slice(0, i);
 
-        const reveal = (index: number) => {
-          const content = brandingText.slice(0, index);
-          const updatedMessages = messagesWithPlaceholder.map((m, i) =>
-            i === messagesWithPlaceholder.length - 1 ? { ...m, content } : m
-          );
-          updateIdea(id, { messages: updatedMessages });
+          updateIdea(id, (prev: any) => ({
+            ...prev,
+            messages: prev.messages.map((m: any, idx: number) =>
+              idx === prev.messages.length - 1 ? { ...m, content } : m
+            ),
+          }));
 
-          if (index <= brandingText.length) {
-            setTimeout(() => reveal(index + 1), 10);
+          if (i < brandingText.length) {
+            requestAnimationFrame(() => reveal(i + 1));
           } else {
-            const withActions = updatedMessages.map((m, i) =>
-              i === updatedMessages.length - 1
-                ? {
-                    ...m,
-                    actions: [
-                      { label: "Accept Branding", command: "accept branding" },
-                      { label: "Regenerate Branding", command: "regenerate branding" },
-                      { label: "Start Over", command: "start over" },
-                    ],
-                  }
-                : m
-            );
-            updateIdea(id, {
-              messages: withActions,
+            updateIdea(id, (prev: any) => ({
+              ...prev,
+              messages: prev.messages.map((m: any, idx: number) =>
+                idx === prev.messages.length - 1
+                  ? {
+                      ...m,
+                      actions: [
+                        { label: "Accept Branding", command: "accept branding" },
+                        { label: "Regenerate Branding", command: "regenerate branding" },
+                        { label: "Start Over", command: "start over" },
+                      ],
+                    }
+                  : m
+              ),
               branding: data,
               takeaways: {
-                ...idea.takeaways,
+                ...prev.takeaways,
                 branding: {
                   name: data.name,
                   tagline: data.tagline,
@@ -160,11 +168,11 @@ export function useStageTransition({
                   logoUrl: data.logoUrl || "",
                 },
               },
-            });
+            }));
           }
         };
 
-        reveal(1);
+        requestAnimationFrame(() => reveal(1));
       } catch {
         updateIdea(id, {
           messages: [
@@ -178,15 +186,14 @@ export function useStageTransition({
       }
     }
 
-    // 🚀 MVP stage
+    // === MVP STAGE ===
     if (nextStage === "mvp") {
       const mvpMsg = {
         role: "assistant" as const,
         content: "✅ You're ready to deploy your MVP!\n\n",
         actions: [{ label: "Deploy", command: "deploy" }],
       };
-      const messages = [...idea.messages, mvpMsg];
-      updateIdea(id, { messages });
+      updateIdea(id, { messages: [...idea.messages, mvpMsg] });
     }
 
     setLoading(false);
