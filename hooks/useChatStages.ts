@@ -13,8 +13,6 @@ export default function useChatStages(onReady?: () => void) {
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
-
-  const [shouldStreamGreeting, setShouldStreamGreeting] = useState(false);
   const [greetingInitialized, setGreetingInitialized] = useState(false);
 
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -44,7 +42,7 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdea?.currentStage]);
 
-  // Initialize idea with empty assistant message (blank for streaming)
+  // Initialize idea with empty assistant message
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
       const id = uuidv4();
@@ -54,7 +52,7 @@ export default function useChatStages(onReady?: () => void) {
         messages: [
           {
             role: "assistant",
-            content: "", // empty for streaming
+            content: "", // streaming will fill this
           },
         ],
         locked: false,
@@ -63,19 +61,12 @@ export default function useChatStages(onReady?: () => void) {
       };
       setIdeas([starter]);
       setActiveIdeaId(id);
-      setGreetingInitialized(true); // enable stream once ready
+      setGreetingInitialized(true);
     }
   }, [activeIdeaId, ideas.length]);
 
-  // Stream greeting once explicitly triggered
-  useEffect(() => {
-    if (
-      !greetingInitialized ||
-      !shouldStreamGreeting ||
-      !activeIdeaId
-    ) {
-      return;
-    }
+  const startGreetingStream = () => {
+    if (!greetingInitialized || !activeIdeaId) return;
 
     const greeting = GREETING;
 
@@ -97,13 +88,12 @@ export default function useChatStages(onReady?: () => void) {
       if (i <= greeting.length) {
         setTimeout(() => reveal(i + 1), 20);
       } else {
-        setShouldStreamGreeting(false);
         if (onReady) onReady();
       }
     };
 
     reveal(1);
-  }, [shouldStreamGreeting, greetingInitialized, activeIdeaId]);
+  };
 
   const handleAdvanceStage = useStageTransition({
     ideas,
@@ -143,6 +133,6 @@ export default function useChatStages(onReady?: () => void) {
     handleSend,
     handleAdvanceStage,
     handleConfirmBuild,
-    startGreetingStream: () => setShouldStreamGreeting(true),
+    startGreetingStream, // ✅ safe and manually controlled now
   };
 }
