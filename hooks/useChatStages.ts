@@ -13,7 +13,7 @@ export default function useChatStages(onReady?: () => void) {
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
-  const [hasStreamedGreeting, setHasStreamedGreeting] = useState(false); // ✅ new
+  const [hasStreamedGreeting, setHasStreamedGreeting] = useState(false);
 
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -29,7 +29,7 @@ export default function useChatStages(onReady?: () => void) {
   const updateIdea = (id: any, updates: any) =>
     rawUpdateIdea(setIdeas, id, updates);
 
-  // Initialize empty assistant greeting
+  // Initialize idea with blank assistant message
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
       const id = uuidv4();
@@ -39,7 +39,7 @@ export default function useChatStages(onReady?: () => void) {
         messages: [
           {
             role: "assistant",
-            content: "", // stream fills this in
+            content: "", // for streaming
           },
         ],
         locked: false,
@@ -51,7 +51,6 @@ export default function useChatStages(onReady?: () => void) {
     }
   }, [activeIdeaId, ideas.length]);
 
-  // ✅ Final-safe streaming function
   const startGreetingStream = () => {
     if (hasStreamedGreeting || !activeIdeaId || ideas.length === 0) return;
 
@@ -74,15 +73,14 @@ export default function useChatStages(onReady?: () => void) {
       );
 
       if (i < greeting.length) {
-        setTimeout(() => reveal(i + 1), 20);
+        requestAnimationFrame(() => reveal(i + 1));
       } else {
-        setHasStreamedGreeting(true); // ✅ prevent loop
+        setHasStreamedGreeting(true);
         if (onReady) onReady();
       }
     };
 
-    // Delay just slightly to let state settle
-    setTimeout(() => reveal(1), 50);
+    requestAnimationFrame(() => reveal(1));
   };
 
   const handleAdvanceStage = useStageTransition({
