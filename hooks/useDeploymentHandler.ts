@@ -37,14 +37,15 @@ export function useDeploymentHandler({
 
     let messageAccumulator = [...idea.messages];
 
-    messageAccumulator = [
-      ...messageAccumulator,
-      {
-        role: "assistant",
-        content: "🚀 Beginning MVP build and deployment...",
-      },
-    ];
+    // Add MVP placeholder
+    const placeholderMsg = {
+      role: "assistant" as const,
+      content: "🛠️ Building your MVP...",
+    };
+    messageAccumulator = [...messageAccumulator, placeholderMsg];
     updateIdea(id, { messages: messageAccumulator });
+
+    let firstLogSeen = false;
 
     const appendLog = (line: string) => {
       messageAccumulator = [
@@ -62,6 +63,17 @@ export function useDeploymentHandler({
         // onLog
         (log) => {
           setDeployLogs((prev) => [...prev, log]);
+
+          if (!firstLogSeen) {
+            updateIdea(id, (prev: any) => ({
+              ...prev,
+              messages: prev.messages.filter(
+                (m: any) => m.content !== "🛠️ Building your MVP..."
+              ),
+            }));
+            firstLogSeen = true;
+          }
+
           appendLog(log);
         },
         // onDone
