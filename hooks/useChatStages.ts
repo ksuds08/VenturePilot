@@ -13,7 +13,7 @@ export default function useChatStages(onReady?: () => void) {
   const [activeIdeaId, setActiveIdeaId] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [deployLogs, setDeployLogs] = useState<string[]>([]);
-  const [greetingInitialized, setGreetingInitialized] = useState(false);
+  const [hasStreamedGreeting, setHasStreamedGreeting] = useState(false); // ✅ new
 
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -29,20 +29,7 @@ export default function useChatStages(onReady?: () => void) {
   const updateIdea = (id: any, updates: any) =>
     rawUpdateIdea(setIdeas, id, updates);
 
-  // Track panel open flags
-  useEffect(() => {
-    if (activeIdea) {
-      setOpenPanels((prev) => ({
-        ...prev,
-        ideation: prev.ideation || activeIdea.currentStage === "ideation",
-        validation:
-          prev.validation || activeIdea.currentStage === "validation",
-        branding: prev.branding || activeIdea.currentStage === "branding",
-      }));
-    }
-  }, [activeIdea?.currentStage]);
-
-  // Initialize idea with empty assistant message
+  // Initialize empty assistant greeting
   useEffect(() => {
     if (!activeIdeaId && ideas.length === 0) {
       const id = uuidv4();
@@ -52,7 +39,7 @@ export default function useChatStages(onReady?: () => void) {
         messages: [
           {
             role: "assistant",
-            content: "", // Will be streamed
+            content: "", // stream fills this in
           },
         ],
         locked: false,
@@ -61,20 +48,20 @@ export default function useChatStages(onReady?: () => void) {
       };
       setIdeas([starter]);
       setActiveIdeaId(id);
-      setGreetingInitialized(true);
     }
   }, [activeIdeaId, ideas.length]);
 
-  // ✅ Stream greeting from GREETING constant
+  // ✅ Final-safe streaming function
   const startGreetingStream = () => {
-    if (!greetingInitialized || !activeIdeaId) return;
+    if (hasStreamedGreeting || !activeIdeaId || ideas.length === 0) return;
 
     const greeting = GREETING;
+    const ideaId = activeIdeaId;
 
     const reveal = (i: number) => {
       setIdeas((prevIdeas) =>
         prevIdeas.map((idea) => {
-          if (idea.id !== activeIdeaId) return idea;
+          if (idea.id !== ideaId) return idea;
 
           const updatedMessages = [...idea.messages];
           updatedMessages[0] = {
@@ -87,13 +74,15 @@ export default function useChatStages(onReady?: () => void) {
       );
 
       if (i < greeting.length) {
-        setTimeout(() => reveal(i + 1), 20); // ✅ correct condition
+        setTimeout(() => reveal(i + 1), 20);
       } else {
-        if (onReady) onReady(); // ✅ only called after final char
+        setHasStreamedGreeting(true); // ✅ prevent loop
+        if (onReady) onReady();
       }
     };
 
-    reveal(1);
+    // Delay just slightly to let state settle
+    setTimeout(() => reveal(1), 50);
   };
 
   const handleAdvanceStage = useStageTransition({
