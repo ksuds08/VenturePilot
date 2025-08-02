@@ -77,13 +77,15 @@ export default function ChatPanel({
                   : "bg-blue-50 text-left"
               }`}
             >
-              <ReactMarkdown
-                // @ts-ignore: suppress remark-gfm type mismatch
-                remarkPlugins={[remarkGfm as any]}
-                className="prose prose-sm break-words max-w-full"
-              >
-                {msg.content}
-              </ReactMarkdown>
+              {msg.content.length > 0 && (
+                <ReactMarkdown
+                  // @ts-ignore
+                  remarkPlugins={[remarkGfm]}
+                  className="prose prose-sm break-words max-w-full"
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              )}
               {msg.imageUrl && (
                 <div className="mt-2">
                   <img
