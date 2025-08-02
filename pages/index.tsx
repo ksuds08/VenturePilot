@@ -5,51 +5,39 @@ import ChatAssistant from "../components/ChatAssistant";
 import Image from "next/image";
 
 /**
- * Hook to track if an element is in view using IntersectionObserver
- */
-function useInView(ref: React.RefObject<HTMLElement>, offset = 0) {
-  const [isInView, setIsInView] = useState(false);
-
-  useEffect(() => {
-    if (!ref.current) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setIsInView(entry.isIntersecting);
-      },
-      {
-        rootMargin: `${offset}px`,
-      }
-    );
-
-    observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [ref, offset]);
-
-  return isInView;
-}
-
-/**
- * Landing page with scroll-to-chat and streaming greeting trigger.
+ * Landing page with scroll-to-chat and safe streaming trigger.
  */
 export default function LandingPage() {
   const chatRef = useRef<HTMLDivElement | null>(null);
-  const isChatInView = useInView(chatRef);
   const [startGreeting, setStartGreeting] = useState<() => void>(() => {});
-  const [shouldScroll, setShouldScroll] = useState(false);
+  const [scrollToChat, setScrollToChat] = useState(false);
 
   useEffect(() => {
-    if (shouldScroll && chatRef.current) {
+    if (scrollToChat && chatRef.current) {
       chatRef.current.scrollIntoView({ behavior: "smooth" });
-      setShouldScroll(false);
+      setScrollToChat(false);
+
+      // Wait for startGreeting to be set, then trigger it
+      const tryStart = () => {
+        const isReady =
+          startGreeting && startGreeting.toString() !== "() => {}";
+
+        if (isReady) {
+          console.log("✅ startGreeting is ready. Triggering stream.");
+          startGreeting();
+        } else {
+          console.log("⏳ Waiting for startGreeting to be available...");
+          setTimeout(tryStart, 100);
+        }
+      };
+
+      tryStart();
     }
-  }, [shouldScroll, chatRef]);
+  }, [scrollToChat, startGreeting]);
 
   useEffect(() => {
-    if (isChatInView) {
-      startGreeting();
-    }
-  }, [isChatInView, startGreeting]);
+    console.log("📥 startGreeting registered:", startGreeting.toString());
+  }, [startGreeting]);
 
   return (
     <Layout>
@@ -88,7 +76,10 @@ export default function LandingPage() {
             transition={{ delay: 0.3 }}
           >
             <button
-              onClick={() => setShouldScroll(true)}
+              onClick={() => {
+                console.log("🖱️ Launch button clicked. Scrolling...");
+                setScrollToChat(true);
+              }}
               className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white px-8 py-3 rounded-2xl text-lg shadow-lg font-semibold hover:scale-105 hover:shadow-xl transition-all duration-200"
             >
               Launch Your Startup Now
@@ -101,7 +92,12 @@ export default function LandingPage() {
           <h2 className="text-3xl font-bold mb-6 text-center text-slate-900 dark:text-white">
             Your AI Co-Founder Is Ready
           </h2>
-          <ChatAssistant onInitGreeting={(starter) => setStartGreeting(() => starter)} />
+          <ChatAssistant
+            onInitGreeting={(starter) => {
+              console.log("📦 onInitGreeting received from ChatAssistant");
+              setStartGreeting(() => starter);
+            }}
+          />
         </section>
       </>
     </Layout>
