@@ -1,6 +1,6 @@
 import { useState, KeyboardEvent, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-// @ts-ignore: suppress type error due to vfile version mismatch in remark-gfm
+// @ts-ignore
 import remarkGfm from "remark-gfm";
 
 export interface ChatAction {
@@ -113,7 +113,15 @@ export default function ChatPanel({
             )}
           </div>
         ))}
-        {loading && <div className="text-gray-400 text-sm">Thinking…</div>}
+
+        {loading && (
+          <div className="text-gray-400 text-sm font-mono flex items-center gap-1">
+            <span>Thinking</span>
+            <span className="animate-pulse">.</span>
+            <span className="animate-pulse delay-150">.</span>
+            <span className="animate-pulse delay-300">.</span>
+          </div>
+        )}
       </div>
 
       <div className="flex items-end gap-2 pt-2 border-t mt-4">
