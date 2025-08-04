@@ -8,13 +8,26 @@ function isProbablyJSON(text: string): boolean {
   );
 }
 
-export async function buildAndDeployApp(payload: BuildPayload) {
-  const rawPlan =
-    payload.plan || payload.ideaSummary?.description || '';
+function extractFallbackPlan(payload: BuildPayload): string {
+  const raw =
+    payload.plan ||
+    payload.ideaSummary?.description ||
+    '';
 
-  const fallbackPlan = isProbablyJSON(rawPlan)
-    ? 'No plan provided'
-    : rawPlan;
+  if (!isProbablyJSON(raw) && raw.trim()) {
+    return raw.trim();
+  }
+
+  const reversed = [...payload.messages].reverse();
+  const lastAssistant = reversed.find(
+    (m) => m.role === 'assistant' && !isProbablyJSON(m.content)
+  );
+
+  return lastAssistant?.content?.trim() || 'No plan provided';
+}
+
+export async function buildAndDeployApp(payload: BuildPayload) {
+  const fallbackPlan = extractFallbackPlan(payload);
 
   const projectName = `mvp-${payload.ideaId}`;
   const files = generateSimpleApp(
