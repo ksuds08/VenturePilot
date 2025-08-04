@@ -1,14 +1,5 @@
 import type { BuildPayload } from './types';
 
-function escapeHTML(content: string): string {
-  return content
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 export function generateSimpleApp(
   plan: string,
   branding: BuildPayload['branding'],
@@ -19,8 +10,7 @@ export function generateSimpleApp(
   const primaryColor = branding?.palette?.primary || '#0066cc';
 
   const planText = typeof plan === 'string' ? plan : JSON.stringify(plan, null, 2);
-  const escapedPlan = escapeHTML(planText);
-  const paragraphs = `<pre>${escapedPlan}</pre>`;
+  const paragraphs = `<pre>${planText}</pre>`;
 
   const today = new Date().toISOString().split('T')[0];
 
