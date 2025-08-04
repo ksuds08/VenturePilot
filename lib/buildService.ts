@@ -14,7 +14,8 @@ export async function buildAndDeployApp(payload: BuildPayload) {
     payload.plan || payload.ideaSummary?.description || "No plan provided";
 
   const projectName = `mvp-${payload.ideaId}`;
-  const files = generateSelfContainedApp(fallbackPlan, payload.branding, projectName);
+  const kvId = await createKvNamespace(projectName); // 🆕 create KV namespace
+  const files = generateSimpleApp(fallbackPlan, payload.branding, projectName, kvId); // 🆕 inject ID
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
   return {
@@ -24,14 +25,44 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   };
 }
 
+async function createKvNamespace(projectName: string): Promise<string> {
+  const accountId = (globalThis as any).CF_ACCOUNT_ID;
+  const token = (globalThis as any).CF_API_TOKEN;
+
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ title: `${projectName}-ASSETS` }),
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data?.result?.id) {
+    throw new Error(`Failed to create KV namespace: ${JSON.stringify(data?.errors || data)}`);
+  }
+
+  return data.result.id;
+}
+
 function toBase64(str: string): string {
-  return Buffer.from(str, "utf-8").toString("base64");
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(str);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
   const org = (globalThis as any).GITHUB_ORG;
+  if (!token || (!username && !org)) {
+    throw new Error("GitHub credentials are not configured");
+  }
 
   const repoName = `mvp-${ideaId}`;
   const owner = org || username;
@@ -40,7 +71,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     ? `https://api.github.com/orgs/${org}/repos`
     : `https://api.github.com/user/repos`;
 
-  await fetch(createRepoEndpoint, {
+  const createRes = await fetch(createRepoEndpoint, {
     method: "POST",
     headers: {
       Authorization: `token ${token}`,
@@ -53,6 +84,11 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       auto_init: true,
     }),
   });
+
+  if (!createRes.ok) {
+    const text = await createRes.text();
+    throw new Error(`GitHub repo creation failed: ${text}`);
+  }
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
@@ -72,6 +108,12 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
         }),
       }
     );
+
+    if (!blobRes.ok) {
+      const text = await blobRes.text();
+      throw new Error(`Blob creation failed for ${path}: ${text}`);
+    }
+
     const { sha } = await blobRes.json();
     blobs.push({ path, mode: "100644", type: "blob", sha });
   }
@@ -103,6 +145,12 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
+
+  if (!treeRes.ok) {
+    const text = await treeRes.text();
+    throw new Error(`Tree creation failed: ${text}`);
+  }
+
   const { sha: newTreeSha } = await treeRes.json();
 
   const commitRes = await fetch(
@@ -121,9 +169,15 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
+
+  if (!commitRes.ok) {
+    const text = await commitRes.text();
+    throw new Error(`Commit failed: ${text}`);
+  }
+
   const { sha: newCommitSha } = await commitRes.json();
 
-  await fetch(
+  const patchRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
     {
       method: "PATCH",
@@ -139,13 +193,19 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     }
   );
 
+  if (!patchRes.ok) {
+    const text = await patchRes.text();
+    throw new Error(`Patch ref failed: ${text}`);
+  }
+
   return `https://github.com/${owner}/${repoName}`;
 }
 
-function generateSelfContainedApp(
+function generateSimpleApp(
   plan: string,
   branding: any,
-  projectName: string
+  projectName: string,
+  kvId: string
 ): Record<string, string> {
   const appName = branding?.name || "My AI App";
   const tagline = branding?.tagline || "An AI‑powered experience";
@@ -162,7 +222,8 @@ function generateSelfContainedApp(
 
   const today = new Date().toISOString().split("T")[0];
 
-  const indexHtml = `<!DOCTYPE html>
+  return {
+    "index.html": `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -180,13 +241,13 @@ function generateSelfContainedApp(
     ${paragraphs}
   </main>
   <footer class="footer">
-    <p>Generated by AI on ${today}</p>
+    <p>Generated by AI on ${new Date().toLocaleDateString()}</p>
   </footer>
   <script src="app.js"></script>
 </body>
-</html>`;
+</html>`,
 
-  const stylesCss = `body {
+    "styles.css": `body {
   font-family: sans-serif;
   background: #f5f5f5;
   color: #333;
@@ -210,43 +271,70 @@ function generateSelfContainedApp(
   padding: 1rem;
   font-size: 0.8rem;
   color: #666;
-}`;
+}`,
 
-  const appJs = `console.log("App initialized");`;
+    "app.js": `export function init() {
+  console.log("App initialized");
+}
+window.addEventListener("DOMContentLoaded", init);`,
 
-  const functionsIndexTs = `const files: Record<string, string> = {
-  "/": \`${indexHtml}\`,
-  "/index.html": \`${indexHtml}\`,
-  "/styles.css": \`${stylesCss}\`,
-  "/app.js": \`${appJs}\`,
+    "functions/index.ts": `const files: Record<string, string> = {
+  "/": "index.html",
+  "/index.html": "index.html",
+  "/styles.css": "styles.css",
+  "/app.js": "app.js",
 };
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const path = files[url.pathname] ? url.pathname : "/index.html";
-    const content = files[path];
+    const path = files[url.pathname] || "index.html";
 
-    const contentType = getContentType(path);
-    return new Response(content, {
-      headers: { "Content-Type": contentType },
-    });
+    try {
+      const content = await env.ASSETS.get(path, { type: "text" });
+      if (!content) throw new Error("File not found");
+
+      const contentType = getContentType(path);
+      return new Response(content, {
+        headers: { "Content-Type": contentType },
+      });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
   },
 };
 
-function getContentType(path: string): string {
-  if (path.endsWith(".html")) return "text/html";
-  if (path.endsWith(".css")) return "text/css";
-  if (path.endsWith(".js")) return "application/javascript";
+function getContentType(file: string): string {
+  if (file.endsWith(".html")) return "text/html";
+  if (file.endsWith(".css")) return "text/css";
+  if (file.endsWith(".js")) return "application/javascript";
   return "text/plain";
 }
-`;
+`,
 
-  const wranglerToml = `name = "${projectName}"
+    "wrangler.toml": `name = "${projectName}"
 main = "functions/index.ts"
-compatibility_date = "${today}"`;
+compatibility_date = "${today}"
 
-  const deployYml = `name: Deploy to Cloudflare Workers
+[[kv_namespaces]]
+binding = "ASSETS"
+id = "${kvId}"
+`,
+
+    "tsconfig.json": `{
+  "compilerOptions": {
+    "target": "es2017",
+    "downlevelIteration": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}`,
+
+    ".github/workflows/deploy.yml": `name: Deploy to Cloudflare Workers
 
 on:
   push:
@@ -263,26 +351,6 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`;
-
-  const tsconfigJson = `{
-  "compilerOptions": {
-    "target": "es2017",
-    "module": "esnext",
-    "moduleResolution": "node",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true
-  }
-}`;
-
-  return {
-    "index.html": indexHtml,
-    "styles.css": stylesCss,
-    "app.js": appJs,
-    "functions/index.ts": functionsIndexTs,
-    "wrangler.toml": wranglerToml,
-    ".github/workflows/deploy.yml": deployYml,
-    "tsconfig.json": tsconfigJson,
+`
   };
 }
