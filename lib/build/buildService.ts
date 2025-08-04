@@ -2,9 +2,19 @@ import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import type { BuildPayload } from './types';
 
+function isProbablyJSON(text: string): boolean {
+  return typeof text === 'string' && (
+    text.trim().startsWith('{') || text.trim().startsWith('[')
+  );
+}
+
 export async function buildAndDeployApp(payload: BuildPayload) {
-  const fallbackPlan =
-    payload.plan || payload.ideaSummary?.description || 'No plan provided';
+  const rawPlan =
+    payload.plan || payload.ideaSummary?.description || '';
+
+  const fallbackPlan = isProbablyJSON(rawPlan)
+    ? 'No plan provided'
+    : rawPlan;
 
   const projectName = `mvp-${payload.ideaId}`;
   const files = generateSimpleApp(
