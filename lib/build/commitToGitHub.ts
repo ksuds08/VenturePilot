@@ -1,9 +1,13 @@
 import { toBase64 } from "./toBase64";
 
-export async function commitToGitHub(ideaId: string, files: Record<string, string>) {
+export async function commitToGitHub(
+  ideaId: string,
+  files: Record<string, string>
+): Promise<string> {
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
   const org = (globalThis as any).GITHUB_ORG;
+
   if (!token || (!username && !org)) {
     throw new Error("GitHub credentials are not configured");
   }
@@ -34,10 +38,12 @@ export async function commitToGitHub(ideaId: string, files: Record<string, strin
     throw new Error(`GitHub repo creation failed: ${text}`);
   }
 
+  // Prepare blobs for all files
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
   for (const [rawPath, content] of Object.entries(files)) {
-    const path = rawPath.startsWith("/") ? rawPath.slice(1) : rawPath;
+    const path = rawPath.replace(/^\/+/, ""); // Remove leading slash if present
+    console.log(`📦 Uploading: ${path}`);
 
     const blobRes = await fetch(
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
@@ -74,7 +80,9 @@ export async function commitToGitHub(ideaId: string, files: Record<string, strin
     }
   );
 
-  const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
+  const baseCommitSha = refRes.ok
+    ? (await refRes.json()).object?.sha
+    : undefined;
 
   const treeRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
@@ -144,5 +152,6 @@ export async function commitToGitHub(ideaId: string, files: Record<string, strin
     throw new Error(`Patch ref failed: ${text}`);
   }
 
+  console.log(`✅ Repo pushed: https://github.com/${owner}/${repoName}`);
   return `https://github.com/${owner}/${repoName}`;
 }
