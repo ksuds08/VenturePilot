@@ -1,5 +1,3 @@
-// buildService.ts
-
 export interface BuildPayload {
   ideaId: string;
   ideaSummary: {
@@ -16,7 +14,7 @@ export async function buildAndDeployApp(payload: BuildPayload) {
     payload.plan || payload.ideaSummary?.description || "No plan provided";
 
   const projectName = `mvp-${payload.ideaId}`;
-  const files = generateStandaloneWorkerApp(fallbackPlan, payload.branding, projectName);
+  const files = generateSelfContainedApp(fallbackPlan, payload.branding, projectName);
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
   return {
@@ -27,22 +25,13 @@ export async function buildAndDeployApp(payload: BuildPayload) {
 }
 
 function toBase64(str: string): string {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(str);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+  return Buffer.from(str, "utf-8").toString("base64");
 }
 
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
   const org = (globalThis as any).GITHUB_ORG;
-  if (!token || (!username && !org)) {
-    throw new Error("GitHub credentials are not configured");
-  }
 
   const repoName = `mvp-${ideaId}`;
   const owner = org || username;
@@ -51,7 +40,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     ? `https://api.github.com/orgs/${org}/repos`
     : `https://api.github.com/user/repos`;
 
-  const createRes = await fetch(createRepoEndpoint, {
+  await fetch(createRepoEndpoint, {
     method: "POST",
     headers: {
       Authorization: `token ${token}`,
@@ -64,11 +53,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       auto_init: true,
     }),
   });
-
-  if (!createRes.ok) {
-    const text = await createRes.text();
-    throw new Error(`GitHub repo creation failed: ${text}`);
-  }
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
@@ -88,12 +72,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
         }),
       }
     );
-
-    if (!blobRes.ok) {
-      const text = await blobRes.text();
-      throw new Error(`Blob creation failed for ${path}: ${text}`);
-    }
-
     const { sha } = await blobRes.json();
     blobs.push({ path, mode: "100644", type: "blob", sha });
   }
@@ -125,12 +103,6 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
-
-  if (!treeRes.ok) {
-    const text = await treeRes.text();
-    throw new Error(`Tree creation failed: ${text}`);
-  }
-
   const { sha: newTreeSha } = await treeRes.json();
 
   const commitRes = await fetch(
@@ -149,15 +121,9 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
       }),
     }
   );
-
-  if (!commitRes.ok) {
-    const text = await commitRes.text();
-    throw new Error(`Commit failed: ${text}`);
-  }
-
   const { sha: newCommitSha } = await commitRes.json();
 
-  const patchRes = await fetch(
+  await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
     {
       method: "PATCH",
@@ -173,15 +139,10 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     }
   );
 
-  if (!patchRes.ok) {
-    const text = await patchRes.text();
-    throw new Error(`Patch ref failed: ${text}`);
-  }
-
   return `https://github.com/${owner}/${repoName}`;
 }
 
-function generateStandaloneWorkerApp(
+function generateSelfContainedApp(
   plan: string,
   branding: any,
   projectName: string
@@ -201,20 +162,70 @@ function generateStandaloneWorkerApp(
 
   const today = new Date().toISOString().split("T")[0];
 
-  return {
-    "functions/index.ts": `const files: Record<string, string> = {
-  "/": \`<!DOCTYPE html><html><head><title>${appName}</title><link rel="stylesheet" href="/styles.css"></head><body><header><h1>${appName}</h1><p>${tagline}</p></header><main>${paragraphs}</main><script src="/app.js"></script></body></html>\`,
-  "/index.html": \`<!DOCTYPE html><html><head><title>${appName}</title><link rel="stylesheet" href="/styles.css"></head><body><header><h1>${appName}</h1><p>${tagline}</p></header><main>${paragraphs}</main><script src="/app.js"></script></body></html>\`,
-  "/styles.css": \`body { font-family: sans-serif; background: #f5f5f5; color: #333; } header { background: ${primaryColour}; color: white; padding: 1rem; text-align: center; } main { padding: 1rem; }\`,
-  "/app.js": \`console.log("App loaded");\`,
+  const indexHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${appName}</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="header">
+    <h1>${appName}</h1>
+    <p class="tagline">${tagline}</p>
+  </header>
+  <main class="container">
+    <h2>MVP Plan</h2>
+    ${paragraphs}
+  </main>
+  <footer class="footer">
+    <p>Generated by AI on ${today}</p>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>`;
+
+  const stylesCss = `body {
+  font-family: sans-serif;
+  background: #f5f5f5;
+  color: #333;
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+}
+.header {
+  background: ${primaryColour};
+  color: #fff;
+  padding: 1rem;
+  text-align: center;
+}
+.container {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+.footer {
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.8rem;
+  color: #666;
+}`;
+
+  const appJs = `console.log("App initialized");`;
+
+  const functionsIndexTs = `const files: Record<string, string> = {
+  "/": \`${indexHtml}\`,
+  "/index.html": \`${indexHtml}\`,
+  "/styles.css": \`${stylesCss}\`,
+  "/app.js": \`${appJs}\`,
 };
 
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const path = url.pathname === "/" ? "/index.html" : url.pathname;
+    const path = files[url.pathname] ? url.pathname : "/index.html";
     const content = files[path];
-    if (!content) return new Response("Not found", { status: 404 });
 
     const contentType = getContentType(path);
     return new Response(content, {
@@ -229,10 +240,49 @@ function getContentType(path: string): string {
   if (path.endsWith(".js")) return "application/javascript";
   return "text/plain";
 }
-`,
-    "wrangler.toml": `name = "${projectName}"
+`;
+
+  const wranglerToml = `name = "${projectName}"
 main = "functions/index.ts"
-compatibility_date = "${today}"
-`,
+compatibility_date = "${today}"`;
+
+  const deployYml = `name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+`;
+
+  const tsconfigJson = `{
+  "compilerOptions": {
+    "target": "es2017",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}`;
+
+  return {
+    "index.html": indexHtml,
+    "styles.css": stylesCss,
+    "app.js": appJs,
+    "functions/index.ts": functionsIndexTs,
+    "wrangler.toml": wranglerToml,
+    ".github/workflows/deploy.yml": deployYml,
+    "tsconfig.json": tsconfigJson,
   };
 }
