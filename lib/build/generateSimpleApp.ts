@@ -18,9 +18,9 @@ export function generateSimpleApp(
   const appName = branding?.name || 'My AI App';
   const tagline = branding?.tagline || 'An AI-powered experience';
   const primaryColor = branding?.palette?.primary || '#2563eb';
-
   const escapedPlan = escapeHTML(typeof plan === 'string' ? plan : JSON.stringify(plan, null, 2));
 
+  // --- index.html ---
   const indexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -40,6 +40,7 @@ export function generateSimpleApp(
 </body>
 </html>`;
 
+  // --- style.css ---
   const styleCss = `
 body {
   font-family: system-ui, sans-serif;
@@ -68,30 +69,23 @@ button {
 }
 `;
 
+  // --- main.js ---
   const mainJs = `
 function sayHi() {
   alert("Hello from ${appName}!");
 }
 `;
 
+  // --- functions/index.ts ---
   const workerIndexTs = `export default {
   async fetch(request) {
     const url = new URL(request.url);
     const path = url.pathname;
 
     const files = {
-      '/': {
-        content: html,
-        type: 'text/html',
-      },
-      '/style.css': {
-        content: css,
-        type: 'text/css',
-      },
-      '/main.js': {
-        content: js,
-        type: 'application/javascript',
-      },
+      '/': { content: html, type: 'text/html' },
+      '/style.css': { content: css, type: 'text/css' },
+      '/main.js': { content: js, type: 'application/javascript' },
     };
 
     const file = files[path] || files['/'];
@@ -106,7 +100,35 @@ const css = \`${styleCss}\`;
 const js = \`${mainJs}\`;
 `;
 
+  // --- wrangler.toml ---
+  const wranglerToml = `name = "${projectName || 'launchwing-app'}"
+main = "functions/index.ts"
+compatibility_date = "2024-08-01"
+`;
+
+  // --- deploy GitHub Action ---
+  const deployYaml = `name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CF_API_TOKEN }}
+`;
+
   return {
     'functions/index.ts': workerIndexTs,
+    'wrangler.toml': wranglerToml,
+    '.github/workflows/deploy.yml': deployYaml,
   };
 }
