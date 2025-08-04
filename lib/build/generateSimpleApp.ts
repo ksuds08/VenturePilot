@@ -83,7 +83,7 @@ export default {
     const content = files[path];
     const contentType = getContentType(path);
     return new Response(content, {
-      headers: { "Content-Type": contentType }
+      headers: { "Content-Type": contentType + "; charset=utf-8" }
     });
   }
 };
