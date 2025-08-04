@@ -1,4 +1,5 @@
-import { buildAndDeployApp } from '../../lib/buildService.js';
+// api/mvp.js
+import { buildAndDeployApp } from '../../lib/build/buildService.js';
 
 export async function mvpHandler(request, env) {
   if (request.method === 'OPTIONS') {
@@ -54,7 +55,7 @@ export async function mvpHandler(request, env) {
         const parts = ['frontend', 'backend', 'assets', 'config'];
         const allFiles = [];
 
-        send("🤔 Analyzing your prompt and starting chunked generation...");
+        send('🤔 Analyzing your prompt and starting chunked generation...');
         await delay(500);
 
         for (const part of parts) {
@@ -62,9 +63,9 @@ export async function mvpHandler(request, env) {
           await delay(300);
 
           try {
-            const res = await fetch("https://launchwing-agent.onrender.com/generate/chunk", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
+            const res = await fetch('https://launchwing-agent.onrender.com/generate/chunk', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ part, prompt: requirements }),
             });
 
@@ -89,14 +90,13 @@ export async function mvpHandler(request, env) {
         }
 
         if (allFiles.length === 0) {
-          send("❌ No files generated. Cannot deploy.");
+          send('❌ No files generated. Cannot deploy.');
           controller.close();
           return;
         }
 
-        // Validate files before deployment
         const validFiles = allFiles.filter(
-          (f) => f && typeof f.path === "string" && typeof f.content === "string"
+          (f) => f && typeof f.path === 'string' && typeof f.content === 'string'
         );
 
         if (validFiles.length !== allFiles.length) {
@@ -108,7 +108,7 @@ export async function mvpHandler(request, env) {
 
         const ideaId = body.ideaId || Math.random().toString(36).substring(2, 8);
         const ideaSummary = {
-          name: (body.branding && body.branding.name) || "AI MVP",
+          name: (body.branding && body.branding.name) || 'AI MVP',
           description: requirements,
         };
         const branding = body.branding || {};
@@ -124,13 +124,13 @@ export async function mvpHandler(request, env) {
           });
 
           if (result.pagesUrl) {
-            send("✅ Deployment successful!");
+            send('✅ Deployment successful!');
             send(`pagesUrl:${result.pagesUrl}`);
             if (result.repoUrl) {
               send(`repoUrl:${result.repoUrl}`);
             }
           } else {
-            send("❌ Deployment failed. No pages URL returned.");
+            send('❌ Deployment failed. No pages URL returned.');
           }
         } catch (err) {
           send(`❌ Deployment error: ${err.message}`);
@@ -142,19 +142,19 @@ export async function mvpHandler(request, env) {
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/event-stream",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        'Content-Type': 'text/event-stream',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
       },
     });
   }
 
-  return new Response("This endpoint only supports streaming", {
+  return new Response('This endpoint only supports streaming', {
     status: 400,
     headers: {
-      "Content-Type": "text/plain",
-      "Access-Control-Allow-Origin": "*",
+      'Content-Type': 'text/plain',
+      'Access-Control-Allow-Origin': '*',
     },
   });
 }
@@ -162,3 +162,4 @@ export async function mvpHandler(request, env) {
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
