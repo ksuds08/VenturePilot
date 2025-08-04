@@ -18,11 +18,9 @@ export function generateSimpleApp(
   const tagline = branding?.tagline || 'An AI-powered experience';
   const primaryColor = branding?.palette?.primary || '#0066cc';
 
-  const escapedPlan = escapeHTML(plan);
-  const paragraphs = escapedPlan
-    .split(/\n+/)
-    .map((p) => `<p>${p}</p>`)
-    .join('\n');
+  const planText = typeof plan === 'string' ? plan : JSON.stringify(plan, null, 2);
+  const escapedPlan = escapeHTML(planText);
+  const paragraphs = `<pre>${escapedPlan}</pre>`;
 
   const today = new Date().toISOString().split('T')[0];
 
