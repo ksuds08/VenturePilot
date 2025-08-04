@@ -4,7 +4,6 @@ export async function commitToGitHub(ideaId: string, files: Record<string, strin
   const token = (globalThis as any).PAT_GITHUB;
   const username = (globalThis as any).GITHUB_USERNAME;
   const org = (globalThis as any).GITHUB_ORG;
-
   if (!token || (!username && !org)) {
     throw new Error("GitHub credentials are not configured");
   }
@@ -37,7 +36,9 @@ export async function commitToGitHub(ideaId: string, files: Record<string, strin
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
-  for (const [path, content] of Object.entries(files)) {
+  for (const [rawPath, content] of Object.entries(files)) {
+    const path = rawPath.startsWith("/") ? rawPath.slice(1) : rawPath;
+
     const blobRes = await fetch(
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
       {
