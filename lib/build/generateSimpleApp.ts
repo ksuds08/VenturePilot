@@ -1,3 +1,4 @@
+
 // lib/build/generateSimpleApp.ts
 
 export function generateSimpleApp(
@@ -108,7 +109,8 @@ function getContentType(file: string): string {
   if (file.endsWith(".css")) return "text/css";
   if (file.endsWith(".js")) return "application/javascript";
   return "text/plain";
-}`,
+}
+`,
 
     "wrangler.toml": `name = "${projectName}"
 main = "functions/index.ts"
@@ -148,4 +150,7 @@ jobs:
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+`,
+  };
+}
