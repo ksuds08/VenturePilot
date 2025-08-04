@@ -17,10 +17,8 @@ export function generateSimpleApp(
   const appName = branding?.name || 'My AI App';
   const tagline = branding?.tagline || 'An AI-powered experience';
   const primaryColor = branding?.palette?.primary || '#0066cc';
-
+  const escapedPlan = escapeHTML(plan);
   const today = new Date().toISOString().split('T')[0];
-
-  const escapedPlan = escapeHTML(plan || 'No plan provided');
 
   const indexHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -72,37 +70,28 @@ export function generateSimpleApp(
   color: #666;
 }`;
 
-  const appJs = `export function init() {
-  console.log("App initialized");
-}
-window.addEventListener("DOMContentLoaded", init);`;
+  const appJs = `window.addEventListener("DOMContentLoaded", () => {
+  console.log("App loaded");
+});`;
 
-  const functionsIndexTs = `const files = {
-  "/": \`${indexHtml}\`,
-  "/index.html": \`${indexHtml}\`,
-  "/styles.css": \`${stylesCss}\`,
-  "/app.js": \`${appJs}\`
-};
-
-export default {
+  const functionsIndexTs = `export default {
   async fetch(request) {
     const url = new URL(request.url);
-    const path = files[url.pathname] ? url.pathname : "/index.html";
-    const content = files[path];
-    const contentType = getContentType(path);
-    return new Response(content, {
-      headers: { "Content-Type": contentType }
+    const path = url.pathname;
+
+    const files = {
+      "/": { content: ` + "`" + indexHtml + "`" + `, type: "text/html; charset=utf-8" },
+      "/index.html": { content: ` + "`" + indexHtml + "`" + `, type: "text/html; charset=utf-8" },
+      "/styles.css": { content: ` + "`" + stylesCss + "`" + `, type: "text/css" },
+      "/app.js": { content: ` + "`" + appJs + "`" + `, type: "application/javascript" },
+    };
+
+    const file = files[path] || files["/"];
+    return new Response(file.content, {
+      headers: { "Content-Type": file.type }
     });
   }
-};
-
-function getContentType(path) {
-  if (path.endsWith(".html")) return "text/html; charset=utf-8";
-  if (path.endsWith(".css")) return "text/css";
-  if (path.endsWith(".js")) return "application/javascript";
-  return "text/plain";
-}
-`;
+};`;
 
   const wranglerToml = `name = "${projectName}"
 main = "functions/index.ts"
@@ -112,11 +101,13 @@ compatibility_date = "${today}"
   const tsconfigJson = `{
   "compilerOptions": {
     "target": "es2017",
+    "downlevelIteration": true,
     "module": "esnext",
     "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
   }
 }`;
 
@@ -136,16 +127,4 @@ jobs:
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`;
-
-  return {
-    'index.html': indexHtml,
-    'styles.css': stylesCss,
-    'app.js': appJs,
-    'functions/index.ts': functionsIndexTs,
-    'wrangler.toml': wranglerToml,
-    'tsconfig.json': tsconfigJson,
-    '.github/workflows/deploy.yml': deployWorkflow
-  };
-}
+          apiToken: 
