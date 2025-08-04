@@ -76,7 +76,7 @@ function sayHi() {
 }
 `;
 
-  // --- functions/index.ts ---
+  // --- Cloudflare Worker (functions/index.ts) ---
   const workerIndexTs = `export default {
   async fetch(request) {
     const url = new URL(request.url);
@@ -106,7 +106,7 @@ main = "functions/index.ts"
 compatibility_date = "2024-08-01"
 `;
 
-  // --- deploy GitHub Action ---
+  // --- GitHub Actions deploy.yml using Wrangler v4 ---
   const deployYaml = `name: Deploy to Cloudflare Workers
 
 on:
@@ -116,14 +116,18 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Publish to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: \${{ secrets.CF_API_TOKEN }}
+      - name: Install Wrangler v4
+        run: npm install -g wrangler@4
+
+      - name: Deploy to Cloudflare Workers
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: \${{ secrets.CF_API_TOKEN }}
 `;
 
   return {
