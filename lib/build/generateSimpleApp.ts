@@ -26,8 +26,7 @@ export function generateSimpleApp(
 
   const today = new Date().toISOString().split('T')[0];
 
-  return {
-    'index.html': `<!DOCTYPE html>
+  const indexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -49,9 +48,9 @@ export function generateSimpleApp(
   </footer>
   <script src="app.js"></script>
 </body>
-</html>`,
+</html>`;
 
-    'styles.css': `body {
+  const stylesCss = `body {
   font-family: sans-serif;
   background: #f5f5f5;
   color: #333;
@@ -75,37 +74,30 @@ export function generateSimpleApp(
   padding: 1rem;
   font-size: 0.8rem;
   color: #666;
-}`,
+}`;
 
-    'app.js': `export function init() {
+  const appJs = `export function init() {
   console.log("App initialized");
 }
-window.addEventListener("DOMContentLoaded", init);`,
+window.addEventListener("DOMContentLoaded", init);`;
 
-    'functions/index.ts': `const files: Record<string, string> = {
-  "/": "index.html",
-  "/index.html": "index.html",
-  "/styles.css": "styles.css",
-  "/app.js": "app.js"
+  const functionsIndexTs = `const files: Record<string, string> = {
+  "/": \`${indexHtml}\`,
+  "/index.html": \`${indexHtml}\`,
+  "/styles.css": \`${stylesCss}\`,
+  "/app.js": \`${appJs}\`
 };
 
 export default {
-  async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const path = files[url.pathname] || "index.html";
+    const path = files[url.pathname] ? url.pathname : "/index.html";
+    const content = files[path];
 
-    try {
-      const content = await env.ASSETS.get(path, { type: "text" });
-      if (!content) throw new Error("File not found");
-
-      const contentType = getContentType(path);
-      return new Response(content, {
-        headers: { "Content-Type": contentType }
-      });
-    } catch {
-      return new Response("Not found", { status: 404 });
-    }
-  },
+    return new Response(content, {
+      headers: { "Content-Type": getContentType(path) }
+    });
+  }
 };
 
 function getContentType(file: string): string {
@@ -114,14 +106,14 @@ function getContentType(file: string): string {
   if (file.endsWith(".js")) return "application/javascript";
   return "text/plain";
 }
-`,
+`;
 
-    'wrangler.toml': `name = "${projectName}"
+  const wranglerToml = `name = "${projectName}"
 main = "functions/index.ts"
 compatibility_date = "${today}"
-`,
+`;
 
-    'tsconfig.json': `{
+  const tsconfigJson = `{
   "compilerOptions": {
     "target": "es2017",
     "downlevelIteration": true,
@@ -132,9 +124,9 @@ compatibility_date = "${today}"
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   }
-}`,
+}`;
 
-    '.github/workflows/deploy.yml': `name: Deploy to Cloudflare Workers
+  const deployYaml = `name: Deploy to Cloudflare Workers
 
 on:
   push:
@@ -151,6 +143,15 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`,
+`;
+
+  return {
+    'index.html': indexHtml,
+    'styles.css': stylesCss,
+    'app.js': appJs,
+    'functions/index.ts': functionsIndexTs,
+    'wrangler.toml': wranglerToml,
+    'tsconfig.json': tsconfigJson,
+    '.github/workflows/deploy.yml': deployYaml
   };
 }
