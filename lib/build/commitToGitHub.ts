@@ -38,11 +38,16 @@ export async function commitToGitHub(
     throw new Error(`GitHub repo creation failed: ${text}`);
   }
 
-  // Prepare blobs for all files
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
   for (const [rawPath, content] of Object.entries(files)) {
-    const path = rawPath.replace(/^\/+/, ""); // Remove leading slash if present
+    const path = rawPath?.trim().replace(/^\/+/, ""); // strip leading slashes
+
+    if (!path) {
+      console.warn(`⚠️ Skipping file with empty or invalid path: "${rawPath}"`);
+      continue;
+    }
+
     console.log(`📦 Uploading: ${path}`);
 
     const blobRes = await fetch(
@@ -80,9 +85,7 @@ export async function commitToGitHub(
     }
   );
 
-  const baseCommitSha = refRes.ok
-    ? (await refRes.json()).object?.sha
-    : undefined;
+  const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
 
   const treeRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
@@ -152,6 +155,5 @@ export async function commitToGitHub(
     throw new Error(`Patch ref failed: ${text}`);
   }
 
-  console.log(`✅ Repo pushed: https://github.com/${owner}/${repoName}`);
   return `https://github.com/${owner}/${repoName}`;
 }
