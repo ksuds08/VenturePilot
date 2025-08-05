@@ -165,7 +165,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          wranglerVersion: '4'
+          wranglerVersion: '4.2024.5'
 `;
 
   return {
