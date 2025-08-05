@@ -1,4 +1,3 @@
-// src/lib/build/generateSimpleApp.ts
 import type { BuildPayload } from './types';
 import { generateWranglerToml } from '../generate/generateWranglerToml';
 
@@ -166,6 +165,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: '4'
 `;
 
   return {
