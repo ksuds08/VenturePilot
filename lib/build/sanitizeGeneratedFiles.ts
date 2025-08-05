@@ -4,20 +4,35 @@ type FileInput = { path: string; content: string };
 type FileOutput = { path: string; content: string };
 
 function cleanBackendChunk(content: string): string {
-  return content
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => {
-      if (!line) return false;
-      if (/^\/\//.test(line)) return false;
-      if (/^#+\s/.test(line)) return false;
-      if (/^\d+[\.\)]\s/.test(line)) return false;
-      if (/^\*\*.*\*\*$/.test(line)) return false;
-      if (/^(This|The)\s.+(handler|function|file)/i.test(line)) return false;
-      if (/^[A-Z][\w\s]+[\.!?]$/.test(line)) return false;
-      return true;
-    })
-    .join('\n');
+  const lines = content.split('\n');
+  const cleanedLines: string[] = [];
+  let onRequestFound = false;
+
+  for (let line of lines) {
+    const trimmed = line.trim();
+
+    // Filter markdown, prose, and noise
+    if (!trimmed) continue;
+    if (/^\/\//.test(trimmed)) continue;
+    if (/^#+\s/.test(trimmed)) continue;
+    if (/^\d+[\.\)]\s/.test(trimmed)) continue;
+    if (/^\*\*.*\*\*$/.test(trimmed)) continue;
+    if (/^(This|The)\s.+(handler|function|file)/i.test(trimmed)) continue;
+    if (/^[A-Z][\w\s]+[\.!?]$/.test(trimmed)) continue;
+
+    // Skip duplicate onRequest functions
+    if (/export\s+async\s+function\s+onRequest/.test(trimmed)) {
+      if (onRequestFound) {
+        console.warn("⚠️ Duplicate onRequest() detected — skipping line:", trimmed);
+        continue;
+      }
+      onRequestFound = true;
+    }
+
+    cleanedLines.push(trimmed);
+  }
+
+  return cleanedLines.join('\n');
 }
 
 function inferFrontendFiles(chunks: FileInput[]): FileOutput[] {
@@ -117,7 +132,6 @@ jobs:
     });
   }
 
-  // Warn if token is still missing
   if (!apiToken) {
     console.error("❌ Missing Cloudflare API token — KV or GitHub operations will be skipped.");
   }
