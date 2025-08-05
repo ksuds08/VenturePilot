@@ -2,22 +2,30 @@ import { toBase64 } from "./toBase64";
 
 export async function commitToGitHub(
   ideaId: string,
-  files: Record<string, string>
+  files: Record<string, string>,
+  opts?: { token?: string; org?: string }
 ): Promise<string> {
-  const token = (globalThis as any).PAT_GITHUB;
+  const token = opts?.token || (globalThis as any).PAT_GITHUB;
+  const org = opts?.org || (globalThis as any).GITHUB_ORG;
   const username = (globalThis as any).GITHUB_USERNAME;
-  const org = (globalThis as any).GITHUB_ORG;
 
-  if (!token || (!username && !org)) {
-    throw new Error("GitHub credentials are not configured");
+  if (!token) {
+    console.error("❌ Missing GitHub token");
+    throw new Error("GitHub token is required");
   }
 
   const repoName = `mvp-${ideaId}`;
   const owner = org || username;
 
+  if (!owner) {
+    throw new Error("GitHub org or username must be provided");
+  }
+
   const createRepoEndpoint = org
     ? `https://api.github.com/orgs/${org}/repos`
     : `https://api.github.com/user/repos`;
+
+  console.log(`📁 Creating GitHub repo: ${owner}/${repoName}`);
 
   const createRes = await fetch(createRepoEndpoint, {
     method: "POST",
@@ -41,7 +49,7 @@ export async function commitToGitHub(
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
   for (const [rawPath, content] of Object.entries(files)) {
-    const path = rawPath?.trim().replace(/^\/+/, ""); // strip leading slashes
+    const path = rawPath?.trim().replace(/^\/+/, "");
 
     if (!path) {
       console.warn(`⚠️ Skipping file with empty or invalid path: "${rawPath}"`);
