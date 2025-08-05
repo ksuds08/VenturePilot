@@ -1,3 +1,4 @@
+// src/lib/build/buildService.ts
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
@@ -27,18 +28,18 @@ function extractFallbackPlan(payload: BuildPayload): string {
   return lastAssistant?.content?.trim() || 'No plan provided';
 }
 
-export async function buildAndDeployApp(payload: BuildPayload) {
+// ✅ Updated to accept env
+export async function buildAndDeployApp(payload: BuildPayload, env: Env) {
   const fallbackPlan = extractFallbackPlan(payload);
   const projectName = `mvp-${payload.ideaId}`;
 
-  // ✅ Automatically create KV namespace
+  // ✅ Use env instead of process.env
   const kvNamespaceId = await createKvNamespace({
-    token: process.env.CLOUDFLARE_API_TOKEN!,
-    accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+    token: env.CLOUDFLARE_API_TOKEN,
+    accountId: env.CLOUDFLARE_ACCOUNT_ID,
     title: 'SUBMISSIONS_KV',
   });
 
-  // ✅ Generate app with KV ID injected
   const files = generateSimpleApp(
     fallbackPlan,
     payload.branding,
