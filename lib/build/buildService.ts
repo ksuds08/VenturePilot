@@ -1,5 +1,6 @@
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
+import { createKvNamespace } from '../cloudflare/createKvNamespace';
 import type { BuildPayload } from './types';
 
 function isProbablyJSON(text: string): boolean {
@@ -28,12 +29,21 @@ function extractFallbackPlan(payload: BuildPayload): string {
 
 export async function buildAndDeployApp(payload: BuildPayload) {
   const fallbackPlan = extractFallbackPlan(payload);
-
   const projectName = `mvp-${payload.ideaId}`;
+
+  // ✅ Automatically create KV namespace
+  const kvNamespaceId = await createKvNamespace({
+    token: process.env.CLOUDFLARE_API_TOKEN!,
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+    title: 'SUBMISSIONS_KV',
+  });
+
+  // ✅ Generate app with KV ID injected
   const files = generateSimpleApp(
     fallbackPlan,
     payload.branding,
-    projectName
+    projectName,
+    kvNamespaceId
   );
 
   const repoUrl = await commitToGitHub(payload.ideaId, files);
