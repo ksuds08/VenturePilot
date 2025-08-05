@@ -1,5 +1,6 @@
-import path from 'path';
+// ✅ DO NOT IMPORT 'path'
 
+// type definition
 type FileSpec = { path: string; content: string };
 
 export function sanitizeGeneratedFiles(
@@ -16,60 +17,52 @@ export function sanitizeGeneratedFiles(
 
     if (!rawPath || !file.content) continue;
 
-    const ext = path.extname(rawPath);
-    const base = path.basename(rawPath);
+    const ext = rawPath.split('.').pop() || '';
     const segments = rawPath.split('/');
+    const filename = segments[segments.length - 1];
 
-    // Parse backend files
+    // Move backend files
     if (segments[0] === 'backend') {
-      if (ext === '.ts' || ext === '.js') {
+      if (ext === 'ts' || ext === 'js') {
         backendHandlers.push(file.content);
       }
       continue;
     }
 
-    // Move frontend files to /public
+    // Move frontend files to public/
     if (segments[0] === 'frontend') {
-      const filename = segments.slice(1).join('/');
+      const relativePath = segments.slice(1).join('/');
       publicFiles.push({
-        path: `public/${filename}`,
+        path: `public/${relativePath}`,
         content: file.content,
       });
       continue;
     }
 
-    // Normalize other folders
-    sanitized.push({
-      path: rawPath,
-      content: file.content,
-    });
+    // Otherwise preserve
+    sanitized.push({ path: rawPath, content: file.content });
   }
 
-  // Include parsed public assets
   sanitized.push(...publicFiles);
 
-  // Merge backend handlers if any exist
   if (backendHandlers.length > 0) {
-    const joined = backendHandlers
+    const merged = backendHandlers
       .map((code, i) => `// chunk_${i}\n${code}`)
       .join('\n\n');
 
-    const merged = `
-${joined}
+    sanitized.push({
+      path: 'functions/index.ts',
+      content: `
+${merged}
 
-// Merge logic if needed
 export default {
   async fetch(request, env, ctx) {
     return new Response("Backend handlers merged successfully!", {
       headers: { "Content-Type": "text/plain" }
     });
   }
-}
-    `.trim();
-
-    sanitized.push({
-      path: 'functions/index.ts',
-      content: merged,
+};
+`.trim(),
     });
   }
 
