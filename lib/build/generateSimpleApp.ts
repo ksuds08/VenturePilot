@@ -101,20 +101,23 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
 `;
 
   const workerIndexTs = `export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // POST /api/submit
+    // POST /api/submit → store in KV
     if (path === "/api/submit" && request.method === "POST") {
       const name = await request.text();
+      const submittedAt = new Date().toISOString();
+      const record = { name, submittedAt };
+      const key = \`submission:\${Date.now()}\`;
+      await env.SUBMISSIONS_KV.put(key, JSON.stringify(record));
       return new Response(
         JSON.stringify({ message: \`Thanks, \${name}!\` }),
         { headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Static file serving
     const files = {
       '/': { content: html, type: 'text/html' },
       '/style.css': { content: css, type: 'text/css' },
@@ -136,6 +139,10 @@ const js = \`${mainJs}\`;
   const wranglerToml = `name = "${projectName || 'launchwing-app'}"
 main = "functions/index.ts"
 compatibility_date = "2024-08-01"
+
+kv_namespaces = [
+  { binding = "SUBMISSIONS_KV", id = "REPLACE_ME" }
+]
 `;
 
   const deployYaml = `name: Deploy to Cloudflare Workers
