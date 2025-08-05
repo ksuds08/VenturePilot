@@ -1,6 +1,5 @@
 import type { BuildPayload } from './types';
 import { generateWranglerToml } from '../generate/generateWranglerToml';
-import { getLatestWranglerV4Version } from '../utils/getLatestWranglerV4Version';
 
 function escapeHTML(content: string): string {
   return content
@@ -14,7 +13,8 @@ function escapeHTML(content: string): string {
 export async function generateSimpleApp(
   plan: string,
   branding: BuildPayload['branding'],
-  projectName: string
+  projectName: string,
+  kvNamespaceId: string
 ): Promise<Record<string, string>> {
   const appName = branding?.name || 'My AI App';
   const tagline = branding?.tagline || 'An AI-powered experience';
@@ -147,9 +147,7 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
 };
 `;
 
-  const wranglerToml = generateWranglerToml(projectName);
-
-  const wranglerVersion = await getLatestWranglerV4Version();
+  const wranglerToml = generateWranglerToml(projectName, kvNamespaceId);
 
   const deployYaml = `name: Deploy to Cloudflare Workers
 
@@ -168,7 +166,6 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          wranglerVersion: '${wranglerVersion}'
 `;
 
   return {
