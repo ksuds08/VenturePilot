@@ -35,7 +35,7 @@ export async function buildAndDeployApp(
   const projectName = `mvp-${payload.ideaId}`;
 
   const kvTitle = `submissions-${projectName}-${Date.now()}`;
-  await createKvNamespace({
+  const kvNamespaceId = await createKvNamespace({
     token: env.CF_API_TOKEN,
     accountId: env.CF_ACCOUNT_ID,
     title: kvTitle,
@@ -44,7 +44,8 @@ export async function buildAndDeployApp(
   const files = await generateSimpleApp(
     fallbackPlan,
     payload.branding,
-    projectName
+    projectName,
+    kvNamespaceId
   );
 
   const repoUrl = await commitToGitHub(payload.ideaId, files);
