@@ -1,5 +1,5 @@
 import { commitToGitHub } from './commitToGitHub';
-import { generateSimpleApp } from './generateSimpleApp';
+import { generateChunkedApp } from './generateChunkedApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
 import type { BuildPayload } from './types';
 
@@ -41,12 +41,12 @@ export async function buildAndDeployApp(
     title: kvTitle,
   });
 
-  const files = await generateSimpleApp(
-    fallbackPlan,
-    payload.branding,
+  const files = await generateChunkedApp({
+    plan: fallbackPlan,
+    branding: payload.branding,
     projectName,
     kvNamespaceId
-  );
+  });
 
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
