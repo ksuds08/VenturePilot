@@ -14,8 +14,7 @@ function escapeHTML(content: string): string {
 export function generateSimpleApp(
   plan: string,
   branding: BuildPayload['branding'],
-  projectName: string,
-  kvNamespaceId: string
+  projectName: string
 ): Record<string, string> {
   const appName = branding?.name || 'My AI App';
   const tagline = branding?.tagline || 'An AI-powered experience';
@@ -148,7 +147,7 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
 };
 `;
 
-  const wranglerToml = generateWranglerToml(projectName, kvNamespaceId);
+  const wranglerToml = generateWranglerToml(projectName);
 
   const deployYaml = `name: Deploy to Cloudflare Workers
 
