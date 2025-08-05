@@ -1,3 +1,4 @@
+// lib/build/buildService.ts
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
@@ -90,7 +91,7 @@ export async function buildAndDeployApp(
 
   if (payload.files) {
     console.log("🧾 Raw file paths from agent:", payload.files.map(f => f.path));
-    const sanitized = sanitizeGeneratedFiles(payload.files, payload); // ✅ FIXED
+    const sanitized = sanitizeGeneratedFiles(payload.files, projectName); // ✅ FIXED
     files = Object.fromEntries(sanitized.map(f => [f.path, f.content]));
 
     if (!files['wrangler.toml']) {
