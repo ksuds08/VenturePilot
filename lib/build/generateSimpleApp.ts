@@ -20,7 +20,6 @@ export function generateSimpleApp(
   const primaryColor = branding?.palette?.primary || '#2563eb';
   const escapedPlan = escapeHTML(typeof plan === 'string' ? plan : JSON.stringify(plan, null, 2));
 
-  // --- index.html ---
   const indexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -40,7 +39,6 @@ export function generateSimpleApp(
 </body>
 </html>`;
 
-  // --- style.css ---
   const styleCss = `
 body {
   font-family: system-ui, sans-serif;
@@ -69,14 +67,12 @@ button {
 }
 `;
 
-  // --- main.js ---
   const mainJs = `
 function sayHi() {
   alert("Hello from ${appName}!");
 }
 `;
 
-  // --- functions/index.ts ---
   const workerIndexTs = `export default {
   async fetch(request) {
     const url = new URL(request.url);
@@ -100,13 +96,11 @@ const css = \`${styleCss}\`;
 const js = \`${mainJs}\`;
 `;
 
-  // --- wrangler.toml ---
   const wranglerToml = `name = "${projectName || 'launchwing-app'}"
 main = "functions/index.ts"
 compatibility_date = "2024-08-01"
 `;
 
-  // --- .github/workflows/deploy.yml ---
   const deployYaml = `name: Deploy to Cloudflare Workers
 
 on:
@@ -116,18 +110,14 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Wrangler
-        run: npm install -g wrangler@4
-
-      - name: Deploy to Cloudflare
-        run: wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: \${{ secrets.CF_API_TOKEN }}
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
 `;
 
   return {
