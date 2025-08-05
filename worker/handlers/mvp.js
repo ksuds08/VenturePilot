@@ -121,7 +121,7 @@ export async function mvpHandler(request, env) {
             branding,
             messages,
             files: validFiles,
-          });
+          }, env); // ✅ Pass Cloudflare Worker env here
 
           if (result.pagesUrl) {
             send('✅ Deployment successful!');
@@ -162,4 +162,3 @@ export async function mvpHandler(request, env) {
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
