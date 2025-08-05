@@ -1,5 +1,6 @@
 // src/lib/generateSimpleApp.ts
 import type { BuildPayload } from './types';
+import { generateWranglerToml } from './generate/generateWranglerToml';
 
 function escapeHTML(content: string): string {
   return content
@@ -13,7 +14,8 @@ function escapeHTML(content: string): string {
 export function generateSimpleApp(
   plan: string,
   branding: BuildPayload['branding'],
-  projectName: string
+  projectName: string,
+  kvNamespaceId: string
 ): Record<string, string> {
   const appName = branding?.name || 'My AI App';
   const tagline = branding?.tagline || 'An AI-powered experience';
@@ -105,7 +107,6 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // POST /api/submit → store in KV
     if (path === "/api/submit" && request.method === "POST") {
       const name = await request.text();
       const submittedAt = new Date().toISOString();
@@ -136,14 +137,7 @@ const css = \`${styleCss}\`;
 const js = \`${mainJs}\`;
 `;
 
-  const wranglerToml = `name = "${projectName || 'launchwing-app'}"
-main = "functions/index.ts"
-compatibility_date = "2024-08-01"
-
-kv_namespaces = [
-  { binding = "SUBMISSIONS_KV", id = "REPLACE_ME" }
-]
-`;
+  const wranglerToml = generateWranglerToml(projectName, kvNamespaceId);
 
   const deployYaml = `name: Deploy to Cloudflare Workers
 
