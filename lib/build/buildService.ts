@@ -1,4 +1,5 @@
 // lib/build/buildService.ts
+
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
@@ -91,10 +92,17 @@ export async function buildAndDeployApp(
 
   if (payload.files) {
     console.log("🧾 Raw file paths from agent:", payload.files.map(f => f.path));
-    const sanitized = sanitizeGeneratedFiles(payload.files, { ideaId: payload.ideaId });
+
+    const sanitized = sanitizeGeneratedFiles(payload.files, {
+      ideaId: payload.ideaId,
+      env: {
+        CLOUDFLARE_API_TOKEN: env.CF_API_TOKEN,
+        CLOUDFLARE_ACCOUNT_ID: env.CF_ACCOUNT_ID,
+      },
+    });
+
     files = Object.fromEntries(sanitized.map(f => [f.path, f.content]));
 
-    // Inject required deploy files if missing
     if (!files['wrangler.toml']) {
       console.warn("⚠️ Missing wrangler.toml — injecting fallback");
       files['wrangler.toml'] = defaultWranglerToml(projectName, kvNamespaceId);
