@@ -1,17 +1,20 @@
-// lib/build/sanitizeGeneratedFiles.ts
-
 type FileInput = { path: string; content: string };
 type FileOutput = { path: string; content: string };
 
+/**
+ * Cleans up raw backend chunks and removes markdown, explanations, prose,
+ * and duplicate onRequest() functions.
+ */
 function cleanBackendChunk(content: string): string {
   const lines = content.split('\n');
-  const cleanedLines: string[] = [];
+  const cleaned: string[] = [];
+  let insideSkippedFunction = false;
   let onRequestFound = false;
 
   for (let line of lines) {
     const trimmed = line.trim();
 
-    // Filter markdown, prose, and noise
+    // Remove markdown, prose, and filler
     if (!trimmed) continue;
     if (/^\/\//.test(trimmed)) continue;
     if (/^#+\s/.test(trimmed)) continue;
@@ -20,19 +23,28 @@ function cleanBackendChunk(content: string): string {
     if (/^(This|The)\s.+(handler|function|file)/i.test(trimmed)) continue;
     if (/^[A-Z][\w\s]+[\.!?]$/.test(trimmed)) continue;
 
-    // Skip duplicate onRequest functions
+    // Skip duplicate onRequest() blocks
     if (/export\s+async\s+function\s+onRequest/.test(trimmed)) {
       if (onRequestFound) {
-        console.warn("⚠️ Duplicate onRequest() detected — skipping line:", trimmed);
+        console.warn("⚠️ Skipping duplicate onRequest()");
+        insideSkippedFunction = true;
         continue;
+      } else {
+        onRequestFound = true;
       }
-      onRequestFound = true;
     }
 
-    cleanedLines.push(trimmed);
+    if (insideSkippedFunction) {
+      if (/^\}/.test(trimmed)) {
+        insideSkippedFunction = false;
+      }
+      continue;
+    }
+
+    cleaned.push(line);
   }
 
-  return cleanedLines.join('\n');
+  return cleaned.join('\n');
 }
 
 function inferFrontendFiles(chunks: FileInput[]): FileOutput[] {
