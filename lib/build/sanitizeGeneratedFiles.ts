@@ -6,29 +6,34 @@ export function sanitizeGeneratedFiles(
 
     // Normalize wrangler.toml
     if (lower.includes('wrangler') && lower.endsWith('.toml')) {
+      console.log(`🔄 Rewriting ${file.path} → wrangler.toml`);
       return { ...file, path: 'wrangler.toml' };
     }
 
-    // Normalize deploy workflow
+    // Normalize GitHub Actions workflow
     if (
-      lower.includes('deploy') &&
+      (lower.includes('deploy') || lower.includes('workflow') || lower.includes('cloudflare')) &&
       (lower.endsWith('.yml') || lower.endsWith('.yaml'))
     ) {
+      console.log(`🔄 Rewriting ${file.path} → .github/workflows/deploy.yml`);
       return { ...file, path: '.github/workflows/deploy.yml' };
     }
 
-    // Normalize entry HTML
-    if (lower.includes('index') && lower.endsWith('.html')) {
+    // Normalize entry HTML file
+    if (lower.endsWith('.html') && lower.includes('index')) {
+      console.log(`🔄 Rewriting ${file.path} → index.html`);
       return { ...file, path: 'index.html' };
     }
 
-    // Normalize JS
-    if (lower.endsWith('.js') && lower.includes('main') || lower.includes('app')) {
+    // Normalize main JS entry
+    if (lower.endsWith('.js') && (lower.includes('main') || lower.includes('app'))) {
+      console.log(`🔄 Rewriting ${file.path} → main.js`);
       return { ...file, path: 'main.js' };
     }
 
-    // Normalize styles
+    // Normalize main CSS
     if (lower.endsWith('.css') && lower.includes('style')) {
+      console.log(`🔄 Rewriting ${file.path} → style.css`);
       return { ...file, path: 'style.css' };
     }
 
