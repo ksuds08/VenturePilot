@@ -1,6 +1,6 @@
 // src/lib/build/generateSimpleApp.ts
 import type { BuildPayload } from './types';
-import { generateWranglerToml } from './generateWranglerToml'; // ✅ Fixed import
+import { generateWranglerToml } from '../generateWranglerToml'; // ✅ Corrected import path
 
 function escapeHTML(content: string): string {
   return content
