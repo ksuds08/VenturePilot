@@ -41,7 +41,7 @@ export async function buildAndDeployApp(
     title: kvTitle,
   });
 
-  const files = generateSimpleApp(
+  const files = await generateSimpleApp(
     fallbackPlan,
     payload.branding,
     projectName
