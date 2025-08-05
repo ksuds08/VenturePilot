@@ -20,3 +20,8 @@ export interface BuildPayload {
   plan?: string;
   messages: { role: string; content: string }[];
 }
+
+export interface FileSpec {
+  path: string;
+  content: string;
+}
