@@ -28,6 +28,38 @@ function extractFallbackPlan(payload: BuildPayload): string {
   return lastAssistant?.content?.trim() || 'No plan provided';
 }
 
+function defaultWranglerToml(projectName: string, kvNamespaceId: string): string {
+  return `name = "${projectName}"
+main = "functions/index.ts"
+compatibility_date = "2024-08-01"
+
+[[kv_namespaces]]
+binding = "SUBMISSIONS_KV"
+id = "${kvNamespaceId}"
+`;
+}
+
+function defaultDeployYaml(): string {
+  return `name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+`;
+}
+
 export async function buildAndDeployApp(
   payload: BuildPayload & {
     files?: { path: string; content: string }[];
@@ -47,14 +79,21 @@ export async function buildAndDeployApp(
   let files: Record<string, string>;
 
   if (payload.files) {
+    console.log("🧾 Raw file paths from agent:", payload.files.map(f => f.path));
     const sanitized = sanitizeGeneratedFiles(payload.files);
     files = Object.fromEntries(sanitized.map(f => [f.path, f.content]));
 
-    if (!files['wrangler.toml'] || !files['.github/workflows/deploy.yml']) {
-      throw new Error('❌ Missing wrangler.toml or deploy.yml in generated files');
+    if (!files['wrangler.toml']) {
+      console.warn("⚠️ Missing wrangler.toml — injecting fallback");
+      files['wrangler.toml'] = defaultWranglerToml(projectName, kvNamespaceId);
+    }
+
+    if (!files['.github/workflows/deploy.yml']) {
+      console.warn("⚠️ Missing deploy.yml — injecting fallback");
+      files['.github/workflows/deploy.yml'] = defaultDeployYaml();
     }
   } else {
-    // Fallback to static template
+    console.warn("⚠️ No agent files provided — falling back to generateSimpleApp()");
     files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvNamespaceId);
   }
 
