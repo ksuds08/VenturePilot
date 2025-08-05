@@ -30,14 +30,14 @@ function extractFallbackPlan(payload: BuildPayload): string {
 
 export async function buildAndDeployApp(
   payload: BuildPayload,
-  env: { CLOUDFLARE_API_TOKEN: string; CLOUDFLARE_ACCOUNT_ID: string }
+  env: { CF_API_TOKEN: string; CF_ACCOUNT_ID: string }
 ) {
   const fallbackPlan = extractFallbackPlan(payload);
   const projectName = `mvp-${payload.ideaId}`;
 
   const kvNamespaceId = await createKvNamespace({
-    token: env.CLOUDFLARE_API_TOKEN,
-    accountId: env.CLOUDFLARE_ACCOUNT_ID,
+    token: env.CF_API_TOKEN,
+    accountId: env.CF_ACCOUNT_ID,
     title: 'SUBMISSIONS_KV',
   });
 
