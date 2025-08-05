@@ -1,5 +1,3 @@
-// lib/build/buildService.ts
-
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
@@ -13,32 +11,25 @@ function isProbablyJSON(text: string): boolean {
 }
 
 function extractFallbackPlan(payload: BuildPayload): string {
-  const raw =
-    payload.plan ||
-    payload.ideaSummary?.description ||
-    '';
-
-  if (!isProbablyJSON(raw) && raw.trim()) {
-    return raw.trim();
-  }
+  const raw = payload.plan || payload.ideaSummary?.description || '';
+  if (!isProbablyJSON(raw) && raw.trim()) return raw.trim();
 
   const reversed = [...payload.messages].reverse();
   const lastAssistant = reversed.find(
     (m) => m.role === 'assistant' && !isProbablyJSON(m.content)
   );
-
   return lastAssistant?.content?.trim() || 'No plan provided';
 }
 
-function defaultWranglerToml(projectName: string, kvNamespaceId: string): string {
+function defaultWranglerToml(projectName: string, kvNamespaceId?: string): string {
   return `name = "${projectName}"
 main = "functions/index.ts"
 compatibility_date = "2024-08-01"
-
+${kvNamespaceId ? `
 [[kv_namespaces]]
 binding = "SUBMISSIONS_KV"
 id = "${kvNamespaceId}"
-`;
+` : ''}`.trim();
 }
 
 function defaultDeployYaml(): string {
@@ -58,8 +49,8 @@ jobs:
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`;
+          apiToken: \${{ secrets.CF_API_TOKEN }}
+`.trim();
 }
 
 function defaultWorkerHandler(): string {
@@ -76,17 +67,38 @@ export async function buildAndDeployApp(
   payload: BuildPayload & {
     files?: { path: string; content: string }[];
   },
-  env: { CF_API_TOKEN: string; CF_ACCOUNT_ID: string }
+  env: {
+    CF_API_TOKEN?: string;
+    CF_ACCOUNT_ID?: string;
+    GITHUB_PAT: string;
+  }
 ) {
   const fallbackPlan = extractFallbackPlan(payload);
   const projectName = `mvp-${payload.ideaId}`;
 
-  const kvTitle = `submissions-${projectName}-${Date.now()}`;
-  const kvNamespaceId = await createKvNamespace({
-    token: env.CF_API_TOKEN,
-    accountId: env.CF_ACCOUNT_ID,
-    title: kvTitle,
-  });
+  let kvNamespaceId = '';
+
+  const needsKv = payload.files?.some(f =>
+    f.path === 'functions/index.ts' && f.content.includes('env.SUBMISSIONS_KV')
+  );
+
+  if (needsKv) {
+    if (env.CF_API_TOKEN && env.CF_ACCOUNT_ID) {
+      try {
+        kvNamespaceId = await createKvNamespace({
+          token: env.CF_API_TOKEN,
+          accountId: env.CF_ACCOUNT_ID,
+          title: `submissions-${projectName}-${Date.now()}`,
+        });
+      } catch (err) {
+        throw new Error(`❌ KV required but failed to create: ${err.message}`);
+      }
+    } else {
+      throw new Error("❌ This app requires KV, but Cloudflare credentials are missing.");
+    }
+  } else {
+    console.log("✅ KV not used — skipping KV creation.");
+  }
 
   let files: Record<string, string>;
 
@@ -122,7 +134,10 @@ export async function buildAndDeployApp(
     files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvNamespaceId);
   }
 
-  const repoUrl = await commitToGitHub(payload.ideaId, files);
+  const repoUrl = await commitToGitHub(payload.ideaId, files, {
+    token: env.GITHUB_PAT,
+    org: 'LaunchWing',
+  });
 
   return {
     pagesUrl: `https://${projectName}.promptpulse.workers.dev`,
