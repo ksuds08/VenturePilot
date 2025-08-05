@@ -107,6 +107,7 @@ export function sanitizeGeneratedFiles(
       path: 'wrangler.toml',
       content: `
 name = "${projectName}"
+${accountId ? `account_id = "${accountId}"` : `# account_id = "YOUR_ACCOUNT_ID_HERE"`}
 compatibility_date = "2024-01-01"
 main = "functions/index.ts"
 usage_model = "bundled"
@@ -135,6 +136,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: \${{ secrets.CF_API_TOKEN }}
     steps:
       - uses: actions/checkout@v3
       - uses: cloudflare/wrangler-action@v3
