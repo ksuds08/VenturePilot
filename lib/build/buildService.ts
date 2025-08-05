@@ -60,6 +60,16 @@ jobs:
 `;
 }
 
+function defaultWorkerHandler(): string {
+  return `export default {
+  async fetch(request, env) {
+    return new Response("Hello from LaunchWing!", {
+      headers: { "Content-Type": "text/plain" }
+    });
+  }
+};`;
+}
+
 export async function buildAndDeployApp(
   payload: BuildPayload & {
     files?: { path: string; content: string }[];
@@ -91,6 +101,11 @@ export async function buildAndDeployApp(
     if (!files['.github/workflows/deploy.yml']) {
       console.warn("⚠️ Missing deploy.yml — injecting fallback");
       files['.github/workflows/deploy.yml'] = defaultDeployYaml();
+    }
+
+    if (!files['functions/index.ts']) {
+      console.warn("⚠️ Missing functions/index.ts — injecting fallback Worker");
+      files['functions/index.ts'] = defaultWorkerHandler();
     }
   } else {
     console.warn("⚠️ No agent files provided — falling back to generateSimpleApp()");
