@@ -3,36 +3,30 @@
 type FileInput = { path: string; content: string };
 type FileOutput = { path: string; content: string };
 
-/**
- * Cleans up raw backend chunks and removes markdown, explanations, and prose.
- */
 function cleanBackendChunk(content: string): string {
   return content
     .split('\n')
     .map(line => line.trim())
     .filter(line => {
       if (!line) return false;
-      if (/^\/\//.test(line)) return false; // comments
-      if (/^#+\s/.test(line)) return false; // markdown headers
-      if (/^\d+[\.\)]\s/.test(line)) return false; // numbered markdown
-      if (/^\*\*.*\*\*$/.test(line)) return false; // bold markdown
-      if (/^(This|The)\s.+(handler|function|file)/i.test(line)) return false; // prose
-      if (/^[A-Z][\w\s]+[\.!?]$/.test(line)) return false; // sentence-style prose
+      if (/^\/\//.test(line)) return false;
+      if (/^#+\s/.test(line)) return false;
+      if (/^\d+[\.\)]\s/.test(line)) return false;
+      if (/^\*\*.*\*\*$/.test(line)) return false;
+      if (/^(This|The)\s.+(handler|function|file)/i.test(line)) return false;
+      if (/^[A-Z][\w\s]+[\.!?]$/.test(line)) return false;
       return true;
     })
     .join('\n');
 }
 
-/**
- * Attempts to classify content as HTML, CSS, or JS and map to a public/ path.
- */
 function inferFrontendFiles(chunks: FileInput[]): FileOutput[] {
   return chunks.map((chunk, index) => {
     const content = chunk.content.trim();
     let ext = 'js';
     if (content.startsWith('<!DOCTYPE') || content.startsWith('<html')) {
       ext = 'html';
-    } else if (content.startsWith('body') || content.includes('{') && content.includes('}')) {
+    } else if (content.startsWith('body') || (content.includes('{') && content.includes('}'))) {
       ext = 'css';
     }
     const path = `public/${['index', 'styles', 'app'][index] || `file${index}`}.${ext}`;
@@ -40,15 +34,28 @@ function inferFrontendFiles(chunks: FileInput[]): FileOutput[] {
   });
 }
 
-/**
- * Converts and sanitizes agent-generated files to a valid deployable structure.
- */
-export function sanitizeGeneratedFiles(files: FileInput[], meta: { ideaId: string }): FileOutput[] {
+function hasFile(files: FileOutput[], filename: string): boolean {
+  return files.some(f => f.path === filename);
+}
+
+export function sanitizeGeneratedFiles(
+  files: FileInput[],
+  meta: { ideaId: string; env: Record<string, string | undefined> }
+): FileOutput[] {
   const sanitized: FileOutput[] = [];
 
   const frontendChunks = files.filter(f => f.path.startsWith('frontend/'));
   const backendChunks = files.filter(f => f.path.startsWith('backend/'));
   const otherFiles = files.filter(f => !f.path.includes('/chunk_'));
+
+  const env = meta.env;
+  const projectName = meta.ideaId;
+
+  const apiToken = env.CLOUDFLARE_API_TOKEN || env.CF_API_TOKEN;
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+
+  console.log("DEBUG: CLOUDFLARE_ACCOUNT_ID =", accountId);
+  console.log("DEBUG: CLOUDFLARE_API_TOKEN =", apiToken ? "[REDACTED]" : "undefined");
 
   // Convert frontend chunks → public/*.*
   const frontendFiles = inferFrontendFiles(frontendChunks);
@@ -65,6 +72,55 @@ export function sanitizeGeneratedFiles(files: FileInput[], meta: { ideaId: strin
 
   // Preserve other non-chunk files
   sanitized.push(...otherFiles);
+
+  // Inject wrangler.toml if missing
+  if (!hasFile(sanitized, 'wrangler.toml')) {
+    console.warn("⚠️ Missing wrangler.toml — injecting fallback");
+    sanitized.push({
+      path: 'wrangler.toml',
+      content: `
+name = "${projectName}"
+compatibility_date = "2024-01-01"
+main = "functions/index.ts"
+usage_model = "bundled"
+
+[site]
+bucket = "./public"
+
+[env.production]
+workers_dev = true
+`.trim(),
+    });
+  }
+
+  // Inject deploy.yml if missing
+  if (!hasFile(sanitized, '.github/workflows/deploy.yml')) {
+    console.warn("⚠️ Missing deploy.yml — injecting fallback");
+    sanitized.push({
+      path: '.github/workflows/deploy.yml',
+      content: `
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CF_API_TOKEN }}
+`.trim(),
+    });
+  }
+
+  // Warn if token is still missing
+  if (!apiToken) {
+    console.error("❌ Missing Cloudflare API token — KV or GitHub operations will be skipped.");
+  }
 
   return sanitized;
 }
