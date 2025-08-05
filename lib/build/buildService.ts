@@ -1,4 +1,3 @@
-// src/lib/build/buildService.ts
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
@@ -35,7 +34,8 @@ export async function buildAndDeployApp(
   const fallbackPlan = extractFallbackPlan(payload);
   const projectName = `mvp-${payload.ideaId}`;
 
-  const kvNamespaceId = await createKvNamespace({
+  // You can safely remove this block later if unused
+  await createKvNamespace({
     token: env.CF_API_TOKEN,
     accountId: env.CF_ACCOUNT_ID,
     title: 'SUBMISSIONS_KV',
@@ -44,8 +44,7 @@ export async function buildAndDeployApp(
   const files = generateSimpleApp(
     fallbackPlan,
     payload.branding,
-    projectName,
-    kvNamespaceId
+    projectName
   );
 
   const repoUrl = await commitToGitHub(payload.ideaId, files);
