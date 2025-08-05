@@ -121,7 +121,7 @@ jobs:
       - name: Deploy to Cloudflare
         run: wrangler deploy
         env:
-          CLOUDFLARE_API_TOKEN: \${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
 `;
 
   return {
