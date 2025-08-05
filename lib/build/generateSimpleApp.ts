@@ -171,9 +171,9 @@ loadSubmissions();
   },
 };
 
-const html = `${indexHtml}`;
-const css = `${styleCss}`;
-const js = `${mainJs}`;
+const html = \`${indexHtml}\`;
+const css = \`${styleCss}\`;
+const js = \`${mainJs}\`;
 `;
 
   const wranglerToml = generateWranglerToml(projectName, kvNamespaceId);
@@ -194,4 +194,15 @@ jobs:
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: 
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+`;
+
+  return {
+    'index.html': indexHtml,
+    'style.css': styleCss,
+    'main.js': mainJs,
+    'functions/index.ts': workerIndexTs,
+    'wrangler.toml': wranglerToml,
+    '.github/workflows/deploy.yml': deployYaml,
+  };
+}
