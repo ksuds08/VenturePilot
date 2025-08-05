@@ -1,56 +1,63 @@
-export function sanitizeGeneratedFiles(
-  files: { path: string; content: string }[]
-): { path: string; content: string }[] {
+// lib/build/sanitizeGeneratedFiles.ts
+
+import type { FileSpec } from './types';
+
+/**
+ * Normalizes and rewrites the file paths of agent-generated files to match
+ * the expected structure for Cloudflare Workers deployment.
+ *
+ * - Promotes one backend file to functions/index.ts
+ * - Promotes wrangler.toml and deploy.yml to root
+ * - Ignores duplicates and trims whitespace
+ */
+export function sanitizeGeneratedFiles(files: FileSpec[]): FileSpec[] {
+  const seen = new Set<string>();
   let foundBackend = false;
+  let foundWrangler = false;
+  let foundDeploy = false;
 
-  return files.map((file) => {
-    const lower = file.path.toLowerCase();
+  const cleaned = files
+    .map((file) => {
+      const path = file.path.trim().replace(/^\.\/+/, '').replace(/\\/g, '/');
+      const lower = path.toLowerCase();
 
-    // Normalize wrangler.toml
-    if (lower.includes('wrangler') && lower.endsWith('.toml')) {
-      console.log(`🔄 Rewriting ${file.path} → wrangler.toml`);
-      return { ...file, path: 'wrangler.toml' };
-    }
+      // Promote first backend chunk (JS or TS) to functions/index.ts
+      if (
+        !foundBackend &&
+        (lower.endsWith('.ts') || lower.endsWith('.js')) &&
+        (lower.includes('backend') || lower.includes('function')) &&
+        lower.includes('chunk')
+      ) {
+        foundBackend = true;
+        console.log(`🔄 Rewriting ${file.path} → functions/index.ts`);
+        return { ...file, path: 'functions/index.ts' };
+      }
 
-    // Normalize deploy workflow
-    if (
-      (lower.includes('deploy') || lower.includes('workflow') || lower.includes('cloudflare')) &&
-      (lower.endsWith('.yml') || lower.endsWith('.yaml'))
-    ) {
-      console.log(`🔄 Rewriting ${file.path} → .github/workflows/deploy.yml`);
-      return { ...file, path: '.github/workflows/deploy.yml' };
-    }
+      // Promote wrangler.toml to root
+      if (!foundWrangler && lower.includes('wrangler.toml')) {
+        foundWrangler = true;
+        console.log(`🔄 Rewriting ${file.path} → wrangler.toml`);
+        return { ...file, path: 'wrangler.toml' };
+      }
 
-    // Normalize index.html
-    if (lower.endsWith('.html') && lower.includes('index')) {
-      console.log(`🔄 Rewriting ${file.path} → index.html`);
-      return { ...file, path: 'index.html' };
-    }
+      // Promote deploy.yml to .github/workflows/deploy.yml
+      if (!foundDeploy && lower.includes('deploy.yml')) {
+        foundDeploy = true;
+        console.log(`🔄 Rewriting ${file.path} → .github/workflows/deploy.yml`);
+        return { ...file, path: '.github/workflows/deploy.yml' };
+      }
 
-    // Normalize main JS
-    if (lower.endsWith('.js') && (lower.includes('main') || lower.includes('app'))) {
-      console.log(`🔄 Rewriting ${file.path} → main.js`);
-      return { ...file, path: 'main.js' };
-    }
+      return { ...file, path };
+    })
+    .filter((file) => {
+      const key = file.path;
+      if (seen.has(key)) {
+        console.log(`⚠️ Skipping duplicate: ${key}`);
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
 
-    // Normalize CSS
-    if (lower.endsWith('.css') && lower.includes('style')) {
-      console.log(`🔄 Rewriting ${file.path} → style.css`);
-      return { ...file, path: 'style.css' };
-    }
-
-    // Catch first valid backend handler and promote it to functions/index.ts
-    if (
-      !foundBackend &&
-      lower.endsWith('.ts') &&
-      (lower.includes('backend') || lower.includes('function')) &&
-      lower.includes('chunk')
-    ) {
-      foundBackend = true;
-      console.log(`🔄 Rewriting ${file.path} → functions/index.ts`);
-      return { ...file, path: 'functions/index.ts' };
-    }
-
-    return file;
-  });
+  return cleaned;
 }
