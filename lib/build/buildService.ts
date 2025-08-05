@@ -28,12 +28,13 @@ function extractFallbackPlan(payload: BuildPayload): string {
   return lastAssistant?.content?.trim() || 'No plan provided';
 }
 
-// ✅ Updated to accept env
-export async function buildAndDeployApp(payload: BuildPayload, env: Env) {
+export async function buildAndDeployApp(
+  payload: BuildPayload,
+  env: { CLOUDFLARE_API_TOKEN: string; CLOUDFLARE_ACCOUNT_ID: string }
+) {
   const fallbackPlan = extractFallbackPlan(payload);
   const projectName = `mvp-${payload.ideaId}`;
 
-  // ✅ Use env instead of process.env
   const kvNamespaceId = await createKvNamespace({
     token: env.CLOUDFLARE_API_TOKEN,
     accountId: env.CLOUDFLARE_ACCOUNT_ID,
