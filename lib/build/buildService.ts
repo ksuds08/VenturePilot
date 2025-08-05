@@ -34,11 +34,11 @@ export async function buildAndDeployApp(
   const fallbackPlan = extractFallbackPlan(payload);
   const projectName = `mvp-${payload.ideaId}`;
 
-  // You can safely remove this block later if unused
+  const kvTitle = `submissions-${projectName}-${Date.now()}`;
   await createKvNamespace({
     token: env.CF_API_TOKEN,
     accountId: env.CF_ACCOUNT_ID,
-    title: 'SUBMISSIONS_KV',
+    title: kvTitle,
   });
 
   const files = generateSimpleApp(
