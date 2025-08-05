@@ -1,6 +1,6 @@
 // src/lib/build/generateSimpleApp.ts
 import type { BuildPayload } from './types';
-import { generateWranglerToml } from '../generate/generateWranglerToml'; // ✅ Corrected path
+import { generateWranglerToml } from '../generate/generateWranglerToml';
 
 function escapeHTML(content: string): string {
   return content
@@ -102,10 +102,25 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
 });
 `;
 
+  const html = indexHtml;
+  const css = styleCss;
+  const js = mainJs;
+
   const workerIndexTs = `export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    if (path === "/api/submissions" && request.method === "GET") {
+      const list = await env.SUBMISSIONS_KV.list({ prefix: "submission:" });
+      const values = await Promise.all(
+        list.keys.map((entry) => env.SUBMISSIONS_KV.get(entry.name))
+      );
+      const parsed = values.filter(Boolean).map(JSON.parse);
+      return new Response(JSON.stringify(parsed, null, 2), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     if (path === "/api/submit" && request.method === "POST") {
       const name = await request.text();
@@ -131,10 +146,6 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
     });
   },
 };
-
-const html = \`${indexHtml}\`;
-const css = \`${styleCss}\`;
-const js = \`${mainJs}\`;
 `;
 
   const wranglerToml = generateWranglerToml(projectName, kvNamespaceId);
@@ -159,6 +170,9 @@ jobs:
 `;
 
   return {
+    'index.html': indexHtml,
+    'style.css': styleCss,
+    'main.js': mainJs,
     'functions/index.ts': workerIndexTs,
     'wrangler.toml': wranglerToml,
     '.github/workflows/deploy.yml': deployYaml,
