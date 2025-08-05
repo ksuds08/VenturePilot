@@ -1,5 +1,5 @@
 import { commitToGitHub } from './commitToGitHub';
-import { generateChunkedApp } from './generateChunkedApp';
+import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
 import type { BuildPayload } from './types';
 
@@ -28,7 +28,9 @@ function extractFallbackPlan(payload: BuildPayload): string {
 }
 
 export async function buildAndDeployApp(
-  payload: BuildPayload,
+  payload: BuildPayload & {
+    files?: { path: string; content: string }[];
+  },
   env: { CF_API_TOKEN: string; CF_ACCOUNT_ID: string }
 ) {
   const fallbackPlan = extractFallbackPlan(payload);
@@ -41,12 +43,9 @@ export async function buildAndDeployApp(
     title: kvTitle,
   });
 
-  const files = await generateChunkedApp({
-    plan: fallbackPlan,
-    branding: payload.branding,
-    projectName,
-    kvNamespaceId
-  });
+  const files = payload.files
+    ? Object.fromEntries(payload.files.map(f => [f.path, f.content]))
+    : await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvNamespaceId);
 
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
