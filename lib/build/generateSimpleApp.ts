@@ -33,6 +33,13 @@ export function generateSimpleApp(
     <h1>${appName}</h1>
     <h2>${tagline}</h2>
     <pre>${escapedPlan}</pre>
+
+    <form id="userForm">
+      <input name="name" placeholder="Your name" required />
+      <button type="submit">Submit</button>
+    </form>
+    <p id="responseMsg"></p>
+
     <button onclick="sayHi()">Try Me</button>
   </main>
   <script src="/main.js"></script>
@@ -65,12 +72,32 @@ button {
   font-size: 1rem;
   cursor: pointer;
 }
+input {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  margin-top: 1rem;
+  display: block;
+  width: 200px;
+  margin-inline: auto;
+}
 `;
 
   const mainJs = `
 function sayHi() {
   alert("Hello from ${appName}!");
 }
+
+document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = e.target.name.value;
+  const res = await fetch('/api/submit', {
+    method: 'POST',
+    body: name,
+  });
+  const data = await res.json();
+  document.querySelector('#responseMsg').textContent = data.message;
+});
 `;
 
   const workerIndexTs = `export default {
@@ -78,12 +105,13 @@ function sayHi() {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // 🔁 NEW: Handle POST /api/echo
-    if (path === "/api/echo" && request.method === "POST") {
-      const body = await request.text();
-      return new Response(\`Echo: \${body}\`, {
-        headers: { "Content-Type": "text/plain" },
-      });
+    // POST /api/submit
+    if (path === "/api/submit" && request.method === "POST") {
+      const name = await request.text();
+      return new Response(
+        JSON.stringify({ message: \`Thanks, \${name}!\` }),
+        { headers: { "Content-Type": "application/json" } }
+      );
     }
 
     // Static file serving
