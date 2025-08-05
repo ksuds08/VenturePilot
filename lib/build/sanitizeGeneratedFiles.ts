@@ -1,67 +1,96 @@
 // lib/build/sanitizeGeneratedFiles.ts
 
-type File = { path: string; content: string };
+export interface FileSpec {
+  path: string;
+  content: string;
+}
 
+/**
+ * Sanitizes and transforms raw agent-generated file chunks into a valid
+ * deployable file structure (e.g., index.html, functions/index.ts).
+ */
 export function sanitizeGeneratedFiles(
-  files: File[],
-  context: { ideaId: string }
-): File[] {
-  const output: File[] = [];
+  files: FileSpec[],
+  meta: { ideaId: string }
+): FileSpec[] {
+  const sanitized: FileSpec[] = [];
 
-  // Collect content by category
-  const frontendChunks = files.filter((f) => f.path.startsWith("frontend/"));
-  const backendChunks = files.filter((f) => f.path.startsWith("backend/"));
-  const configFiles = files.filter((f) => f.path.startsWith("config/"));
-  const publicChunks = files.filter((f) => f.path.startsWith("public/"));
+  const cleanCode = (code: string): string => {
+    return code
+      .replace(/^```[a-z]*\s*/gim, '') // strip code fences
+      .replace(/```/g, '')             // close fences
+      .replace(/^#+\s.*$/gm, '')       // markdown headings
+      .replace(/^\/\/.*$/gm, '')       // comment clutter
+      .trim();
+  };
 
-  // 🧱 Frontend
-  if (frontendChunks.length) {
-    const html = frontendChunks.find((f) => f.content.includes("<!DOCTYPE html>"));
-    const js = frontendChunks.find((f) => f.path.includes(".js"));
-    const css = frontendChunks.find((f) => f.path.includes(".css"));
+  // ──────────────────────────────────────────────
+  // FRONTEND: Convert frontend/chunk_X.txt → public/index.html, etc.
+  // ──────────────────────────────────────────────
+  const frontendChunks = files.filter(f => f.path.startsWith('frontend/'));
 
-    if (html) output.push({ path: "public/index.html", content: html.content });
-    if (js) output.push({ path: "public/app.js", content: js.content });
-    if (css) output.push({ path: "public/styles.css", content: css.content });
-  }
+  frontendChunks.forEach((f, i) => {
+    const content = cleanCode(f.content);
 
-  // 🧱 Also include any public/ prefixed files as-is (e.g. manifest, logos)
-  for (const f of publicChunks) {
-    if (!f.path.endsWith(".txt")) {
-      output.push({ path: f.path, content: f.content });
+    let target = 'public/index.html';
+    if (content.includes('<script') || content.includes('function') || content.includes('console.')) {
+      target = 'public/app.js';
+    } else if (content.includes('body {') || content.includes('font-family') || content.includes('color:')) {
+      target = 'public/styles.css';
+    } else if (content.includes('<html') || content.includes('<!DOCTYPE html>')) {
+      target = 'public/index.html';
     }
-  }
 
-  // ⚙️ Config
-  for (const f of configFiles) {
-    if (!f.path.endsWith(".txt")) {
-      output.push({ path: f.path, content: f.content });
+    // Avoid duplicates
+    if (!sanitized.find(s => s.path === target)) {
+      sanitized.push({ path: target, content });
     }
+  });
+
+  // ──────────────────────────────────────────────
+  // BACKEND: Merge backend/chunk_X.txt → functions/index.ts
+  // ──────────────────────────────────────────────
+  const backendChunks = files.filter(f => f.path.startsWith('backend/'));
+
+  const mergedBackend = backendChunks
+    .map((f, i) => {
+      const cleaned = cleanCode(f.content);
+      return `// Handler ${i}\n${cleaned}`;
+    })
+    .join('\n\n');
+
+  if (mergedBackend) {
+    sanitized.push({
+      path: 'functions/index.ts',
+      content: mergedBackend,
+    });
   }
 
-  // 🧠 Backend → merge into functions/index.ts
-  if (backendChunks.length) {
-    const handlers = backendChunks.map((f, i) => ({
-      name: `handler${i}`,
-      content: f.content,
-    }));
+  // ──────────────────────────────────────────────
+  // CONFIG: Copy through config chunk files (leave as-is)
+  // ──────────────────────────────────────────────
+  const configChunks = files.filter(f => f.path.startsWith('config/'));
+  configChunks.forEach((f, i) => {
+    sanitized.push({
+      path: `config/chunk_${i}.txt`,
+      content: f.content.trim(),
+    });
+  });
 
-    const merged = [
-      ...handlers.map((h) => `// From ${h.name}\n${h.content.trim()}\n`),
-      `export default {`,
-      ...handlers.map((h) => `  ...${h.name},`),
-      `};`,
-    ].join("\n");
-
-    const indexTs = `// Auto-generated by sanitizeGeneratedFiles\n` + merged;
-    output.push({ path: "functions/index.ts", content: indexTs });
-  }
-
-  // ✅ Pass-through wrangler.toml and deploy.yml
-  const passthrough = files.filter((f) =>
-    f.path === "wrangler.toml" || f.path === ".github/workflows/deploy.yml"
+  // ──────────────────────────────────────────────
+  // OTHER: Manually included files like wrangler.toml, deploy.yml
+  // ──────────────────────────────────────────────
+  const passthrough = files.filter(f =>
+    f.path === 'wrangler.toml' ||
+    f.path === '.github/workflows/deploy.yml' ||
+    f.path === 'functions/index.ts' // fallback
   );
-  output.push(...passthrough);
+  sanitized.push(...passthrough);
 
-  return output;
+  // ──────────────────────────────────────────────
+  // FILTER OUT ALL RAW CHUNK FILES
+  // ──────────────────────────────────────────────
+  return sanitized.filter(
+    f => !f.path.includes('chunk_') || f.path.startsWith('config/')
+  );
 }
