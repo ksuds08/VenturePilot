@@ -1,3 +1,4 @@
+// lib/build/buildService.ts
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
@@ -88,12 +89,9 @@ export async function buildAndDeployApp(
 
   let files: Record<string, string>;
 
-  if (!payload.files || payload.files.length === 0) {
-    console.warn("⚠️ No agent files — falling back to generateSimpleApp()");
-    files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvNamespaceId);
-  } else {
+  if (payload.files) {
     console.log("🧾 Raw file paths from agent:", payload.files.map(f => f.path));
-    const sanitized = sanitizeGeneratedFiles(payload.files, projectName);
+    const sanitized = sanitizeGeneratedFiles(payload.files, { ideaId: payload.ideaId });
     files = Object.fromEntries(sanitized.map(f => [f.path, f.content]));
 
     // Inject required deploy files if missing
@@ -111,20 +109,9 @@ export async function buildAndDeployApp(
       console.warn("⚠️ Missing functions/index.ts — injecting fallback Worker");
       files['functions/index.ts'] = defaultWorkerHandler();
     }
-  }
-
-  // Final file set confirmation
-  const fileList = Object.keys(files);
-  console.log("📦 Final files to commit:", fileList);
-
-  if (!fileList.includes('functions/index.ts')) {
-    console.error("🚨 Still missing functions/index.ts at commit step");
-  }
-  if (!fileList.includes('wrangler.toml')) {
-    console.error("🚨 Still missing wrangler.toml at commit step");
-  }
-  if (!fileList.includes('.github/workflows/deploy.yml')) {
-    console.error("🚨 Still missing deploy.yml at commit step");
+  } else {
+    console.warn("⚠️ No agent files provided — falling back to generateSimpleApp()");
+    files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvNamespaceId);
   }
 
   const repoUrl = await commitToGitHub(payload.ideaId, files);
