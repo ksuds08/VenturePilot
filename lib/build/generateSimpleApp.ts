@@ -1,6 +1,6 @@
 // src/lib/build/generateSimpleApp.ts
 import type { BuildPayload } from './types';
-import { generateWranglerToml } from '../generate/generateWranglerToml'; // ✅ Corrected path
+import { generateWranglerToml } from '../generate/generateWranglerToml';
 
 function escapeHTML(content: string): string {
   return content
@@ -41,6 +41,9 @@ export function generateSimpleApp(
       <button type="submit">Submit</button>
     </form>
     <p id="responseMsg"></p>
+
+    <h3>Submissions:</h3>
+    <ul id="submissionList"></ul>
 
     <button onclick="sayHi()">Try Me</button>
   </main>
@@ -83,6 +86,16 @@ input {
   width: 200px;
   margin-inline: auto;
 }
+ul {
+  list-style: none;
+  padding: 0;
+  max-width: 400px;
+  margin: 1rem auto;
+  text-align: left;
+}
+li {
+  padding: 0.25rem 0;
+}
 `;
 
   const mainJs = `
@@ -99,7 +112,22 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
   });
   const data = await res.json();
   document.querySelector('#responseMsg').textContent = data.message;
+  loadSubmissions();
 });
+
+async function loadSubmissions() {
+  const res = await fetch('/api/submissions');
+  const list = await res.json();
+  const ul = document.querySelector('#submissionList');
+  ul.innerHTML = '';
+  list.forEach(({ name, submittedAt }) => {
+    const li = document.createElement('li');
+    li.textContent = `${name} — ${new Date(submittedAt).toLocaleString()}`;
+    ul.appendChild(li);
+  });
+}
+
+loadSubmissions();
 `;
 
   const workerIndexTs = `export default {
@@ -107,14 +135,25 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    if (path === "/api/submissions" && request.method === "GET") {
+      const list = await env.SUBMISSIONS_KV.list({ prefix: "submission:" });
+      const values = await Promise.all(
+        list.keys.map((entry) => env.SUBMISSIONS_KV.get(entry.name))
+      );
+      const parsed = values.filter(Boolean).map(JSON.parse);
+      return new Response(JSON.stringify(parsed, null, 2), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     if (path === "/api/submit" && request.method === "POST") {
       const name = await request.text();
       const submittedAt = new Date().toISOString();
       const record = { name, submittedAt };
-      const key = \`submission:\${Date.now()}\`;
+      const key = `submission:${Date.now()}`;
       await env.SUBMISSIONS_KV.put(key, JSON.stringify(record));
       return new Response(
-        JSON.stringify({ message: \`Thanks, \${name}!\` }),
+        JSON.stringify({ message: `Thanks, ${name}!` }),
         { headers: { "Content-Type": "application/json" } }
       );
     }
@@ -132,9 +171,9 @@ document.querySelector('#userForm')?.addEventListener('submit', async (e) => {
   },
 };
 
-const html = \`${indexHtml}\`;
-const css = \`${styleCss}\`;
-const js = \`${mainJs}\`;
+const html = `${indexHtml}`;
+const css = `${styleCss}`;
+const js = `${mainJs}`;
 `;
 
   const wranglerToml = generateWranglerToml(projectName, kvNamespaceId);
@@ -155,12 +194,4 @@ jobs:
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`;
-
-  return {
-    'functions/index.ts': workerIndexTs,
-    'wrangler.toml': wranglerToml,
-    '.github/workflows/deploy.yml': deployYaml,
-  };
-}
+          apiToken: 
