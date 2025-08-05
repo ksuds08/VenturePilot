@@ -78,6 +78,15 @@ function sayHi() {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // 🔁 NEW: Handle POST /api/echo
+    if (path === "/api/echo" && request.method === "POST") {
+      const body = await request.text();
+      return new Response(\`Echo: \${body}\`, {
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+
+    // Static file serving
     const files = {
       '/': { content: html, type: 'text/html' },
       '/style.css': { content: css, type: 'text/css' },
