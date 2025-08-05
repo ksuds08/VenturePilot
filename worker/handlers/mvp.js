@@ -2,6 +2,10 @@
 import { buildAndDeployApp } from '../../lib/build/buildService.js';
 
 export async function mvpHandler(request, env) {
+  // ✅ DEBUG: Check if Cloudflare vars are present
+  console.log("DEBUG: CLOUDFLARE_ACCOUNT_ID =", env.CLOUDFLARE_ACCOUNT_ID);
+  console.log("DEBUG: CLOUDFLARE_API_TOKEN =", env.CLOUDFLARE_API_TOKEN?.slice?.(0, 5) + '...');
+
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -121,7 +125,7 @@ export async function mvpHandler(request, env) {
             branding,
             messages,
             files: validFiles,
-          }, env); // ✅ Pass Cloudflare Worker env here
+          }, env); // ✅ Pass env to access runtime vars
 
           if (result.pagesUrl) {
             send('✅ Deployment successful!');
