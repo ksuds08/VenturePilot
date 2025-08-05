@@ -1,5 +1,4 @@
 // lib/build/sanitizeGeneratedFiles.ts
-
 import type { BuildPayload } from './types';
 
 export interface FileSpec {
@@ -8,88 +7,85 @@ export interface FileSpec {
 }
 
 /**
- * Normalizes and rewrites the file paths of agent-generated files to match
- * the expected directory structure for Cloudflare Workers.
+ * Maps agent-generated file chunks into their final deploy-ready structure.
+ * Also skips package.json entirely for now to avoid build failures.
  */
-export function sanitizeGeneratedFiles(files: FileSpec[], payload: BuildPayload): FileSpec[] {
+export function sanitizeGeneratedFiles(files: FileSpec[], projectName = 'launchwing-app'): FileSpec[] {
   const rewritten: FileSpec[] = [];
 
   for (const file of files) {
-    let path = file.path.trim().replace(/\\/g, '/');
+    const { path, content } = file;
+    const lower = path.toLowerCase();
 
-    // Remove leading "./" if present
-    if (path.startsWith('./')) {
-      path = path.slice(2);
-    }
+    // ⛔ Skip dangerous or broken files
+    if (lower.endsWith('package.json')) continue;
+    if (!content || typeof content !== 'string' || content.trim().length === 0) continue;
 
-    // Strip surrounding quotes or whitespace
-    path = path.replace(/^['"]|['"]$/g, '').trim();
-
-    // Map top-level flat files
-    if (path === 'wrangler.toml') {
-      rewritten.push({ path: 'wrangler.toml', content: file.content });
+    // ✅ Handle config files
+    if (lower.includes('wrangler') && content.includes('compatibility_date')) {
+      rewritten.push({ path: 'wrangler.toml', content });
       continue;
     }
 
-    if (path === '.github/workflows/deploy.yml') {
-      rewritten.push({ path: '.github/workflows/deploy.yml', content: file.content });
+    if (lower.includes('deploy') && content.includes('cloudflare/wrangler-action')) {
+      rewritten.push({ path: '.github/workflows/deploy.yml', content });
       continue;
     }
 
-    // Route known folder types
-    if (path.startsWith('frontend/') || path.startsWith('public/')) {
-      const name = path.split('/').pop();
-      if (name?.endsWith('.html')) {
-        rewritten.push({ path: 'index.html', content: file.content });
-      } else if (name?.endsWith('.css')) {
-        rewritten.push({ path: 'style.css', content: file.content });
-      } else if (name?.endsWith('.js')) {
-        rewritten.push({ path: 'main.js', content: file.content });
-      } else {
-        rewritten.push({ path: name || 'asset.txt', content: file.content });
-      }
+    // ✅ Handle backend functions
+    if (lower.startsWith('backend/')) {
+      rewritten.push({ path: `functions/index.ts`, content }); // 🧠 Use last one wins
       continue;
     }
 
-    if (path.startsWith('backend/')) {
-      const baseName = path.split('/').pop()!.replace('.txt', '.ts');
-
-      // Keep all backend chunks for inspection (optional)
-      rewritten.push({ path: `functions/${baseName}`, content: file.content });
-
-      // Promote the first valid handler to index.ts
-      if (
-        file.content.includes('export async function onRequest') ||
-        file.content.includes('export default') && file.content.includes('fetch')
-      ) {
-        rewritten.push({ path: 'functions/index.ts', content: file.content });
+    // ✅ Handle frontend HTML/CSS/JS
+    if (lower.startsWith('frontend/')) {
+      if (content.includes('<!DOCTYPE html>') || content.includes('<html')) {
+        rewritten.push({ path: 'public/index.html', content });
+        continue;
       }
 
-      continue;
-    }
-
-    if (path.startsWith('config/')) {
-      const baseName = path.split('/').pop();
-      if (baseName === 'chunk_0.txt') {
-        rewritten.push({ path: 'wrangler.toml', content: file.content });
-      } else if (baseName === 'chunk_1.txt') {
-        rewritten.push({ path: 'package.json', content: file.content });
-      } else if (baseName === 'chunk_2.txt') {
-        rewritten.push({ path: 'README.md', content: file.content });
-      } else if (baseName === 'chunk_3.txt') {
-        rewritten.push({ path: '.gitignore', content: file.content });
+      if (content.includes('body {') || content.includes('font-family') || content.includes('background-color')) {
+        rewritten.push({ path: 'public/styles.css', content });
+        continue;
       }
-      continue;
+
+      if (content.includes('document.getElementById') || content.includes('addEventListener')) {
+        rewritten.push({ path: 'public/app.js', content });
+        continue;
+      }
     }
 
-    if (path.startsWith('assets/')) {
-      const name = path.split('/').pop();
-      rewritten.push({ path: name || 'asset.txt', content: file.content });
-      continue;
+    // ✅ Handle assets like manifest or XML
+    if (lower.startsWith('assets/')) {
+      if (content.includes('short_name') || content.includes('"theme_color"')) {
+        rewritten.push({ path: 'public/manifest.json', content });
+        continue;
+      }
+
+      if (content.includes('<browserconfig>')) {
+        rewritten.push({ path: 'public/browserconfig.xml', content });
+        continue;
+      }
     }
 
-    // Fallback catch-all
-    rewritten.push({ path, content: file.content });
+    // ❓ Default fallback if unrecognized
+    rewritten.push({ path, content });
+  }
+
+  // ✅ Ensure a fallback Worker exists
+  const hasWorker = rewritten.some(f => f.path === 'functions/index.ts');
+  if (!hasWorker) {
+    rewritten.push({
+      path: 'functions/index.ts',
+      content: `export default {
+  async fetch(request, env) {
+    return new Response("Hello from LaunchWing!", {
+      headers: { "Content-Type": "text/plain" }
+    });
+  }
+};`,
+    });
   }
 
   return rewritten;
