@@ -1,6 +1,7 @@
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
+import { sanitizeGeneratedFiles } from './sanitizeGeneratedFiles';
 import type { BuildPayload } from './types';
 
 function isProbablyJSON(text: string): boolean {
@@ -43,9 +44,19 @@ export async function buildAndDeployApp(
     title: kvTitle,
   });
 
-  const files = payload.files
-    ? Object.fromEntries(payload.files.map(f => [f.path, f.content]))
-    : await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvNamespaceId);
+  let files: Record<string, string>;
+
+  if (payload.files) {
+    const sanitized = sanitizeGeneratedFiles(payload.files);
+    files = Object.fromEntries(sanitized.map(f => [f.path, f.content]));
+
+    if (!files['wrangler.toml'] || !files['.github/workflows/deploy.yml']) {
+      throw new Error('❌ Missing wrangler.toml or deploy.yml in generated files');
+    }
+  } else {
+    // Fallback to static template
+    files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvNamespaceId);
+  }
 
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
