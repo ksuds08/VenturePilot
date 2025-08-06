@@ -90,10 +90,13 @@ export async function buildAndDeployApp(
           accountId: env.CF_ACCOUNT_ID,
           title: `submissions-${projectName}-${Date.now()}`,
         });
+        console.log("✅ KV namespace created:", kvNamespaceId);
       } catch (err) {
+        console.error("❌ KV namespace creation failed:", err);
         throw new Error(`❌ KV required but failed to create: ${err.message}`);
       }
     } else {
+      console.error("❌ KV required but credentials missing");
       throw new Error("❌ This app requires KV, but Cloudflare credentials are missing.");
     }
   } else {
@@ -114,6 +117,7 @@ export async function buildAndDeployApp(
     });
 
     files = Object.fromEntries(sanitized.map(f => [f.path, f.content]));
+    console.log("✅ Sanitized file list:", Object.keys(files));
 
     if (!files['wrangler.toml']) {
       console.warn("⚠️ Missing wrangler.toml — injecting fallback");
@@ -132,15 +136,27 @@ export async function buildAndDeployApp(
   } else {
     console.warn("⚠️ No agent files provided — falling back to generateSimpleApp()");
     files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvNamespaceId);
+    console.log("✅ Fallback files generated");
   }
 
-  const repoUrl = await commitToGitHub(payload.ideaId, files, {
-    token: env.GITHUB_PAT,
-    org: 'LaunchWing',
-  });
+  let repoUrl = '';
+  try {
+    console.log("🚀 Calling commitToGitHub...");
+    repoUrl = await commitToGitHub(payload.ideaId, files, {
+      token: env.GITHUB_PAT,
+      org: 'LaunchWing',
+    });
+    console.log("✅ GitHub repo created:", repoUrl);
+  } catch (err) {
+    console.error("❌ GitHub commit failed:", err);
+    throw err;
+  }
+
+  const pagesUrl = `https://${projectName}.promptpulse.workers.dev`;
+  console.log("✅ Deployment planned to:", pagesUrl);
 
   return {
-    pagesUrl: `https://${projectName}.promptpulse.workers.dev`,
+    pagesUrl,
     repoUrl,
     plan: fallbackPlan,
   };
