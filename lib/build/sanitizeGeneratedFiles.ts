@@ -6,7 +6,6 @@ type FileOutput = { path: string; content: string };
  * and duplicate onRequest() function blocks.
  */
 function cleanBackendChunk(content: string): string {
-  // Strip markdown, prose, and comments first
   const lines = content.split('\n');
   const filteredLines: string[] = [];
 
@@ -138,10 +137,14 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CF_API_TOKEN }}
     steps:
-      - uses: actions/checkout@v3
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: \${{ secrets.CF_API_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@3
+
+      - name: Deploy to Cloudflare Workers
+        run: wrangler deploy
 `.trim(),
     });
   }
