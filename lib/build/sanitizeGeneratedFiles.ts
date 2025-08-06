@@ -3,18 +3,16 @@ type FileOutput = { path: string; content: string };
 
 /**
  * Cleans up raw backend chunks and removes markdown, explanations, prose,
- * and duplicate onRequest() functions.
+ * and duplicate onRequest() function blocks.
  */
 function cleanBackendChunk(content: string): string {
+  // Strip markdown, prose, and comments first
   const lines = content.split('\n');
-  const cleaned: string[] = [];
-  let insideSkippedFunction = false;
-  let onRequestFound = false;
+  const filteredLines: string[] = [];
 
   for (let line of lines) {
     const trimmed = line.trim();
 
-    // Remove markdown, prose, and filler
     if (!trimmed) continue;
     if (/^\/\//.test(trimmed)) continue;
     if (/^#+\s/.test(trimmed)) continue;
@@ -23,28 +21,29 @@ function cleanBackendChunk(content: string): string {
     if (/^(This|The)\s.+(handler|function|file)/i.test(trimmed)) continue;
     if (/^[A-Z][\w\s]+[\.!?]$/.test(trimmed)) continue;
 
-    // Skip duplicate onRequest() blocks
-    if (/export\s+async\s+function\s+onRequest/.test(trimmed)) {
-      if (onRequestFound) {
-        console.warn("⚠️ Skipping duplicate onRequest()");
-        insideSkippedFunction = true;
-        continue;
-      } else {
-        onRequestFound = true;
-      }
-    }
-
-    if (insideSkippedFunction) {
-      if (/^\}/.test(trimmed)) {
-        insideSkippedFunction = false;
-      }
-      continue;
-    }
-
-    cleaned.push(line);
+    filteredLines.push(line);
   }
 
-  return cleaned.join('\n');
+  let cleaned = filteredLines.join('\n');
+
+  // Match full onRequest blocks
+  const onRequestMatches = [
+    ...cleaned.matchAll(/export\s+async\s+function\s+onRequest[^{]*\{[\s\S]*?\n\}/gm)
+  ];
+
+  if (onRequestMatches.length > 1) {
+    console.warn(`⚠️ Found ${onRequestMatches.length} onRequest() blocks — removing duplicates.`);
+    let firstSeen = false;
+    cleaned = cleaned.replace(/export\s+async\s+function\s+onRequest[^{]*\{[\s\S]*?\n\}/gm, match => {
+      if (!firstSeen) {
+        firstSeen = true;
+        return match;
+      }
+      return '';
+    });
+  }
+
+  return cleaned;
 }
 
 function inferFrontendFiles(chunks: FileInput[]): FileOutput[] {
