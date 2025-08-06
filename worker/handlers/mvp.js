@@ -1,8 +1,6 @@
-// api/mvp.js
 import { buildAndDeployApp } from '../../lib/build/buildService.js';
 
 export async function mvpHandler(request, env) {
-  // ✅ DEBUG: Check if Cloudflare vars are present
   console.log("DEBUG: CLOUDFLARE_ACCOUNT_ID =", env.CLOUDFLARE_ACCOUNT_ID);
   console.log("DEBUG: CLOUDFLARE_API_TOKEN =", env.CLOUDFLARE_API_TOKEN?.slice?.(0, 5) + '...');
 
@@ -56,58 +54,43 @@ export async function mvpHandler(request, env) {
         const send = (text) =>
           controller.enqueue(encoder.encode(`data: ${text}\n\n`));
 
-        const parts = ['frontend', 'backend', 'assets', 'config'];
-        const allFiles = [];
-
-        send('🤔 Analyzing your prompt and starting chunked generation...');
+        send('🧠 Generating full project with structured files...');
         await delay(500);
 
-        for (const part of parts) {
-          send(`🧠 Generating ${part} files...`);
-          await delay(300);
+        let files = [];
 
-          try {
-            const res = await fetch('https://launchwing-agent.onrender.com/generate/chunk', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ part, prompt: requirements }),
-            });
+        try {
+          const res = await fetch('https://launchwing-agent.onrender.com/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: requirements }),
+          });
 
-            if (!res.ok) {
-              const errText = await res.text();
-              send(`❌ ${part} generation failed: ${errText}`);
-              continue;
-            }
-
-            const { files } = await res.json();
-            if (!Array.isArray(files) || files.length === 0) {
-              send(`⚠️ No ${part} files returned`);
-              continue;
-            }
-
-            send(`✅ ${files.length} ${part} files generated`);
-            allFiles.push(...files);
-            await delay(400);
-          } catch (e) {
-            send(`❌ Error generating ${part}: ${e.message}`);
+          if (!res.ok) {
+            const errText = await res.text();
+            send(`❌ Code generation failed: ${errText}`);
+            controller.close();
+            return;
           }
-        }
 
-        if (allFiles.length === 0) {
-          send('❌ No files generated. Cannot deploy.');
+          const result = await res.json();
+          files = Array.isArray(result.files) ? result.files : [];
+
+          if (files.length === 0) {
+            send('❌ No files returned from agent');
+            controller.close();
+            return;
+          }
+
+          send(`✅ Received ${files.length} files from agent`);
+          await delay(400);
+        } catch (err) {
+          send(`❌ Agent request failed: ${err.message}`);
           controller.close();
           return;
         }
 
-        const validFiles = allFiles.filter(
-          (f) => f && typeof f.path === 'string' && typeof f.content === 'string'
-        );
-
-        if (validFiles.length !== allFiles.length) {
-          send(`⚠️ Skipped ${allFiles.length - validFiles.length} malformed file(s)`);
-        }
-
-        send(`🧾 Deploying ${validFiles.length} files...`);
+        send('🚀 Deploying your app...');
         await delay(500);
 
         const ideaId = body.ideaId || Math.random().toString(36).substring(2, 8);
@@ -124,8 +107,8 @@ export async function mvpHandler(request, env) {
             ideaSummary,
             branding,
             messages,
-            files: validFiles,
-          }, env); // ✅ Pass env to access runtime vars
+            files,
+          }, env);
 
           if (result.pagesUrl) {
             send('✅ Deployment successful!');
