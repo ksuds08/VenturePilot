@@ -9,6 +9,10 @@ export async function commitToGitHub(
   const org = opts?.org || (globalThis as any).GITHUB_ORG;
   const username = (globalThis as any).GITHUB_USERNAME;
 
+  console.log("🔐 GitHub Token Present:", Boolean(token));
+  console.log("📛 GitHub Org:", org || "(none)");
+  console.log("👤 GitHub Username:", username || "(none)");
+
   if (!token) {
     console.error("❌ Missing GitHub token");
     throw new Error("GitHub token is required");
@@ -18,6 +22,7 @@ export async function commitToGitHub(
   const owner = org || username;
 
   if (!owner) {
+    console.error("❌ No GitHub owner provided (org or username required)");
     throw new Error("GitHub org or username must be provided");
   }
 
@@ -43,20 +48,22 @@ export async function commitToGitHub(
 
   if (!createRes.ok) {
     const text = await createRes.text();
+    console.error("❌ GitHub repo creation failed:", text);
     throw new Error(`GitHub repo creation failed: ${text}`);
   }
+
+  console.log("✅ Repo created. Uploading files...");
 
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
   for (const [rawPath, content] of Object.entries(files)) {
     const path = rawPath?.trim().replace(/^\/+/, "");
-
     if (!path) {
       console.warn(`⚠️ Skipping file with empty or invalid path: "${rawPath}"`);
       continue;
     }
 
-    console.log(`📦 Uploading: ${path}`);
+    console.log(`📦 Creating blob for: ${path}`);
 
     const blobRes = await fetch(
       `https://api.github.com/repos/${owner}/${repoName}/git/blobs`,
@@ -76,12 +83,15 @@ export async function commitToGitHub(
 
     if (!blobRes.ok) {
       const text = await blobRes.text();
+      console.error(`❌ Blob creation failed for ${path}:`, text);
       throw new Error(`Blob creation failed for ${path}: ${text}`);
     }
 
     const { sha } = await blobRes.json();
     blobs.push({ path, mode: "100644", type: "blob", sha });
   }
+
+  console.log("🌲 Creating tree...");
 
   const refRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`,
@@ -113,10 +123,13 @@ export async function commitToGitHub(
 
   if (!treeRes.ok) {
     const text = await treeRes.text();
+    console.error("❌ Tree creation failed:", text);
     throw new Error(`Tree creation failed: ${text}`);
   }
 
   const { sha: newTreeSha } = await treeRes.json();
+
+  console.log("📝 Creating commit...");
 
   const commitRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/commits`,
@@ -137,10 +150,13 @@ export async function commitToGitHub(
 
   if (!commitRes.ok) {
     const text = await commitRes.text();
+    console.error("❌ Commit failed:", text);
     throw new Error(`Commit failed: ${text}`);
   }
 
   const { sha: newCommitSha } = await commitRes.json();
+
+  console.log("🔁 Updating ref to point to new commit...");
 
   const patchRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
@@ -160,8 +176,11 @@ export async function commitToGitHub(
 
   if (!patchRes.ok) {
     const text = await patchRes.text();
+    console.error("❌ Ref update failed:", text);
     throw new Error(`Patch ref failed: ${text}`);
   }
 
-  return `https://github.com/${owner}/${repoName}`;
+  const repoUrl = `https://github.com/${owner}/${repoName}`;
+  console.log("✅ GitHub commit complete:", repoUrl);
+  return repoUrl;
 }
