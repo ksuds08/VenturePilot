@@ -52,46 +52,57 @@ export async function mvpHandler(request, env) {
     const stream = new ReadableStream({
       async start(controller) {
         const send = (text) =>
-          controller.enqueue(encoder.encode(`data: ${text}\n\n`));
+          controller.enqueue(encoder.encode(`${text}\n\n`));
 
-        send('🧠 Generating full project with structured files...');
-        await delay(500);
+        const agentRes = await fetch('https://launchwing-agent.onrender.com/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: requirements }),
+        });
 
-        let files = [];
-
-        try {
-          const res = await fetch('https://launchwing-agent.onrender.com/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: requirements }),
-          });
-
-          if (!res.ok) {
-            const errText = await res.text();
-            send(`❌ Code generation failed: ${errText}`);
-            controller.close();
-            return;
-          }
-
-          const result = await res.json();
-          files = Array.isArray(result.files) ? result.files : [];
-
-          if (files.length === 0) {
-            send('❌ No files returned from agent');
-            controller.close();
-            return;
-          }
-
-          send(`✅ Received ${files.length} files from agent`);
-          await delay(400);
-        } catch (err) {
-          send(`❌ Agent request failed: ${err.message}`);
+        if (!agentRes.ok || !agentRes.body) {
+          send(`data: ${JSON.stringify({ error: 'Agent request failed' })}`);
           controller.close();
           return;
         }
 
-        send('🚀 Deploying your app...');
-        await delay(500);
+        const reader = agentRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let files = [];
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop(); // retain last partial
+
+            for (const chunk of parts) {
+              if (!chunk.startsWith('data:')) continue;
+              const payload = chunk.slice(5).trim();
+
+              try {
+                const parsed = JSON.parse(payload);
+                if (Array.isArray(parsed.files)) {
+                  files = parsed.files;
+                }
+
+                send(`data: ${payload}`);
+              } catch {
+                send(`data: ${JSON.stringify({ error: 'Malformed SSE event' })}`);
+              }
+            }
+          }
+        } catch (err) {
+          send(`data: ${JSON.stringify({ error: 'Stream error', details: err.message })}`);
+          controller.close();
+          return;
+        }
+
+        send(`data: ${JSON.stringify({ type: 'status', message: '🚀 Deploying your app...' })}`);
 
         const ideaId = body.ideaId || Math.random().toString(36).substring(2, 8);
         const ideaSummary = {
@@ -111,16 +122,16 @@ export async function mvpHandler(request, env) {
           }, env);
 
           if (result.pagesUrl) {
-            send('✅ Deployment successful!');
-            send(`pagesUrl:${result.pagesUrl}`);
+            send(`data: ${JSON.stringify({ type: 'status', message: '✅ Deployment successful!' })}`);
+            send(`data: ${JSON.stringify({ type: 'pagesUrl', url: result.pagesUrl })}`);
             if (result.repoUrl) {
-              send(`repoUrl:${result.repoUrl}`);
+              send(`data: ${JSON.stringify({ type: 'repoUrl', url: result.repoUrl })}`);
             }
           } else {
-            send('❌ Deployment failed. No pages URL returned.');
+            send(`data: ${JSON.stringify({ type: 'error', message: 'Deployment failed. No pages URL returned.' })}`);
           }
         } catch (err) {
-          send(`❌ Deployment error: ${err.message}`);
+          send(`data: ${JSON.stringify({ type: 'error', message: 'Deployment error', details: err.message })}`);
         }
 
         controller.close();
