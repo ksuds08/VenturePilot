@@ -48,11 +48,37 @@ export function useDeploymentHandler({
     let firstLogSeen = false;
 
     const appendLog = (line: string) => {
-      messageAccumulator = [
-        ...messageAccumulator,
-        { role: "assistant", content: line },
-      ];
-      simulateStreamingLog(id, line);
+      let parsed: any = null;
+
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        // not JSON — treat as plain string
+      }
+
+      let displayText: string | null = null;
+
+      if (parsed) {
+        if (parsed.message) {
+          displayText = parsed.message;
+        } else if (parsed.pagesUrl) {
+          displayText = `🌍 Site: ${parsed.pagesUrl}`;
+        } else if (parsed.repoUrl) {
+          displayText = `📁 Repo: ${parsed.repoUrl}`;
+        } else if (parsed.error) {
+          displayText = `❌ ${parsed.error}`;
+        }
+      } else {
+        displayText = line;
+      }
+
+      if (displayText) {
+        messageAccumulator = [
+          ...messageAccumulator,
+          { role: "assistant", content: displayText },
+        ];
+        simulateStreamingLog(id, displayText);
+      }
     };
 
     try {
