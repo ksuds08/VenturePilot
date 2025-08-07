@@ -1,66 +1,117 @@
+// build/sanitizeGeneratedFiles.ts
 type FileInput = { path: string; content: string };
 type FileOutput = { path: string; content: string };
+
+function stripCodeFences(s: string): string {
+  return s
+    .replace(/```[\w-]*\s*?\n?/g, "") // ```json, ```ts, ``` etc
+    .replace(/```/g, "")
+    .trim();
+}
+
+function stripNarration(s: string): string {
+  return s
+    .split(/\r?\n/)
+    .filter((line) => {
+      const t = line.trim();
+      const tl = t.toLowerCase();
+
+      if (!t) return false;
+      if (/^\/\//.test(t)) return false;        // JS line comments
+      if (/^#+\s/.test(t)) return false;        // Markdown headings
+      if (/^\d+[\.\)]\s/.test(t)) return false; // Ordered lists
+      if (/^\*\*.*\*\*$/.test(t)) return false; // Bold-only lines
+
+      // Kill typical narration
+      if (/^(this|the)\s.+(handler|function|file|component)/i.test(t)) return false;
+      if (tl.startsWith("to ")) return false;
+      if (tl.startsWith("below is")) return false;
+      if (tl.startsWith("here is")) return false;
+      if (tl.startsWith("here’s")) return false;
+      if (tl.startsWith("use the following")) return false;
+
+      return true;
+    })
+    .join("\n")
+    .trim();
+}
+
+function ensureJson(raw: string, fallback: object = {}): string {
+  const cleaned = stripNarration(stripCodeFences(raw));
+  try {
+    const obj = JSON.parse(cleaned);
+    return JSON.stringify(obj, null, 2);
+  } catch {
+    return JSON.stringify(fallback, null, 2);
+  }
+}
+
+function defaultPackageJson(name: string) {
+  return {
+    name,
+    version: "0.1.0",
+    private: true,
+    scripts: {
+      dev: "wrangler dev",
+      start: "wrangler dev",
+      deploy: "wrangler deploy"
+    },
+    devDependencies: {
+      wrangler: "^4.28.1"
+    }
+  };
+}
 
 /**
  * Cleans up raw backend chunks and removes markdown, explanations, prose,
  * and duplicate onRequest() function blocks.
  */
 function cleanBackendChunk(content: string): string {
-  const lines = content.split('\n');
-  const filteredLines: string[] = [];
-
-  for (let line of lines) {
-    const trimmed = line.trim();
-
-    if (!trimmed) continue;
-    if (/^\/\//.test(trimmed)) continue;
-    if (/^#+\s/.test(trimmed)) continue;
-    if (/^\d+[\.\)]\s/.test(trimmed)) continue;
-    if (/^\*\*.*\*\*$/.test(trimmed)) continue;
-    if (/^(This|The)\s.+(handler|function|file)/i.test(trimmed)) continue;
-    if (/^[A-Z][\w\s]+[\.!?]$/.test(trimmed)) continue;
-
-    filteredLines.push(line);
-  }
-
-  let cleaned = filteredLines.join('\n');
+  let cleaned = stripNarration(stripCodeFences(content));
 
   // Match full onRequest blocks
   const onRequestMatches = [
-    ...cleaned.matchAll(/export\s+async\s+function\s+onRequest[^{]*\{[\s\S]*?\n\}/gm)
+    ...cleaned.matchAll(/export\s+async\s+function\s+onRequest[^{]*\{[\s\S]*?\n\}/gm),
   ];
 
   if (onRequestMatches.length > 1) {
     console.warn(`⚠️ Found ${onRequestMatches.length} onRequest() blocks — removing duplicates.`);
     let firstSeen = false;
-    cleaned = cleaned.replace(/export\s+async\s+function\s+onRequest[^{]*\{[\s\S]*?\n\}/gm, match => {
-      if (!firstSeen) {
-        firstSeen = true;
-        return match;
+    cleaned = cleaned.replace(
+      /export\s+async\s+function\s+onRequest[^{]*\{[\s\S]*?\n\}/gm,
+      (match) => {
+        if (!firstSeen) {
+          firstSeen = true;
+          return match;
+        }
+        return "";
       }
-      return '';
-    });
+    );
   }
 
-  return cleaned;
+  return cleaned.trim();
 }
 
 function inferFrontendFiles(chunks: FileInput[]): FileOutput[] {
   return chunks.map((chunk, index) => {
-    const content = chunk.content.trim();
-    let ext = 'js';
-    if (content.startsWith('<!DOCTYPE') || content.startsWith('<html')) {
-      ext = 'html';
-    } else if (content.startsWith('body') || (content.includes('{') && content.includes('}'))) {
-      ext = 'css';
+    const raw = chunk.content ?? "";
+    const content = stripNarration(stripCodeFences(raw));
+    let ext = "js";
+    if (content.startsWith("<!DOCTYPE") || content.startsWith("<html")) {
+      ext = "html";
+    } else if (
+      content.startsWith("body") ||
+      (content.includes("{") && content.includes("}") && !content.includes("function"))
+    ) {
+      ext = "css";
     }
-    const path = `public/${['index', 'styles', 'app'][index] || `file${index}`}.${ext}`;
+    const path = `public/${["index", "styles", "app"][index] || `file${index}`}.${ext}`;
     return { path, content };
   });
 }
 
 function hasFile(files: FileOutput[], filename: string): boolean {
-  return files.some(f => f.path === filename);
+  return files.some((f) => f.path === filename);
 }
 
 export function sanitizeGeneratedFiles(
@@ -69,9 +120,9 @@ export function sanitizeGeneratedFiles(
 ): FileOutput[] {
   const sanitized: FileOutput[] = [];
 
-  const frontendChunks = files.filter(f => f.path.startsWith('frontend/'));
-  const backendChunks = files.filter(f => f.path.startsWith('backend/'));
-  const otherFiles = files.filter(f => !f.path.includes('/chunk_'));
+  const frontendChunks = files.filter((f) => f.path.startsWith("frontend/"));
+  const backendChunks = files.filter((f) => f.path.startsWith("backend/"));
+  const otherFiles = files.filter((f) => !f.path.includes("/chunk_") && !f.path.startsWith("frontend/") && !f.path.startsWith("backend/"));
 
   const env = meta.env;
   const projectName = meta.ideaId;
@@ -87,43 +138,72 @@ export function sanitizeGeneratedFiles(
   sanitized.push(...frontendFiles);
 
   // Merge backend chunks → functions/index.ts
-  const mergedBackend = backendChunks.map(f => cleanBackendChunk(f.content)).join('\n\n');
-  if (mergedBackend.includes('onRequest')) {
+  const mergedBackend = backendChunks.map((f) => cleanBackendChunk(f.content)).join("\n\n");
+  if (mergedBackend && mergedBackend.includes("onRequest")) {
     sanitized.push({
-      path: 'functions/index.ts',
-      content: `// Auto-generated by sanitizeGeneratedFiles\n${mergedBackend}`,
+      path: "functions/index.ts",
+      content: `// Auto-generated by sanitizeGeneratedFiles\n${mergedBackend}\n`,
     });
   }
 
-  // Preserve other non-chunk files
-  sanitized.push(...otherFiles);
+  // Process & preserve other files, but sanitize them by extension
+  for (const f of otherFiles) {
+    const p = f.path.replace(/^\//, "");
+    let c = f.content ?? "";
+
+    // Always strip fences & narration
+    c = stripNarration(stripCodeFences(c));
+
+    if (p.toLowerCase() === "package.json") {
+      const name = (projectName && `mvp-${projectName}`) || "launchwing-app";
+      c = ensureJson(c, defaultPackageJson(name));
+    } else if (p.endsWith(".json")) {
+      c = ensureJson(c, {});
+    } else if (/\.(md|txt)$/i.test(p)) {
+      // leave cleaned markdown/text
+    } else {
+      // for code-y files, remove any leading "filename:" style commentary
+      c = c.replace(/^(#|\/\/)\s*(file:|filename:).*$/gim, "").trim();
+    }
+
+    sanitized.push({ path: p, content: c });
+  }
 
   // Inject wrangler.toml if missing
-  if (!hasFile(sanitized, 'wrangler.toml')) {
+  if (!hasFile(sanitized, "wrangler.toml")) {
     console.warn("⚠️ Missing wrangler.toml — injecting fallback");
     sanitized.push({
-      path: 'wrangler.toml',
+      path: "wrangler.toml",
       content: `
-name = "${projectName}"
+name = "mvp-${projectName}"
 ${accountId ? `account_id = "${accountId}"` : `# account_id = "YOUR_ACCOUNT_ID_HERE"`}
-compatibility_date = "2024-01-01"
 main = "functions/index.ts"
+compatibility_date = "2024-08-01"
 usage_model = "bundled"
 
 [site]
 bucket = "./public"
-
-[env.production]
-workers_dev = true
 `.trim(),
     });
   }
 
-  // Inject deploy.yml if missing
-  if (!hasFile(sanitized, '.github/workflows/deploy.yml')) {
+  // Inject fallback Worker if none was produced
+  if (!hasFile(sanitized, "functions/index.ts")) {
+    console.warn("⚠️ Missing functions/index.ts — injecting fallback Worker");
+    sanitized.push({
+      path: "functions/index.ts",
+      content: `export async function onRequest() {
+  return new Response("Hello from LaunchWing!", { headers: { "Content-Type": "text/plain" } });
+}
+`,
+    });
+  }
+
+  // Inject deploy.yml if missing (Wrangler Action v3, token via CLOUDFLARE_API_TOKEN)
+  if (!hasFile(sanitized, ".github/workflows/deploy.yml")) {
     console.warn("⚠️ Missing deploy.yml — injecting fallback");
     sanitized.push({
-      path: '.github/workflows/deploy.yml',
+      path: ".github/workflows/deploy.yml",
       content: `
 name: Deploy to Cloudflare Workers
 
@@ -134,23 +214,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      CLOUDFLARE_API_TOKEN: \${{ secrets.CF_API_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Wrangler
-        run: npm install --global wrangler@3
-
-      - name: Deploy to Cloudflare Workers
-        run: wrangler deploy
+      - name: Deploy with Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
 `.trim(),
     });
   }
 
   if (!apiToken) {
-    console.error("❌ Missing Cloudflare API token — KV or GitHub operations will be skipped.");
+    console.error("❌ Missing Cloudflare API token — KV or GitHub operations may fail.");
   }
 
   return sanitized;
