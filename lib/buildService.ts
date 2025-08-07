@@ -14,8 +14,11 @@ export async function buildAndDeployApp(payload: BuildPayload) {
     payload.plan || payload.ideaSummary?.description || "No plan provided";
 
   const projectName = `mvp-${payload.ideaId}`;
-  const kvId = await createKvNamespace(projectName); // 🆕 create KV namespace
-  const files = generateSimpleApp(fallbackPlan, payload.branding, projectName, kvId); // 🆕 inject ID
+
+  // Generate a minimal, valid Worker + public assets project
+  const files = generateSimpleApp(fallbackPlan, payload.branding, projectName);
+
+  // Push to GitHub
   const repoUrl = await commitToGitHub(payload.ideaId, files);
 
   return {
@@ -25,26 +28,7 @@ export async function buildAndDeployApp(payload: BuildPayload) {
   };
 }
 
-async function createKvNamespace(projectName: string): Promise<string> {
-  const accountId = (globalThis as any).CF_ACCOUNT_ID;
-  const token = (globalThis as any).CF_API_TOKEN;
-
-  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ title: `${projectName}-ASSETS` }),
-  });
-
-  const data = await res.json();
-  if (!res.ok || !data?.result?.id) {
-    throw new Error(`Failed to create KV namespace: ${JSON.stringify(data?.errors || data)}`);
-  }
-
-  return data.result.id;
-}
+/* ----------------------- GitHub helpers ----------------------- */
 
 function toBase64(str: string): string {
   const encoder = new TextEncoder();
@@ -57,9 +41,10 @@ function toBase64(str: string): string {
 }
 
 async function commitToGitHub(ideaId: string, files: Record<string, string>) {
-  const token = (globalThis as any).PAT_GITHUB;
+  const token = (globalThis as any).PAT_GITHUB || (globalThis as any).GITHUB_PAT;
   const username = (globalThis as any).GITHUB_USERNAME;
   const org = (globalThis as any).GITHUB_ORG;
+
   if (!token || (!username && !org)) {
     throw new Error("GitHub credentials are not configured");
   }
@@ -67,6 +52,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   const repoName = `mvp-${ideaId}`;
   const owner = org || username;
 
+  // 1) Create repo (or no-op if it exists)
   const createRepoEndpoint = org
     ? `https://api.github.com/orgs/${org}/repos`
     : `https://api.github.com/user/repos`;
@@ -85,11 +71,13 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     }),
   });
 
-  if (!createRes.ok) {
+  if (!createRes.ok && createRes.status !== 422) {
+    // 422 = "already exists"
     const text = await createRes.text();
     throw new Error(`GitHub repo creation failed: ${text}`);
   }
 
+  // 2) Prepare blobs
   const blobs: { path: string; mode: string; type: string; sha: string }[] = [];
 
   for (const [path, content] of Object.entries(files)) {
@@ -118,6 +106,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
     blobs.push({ path, mode: "100644", type: "blob", sha });
   }
 
+  // 3) Get base ref
   const refRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/ref/heads/main`,
     {
@@ -130,6 +119,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 
   const baseCommitSha = refRes.ok ? (await refRes.json()).object?.sha : undefined;
 
+  // 4) Create tree
   const treeRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/trees`,
     {
@@ -153,6 +143,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 
   const { sha: newTreeSha } = await treeRes.json();
 
+  // 5) Create commit
   const commitRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/commits`,
     {
@@ -177,6 +168,7 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
 
   const { sha: newCommitSha } = await commitRes.json();
 
+  // 6) Update ref
   const patchRes = await fetch(
     `https://api.github.com/repos/${owner}/${repoName}/git/refs/heads/main`,
     {
@@ -201,17 +193,19 @@ async function commitToGitHub(ideaId: string, files: Record<string, string>) {
   return `https://github.com/${owner}/${repoName}`;
 }
 
+/* ----------------------- Project generator ----------------------- */
+
 function generateSimpleApp(
   plan: string,
   branding: any,
   projectName: string,
-  kvId: string
 ): Record<string, string> {
   const appName = branding?.name || "My AI App";
   const tagline = branding?.tagline || "An AI‑powered experience";
   const primaryColour = branding?.palette?.primary || "#0066cc";
+  const today = new Date().toISOString().split("T")[0];
 
-  const escapedPlan = plan
+  const escapedPlan = (plan || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
@@ -220,16 +214,16 @@ function generateSimpleApp(
     .map((p) => `<p>${p}</p>`)
     .join("\n");
 
-  const today = new Date().toISOString().split("T")[0];
-
+  // ✅ wrangler v4 assets flow + tiny proxy worker
   return {
-    "index.html": `<!DOCTYPE html>
+    // --- public assets ---
+    "public/index.html": `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${appName}</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header class="header">
@@ -243,12 +237,12 @@ function generateSimpleApp(
   <footer class="footer">
     <p>Generated by AI on ${new Date().toLocaleDateString()}</p>
   </footer>
-  <script src="app.js"></script>
+  <script src="/app.js"></script>
 </body>
 </html>`,
 
-    "styles.css": `body {
-  font-family: sans-serif;
+    "public/styles.css": `body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   background: #f5f5f5;
   color: #333;
   margin: 0;
@@ -273,67 +267,41 @@ function generateSimpleApp(
   color: #666;
 }`,
 
-    "app.js": `export function init() {
+    "public/app.js": `(() => {
   console.log("App initialized");
-}
-window.addEventListener("DOMContentLoaded", init);`,
+})();`,
 
-    "functions/index.ts": `const files: Record<string, string> = {
-  "/": "index.html",
-  "/index.html": "index.html",
-  "/styles.css": "styles.css",
-  "/app.js": "app.js",
-};
+    // --- Worker: just forwards to assets (v4) ---
+    "functions/index.ts": `export default {
+  async fetch(request: Request, env: any): Promise<Response> {
+    // In Wrangler v4, [assets] binds a service at env.ASSETS.
+    // Forward everything to static assets. If you later want /api routes,
+    // handle those before this line.
+    return env.ASSETS.fetch(request);
+  }
+};`,
 
-export default {
-  async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(request.url);
-    const path = files[url.pathname] || "index.html";
-
-    try {
-      const content = await env.ASSETS.get(path, { type: "text" });
-      if (!content) throw new Error("File not found");
-
-      const contentType = getContentType(path);
-      return new Response(content, {
-        headers: { "Content-Type": contentType },
-      });
-    } catch {
-      return new Response("Not found", { status: 404 });
-    }
-  },
-};
-
-function getContentType(file: string): string {
-  if (file.endsWith(".html")) return "text/html";
-  if (file.endsWith(".css")) return "text/css";
-  if (file.endsWith(".js")) return "application/javascript";
-  return "text/plain";
-}
-`,
-
+    // --- wrangler.toml (v4) ---
     "wrangler.toml": `name = "${projectName}"
 main = "functions/index.ts"
 compatibility_date = "${today}"
 
-[[kv_namespaces]]
-binding = "ASSETS"
-id = "${kvId}"
+[assets]
+directory = "public"
 `,
 
+    // --- (tiny) tsconfig so TypeScript compiles cleanly if used ---
     "tsconfig.json": `{
   "compilerOptions": {
-    "target": "es2017",
-    "downlevelIteration": true,
-    "module": "esnext",
-    "moduleResolution": "node",
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "skipLibCheck": true
   }
 }`,
 
+    // --- GitHub Action (Wrangler v4, overridable) ---
     ".github/workflows/deploy.yml": `name: Deploy to Cloudflare Workers
 
 on:
@@ -347,10 +315,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy to Cloudflare Workers
+      - name: Deploy with Wrangler v4
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: \${{ vars.WRANGLER_VERSION || '4.28.1' }}
 `
   };
 }
