@@ -15,6 +15,8 @@ type BuildPayloadLike = {
   [key: string]: unknown;
 };
 
+/* ----------------------- env helpers ----------------------- */
+
 function readEnvVar(name: string): string | undefined {
   const anyGlobal: any = typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
   const maybeProc: any =
@@ -23,35 +25,46 @@ function readEnvVar(name: string): string | undefined {
       : anyGlobal && typeof anyGlobal.process !== "undefined"
       ? (anyGlobal.process as any)
       : undefined;
-
   return maybeProc?.env?.[name];
 }
 
-function getBatchSize(): number {
-  const raw = readEnvVar("CODEGEN_BATCH_SIZE");
+// Prefer Worker `env` first, then fallback to process.env
+function getEnv(name: string, runtimeEnv?: Record<string, any>): string | undefined {
+  const v = runtimeEnv?.[name];
+  return typeof v === "string" && v.length > 0 ? v : readEnvVar(name);
+}
+
+function getBatchSize(runtimeEnv?: Record<string, any>): number {
+  const raw = getEnv("CODEGEN_BATCH_SIZE", runtimeEnv);
   const n = raw ? parseInt(raw, 10) : NaN;
   return Number.isFinite(n) && n > 0 ? n : 5;
 }
 
-function getEnvSubset(): Record<string, string> {
+function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> {
   const keys = [
+    // OpenAI / model selection
     "OPENAI_API_KEY",
     "OPENAI_API_BASE",
     "CODEGEN_MODEL",
     "CODEGEN_MAX_TOKENS",
     "CODEGEN_TEMP",
     "CODEGEN_TIMEOUT_SECS",
+
+    // Additional toggles affecting validation
     "CODEGEN_MIN_HTML_BYTES",
     "CODEGEN_MIN_CSS_BYTES",
     "CODEGEN_MIN_JS_BYTES",
   ];
+
   const out: Record<string, string> = {};
   for (const k of keys) {
-    const v = readEnvVar(k);
+    const v = getEnv(k, runtimeEnv);
     if (typeof v === "string" && v.length > 0) out[k] = v;
   }
   return out;
 }
+
+/* ----------------------- types ----------------------- */
 
 export type BuildServiceResult = {
   files: { path: string; content: string }[];
@@ -60,11 +73,14 @@ export type BuildServiceResult = {
   pagesUrl?: string;
 };
 
+/* ----------------------- main ----------------------- */
+
 export async function buildService(
   payload: BuildPayloadLike & {
     repo?: { token: string; org?: string }; // kept for compat; ignored now
     skipCommit?: boolean;
-  }
+  },
+  env?: Record<string, any> // <-- accept Worker env
 ): Promise<BuildServiceResult> {
   const { plan, targetFiles } = await planProjectFiles(payload as any);
 
@@ -72,8 +88,8 @@ export async function buildService(
     const minimal = sanitizeGeneratedFiles([], {
       ideaId: payload.ideaId,
       env: {
-        CLOUDFLARE_ACCOUNT_ID: readEnvVar("CLOUDFLARE_ACCOUNT_ID"),
-        CLOUDFLARE_API_TOKEN: readEnvVar("CLOUDFLARE_API_TOKEN"),
+        CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
+        CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
       },
     });
     return { files: minimal, plan };
@@ -82,7 +98,7 @@ export async function buildService(
   // 2) Batched generation → agent (write-only)
   const batches = chunkArray(
     targetFiles.map((t: any) => ({ path: t.path, description: t.description })),
-    getBatchSize()
+    getBatchSize(env)
   );
 
   const generated: { path: string; content: string }[] = [];
@@ -91,7 +107,7 @@ export async function buildService(
     const out = await generateCodeBatch(batch, {
       plan,
       alreadyGenerated: already,
-      env: getEnvSubset(),
+      env: getEnvSubset(env),
     });
     generated.push(...out);
   }
@@ -100,12 +116,12 @@ export async function buildService(
   const sanitized = sanitizeGeneratedFiles(generated, {
     ideaId: payload.ideaId,
     env: {
-      CLOUDFLARE_ACCOUNT_ID: readEnvVar("CLOUDFLARE_ACCOUNT_ID"),
-      CLOUDFLARE_API_TOKEN: readEnvVar("CLOUDFLARE_API_TOKEN"),
+      CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
+      CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
     },
   });
 
-  // 4) Publish via agent → GitHub (instead of commitToGitHub)
+  // 4) Publish via agent → GitHub
   let repoUrl: string | undefined;
   if (!payload.skipCommit) {
     const repoName = `mvp-${payload.ideaId}`;
@@ -118,8 +134,8 @@ export async function buildService(
         createRepo: true,
       },
       {
-        baseUrl: readEnvVar("AGENT_BASE_URL"),
-        apiKey: readEnvVar("AGENT_API_KEY"),
+        baseUrl: getEnv("AGENT_BASE_URL", env), // <-- from Worker env
+        apiKey: getEnv("AGENT_API_KEY", env),
       }
     );
     repoUrl = publish.repoUrl;
