@@ -12,6 +12,7 @@ import { generateCodeBatch } from "./generateCodeBatch";
 import { chunkArray } from "./chunkArray";
 import { commitToGitHub } from "./commitToGitHub";
 import { sanitizeGeneratedFiles } from "./sanitizeGeneratedFiles";
+import { runInterfaceSelfTest } from "./typecheck";
 
 // NOTE: We intentionally avoid importing BuildPayload from "../../types"
 // because it isn't exported there in this repo. If/when you export it,
