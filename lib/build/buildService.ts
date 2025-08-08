@@ -54,6 +54,10 @@ function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> 
     "CODEGEN_MIN_HTML_BYTES",
     "CODEGEN_MIN_CSS_BYTES",
     "CODEGEN_MIN_JS_BYTES",
+
+    // ✅ Needed by generateCodeBatch/callGenerateCodeAPI so we don't abort at 60s
+    "CODEGEN_TIMEOUT_MS",
+    "CODEGEN_CHUNK_SIZE",
   ];
 
   const out: Record<string, string> = {};
@@ -140,7 +144,6 @@ export async function buildService(
           branch: "main",
           commitMessage: `chore: initial MVP for ${payload.ideaId}`,
           createRepo: true,
-          // 👇 NEW: ensure public so org-level Actions secrets are accessible
           visibility: "public",
           private: false,
         },
