@@ -1,5 +1,4 @@
-// lib/build/buildService.ts
-
+//lib/build/buildService.ts
 /**
  * Orchestrates: plan -> batched codegen -> sanitize -> (optional) commit.
  * - Uses small batched requests to the agent/API to avoid OOM/timeouts.
@@ -107,11 +106,11 @@ export async function buildService(
   }
 ): Promise<BuildServiceResult> {
   // 1) Plan the project (names + descriptions only; no heavy code here)
-  //    IMPORTANT: planProjectFiles returns { plan, filesToGenerate }
-  const { plan, filesToGenerate } = await planProjectFiles(payload as any);
+  //    IMPORTANT: planProjectFiles returns { plan, targetFiles }
+  const { plan, targetFiles } = await planProjectFiles(payload as any);
 
   // Edge case: nothing to generate
-  if (!filesToGenerate || filesToGenerate.length === 0) {
+  if (!targetFiles || targetFiles.length === 0) {
     // Still sanitize to ensure wrangler.toml / index.html get injected later if needed
     const minimal = sanitizeGeneratedFiles([], {
       ideaId: payload.ideaId,
@@ -129,7 +128,7 @@ export async function buildService(
 
   // 2) Generate code in batches, passing minimal env and previously generated files as context
   const batches = chunkArray(
-    filesToGenerate.map((t: any) => ({ path: t.path, description: t.description })),
+    targetFiles.map((t: any) => ({ path: t.path, description: t.description })),
     getBatchSize()
   );
 
