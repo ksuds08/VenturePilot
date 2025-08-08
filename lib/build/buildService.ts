@@ -13,7 +13,17 @@ import { chunkArray } from "./chunkArray";
 import { commitToGitHub } from "./commitToGitHub";
 import { sanitizeGeneratedFiles } from "./sanitizeGeneratedFiles";
 
-import type { BuildPayload } from "../../types";
+// NOTE: We intentionally avoid importing BuildPayload from "../../types"
+// because it isn't exported there in this repo. If/when you export it,
+// you can reintroduce a proper import and tighten this type.
+type BuildPayloadLike = {
+  ideaId: string;
+  // optional bits the planner might use
+  userBrief?: string;
+  features?: string[];
+  stack?: string[];
+  [key: string]: unknown;
+};
 
 /* -------------------------------------------------------------------------- */
 /*                             Safe env accessors                              */
@@ -89,7 +99,7 @@ export type BuildServiceResult = {
 /* -------------------------------------------------------------------------- */
 
 export async function buildService(
-  payload: BuildPayload & {
+  payload: BuildPayloadLike & {
     repo?: { token: string; org?: string; name?: string };
     // allow the caller to skip committing (useful in local dev/tests)
     skipCommit?: boolean;
@@ -97,7 +107,7 @@ export async function buildService(
 ): Promise<BuildServiceResult> {
   // 1) Plan the project (names + descriptions only; no heavy code here)
   //    IMPORTANT: planProjectFiles returns { plan, targetFiles }
-  const { plan, targetFiles } = await planProjectFiles(payload);
+  const { plan, targetFiles } = await planProjectFiles(payload as any);
 
   // Edge case: nothing to generate
   if (!targetFiles || targetFiles.length === 0) {
@@ -118,7 +128,7 @@ export async function buildService(
 
   // 2) Generate code in batches, passing minimal env and previously generated files as context
   const batches = chunkArray(
-    targetFiles.map((t) => ({ path: t.path, description: t.description })),
+    targetFiles.map((t: any) => ({ path: t.path, description: t.description })),
     getBatchSize()
   );
 
