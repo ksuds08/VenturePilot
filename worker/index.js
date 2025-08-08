@@ -32,6 +32,9 @@ export default {
     const url  = new URL(request.url);
     const path = url.pathname.replace(/^\/+/, '');
 
+    // 🔊 Debug: prove routing + show agent URL
+    console.log("ROUTER hit path:", path, "AGENT_BASE_URL:", env.AGENT_BASE_URL);
+
     switch (path) {
       case '':
         return new Response('VenturePilot API is running', {
