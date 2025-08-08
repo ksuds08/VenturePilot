@@ -13,11 +13,23 @@ export type PublishResponse = {
   commitSha: string;
 };
 
+function safeEnv(name: string): string | undefined {
+  // Guarded access so Workers don't throw
+  if (typeof process !== "undefined" && (process as any)?.env?.[name]) {
+    return (process as any).env[name];
+  }
+  return undefined;
+}
+
 export async function callPublishToGitHub(
   req: PublishRequest,
   opts: { baseUrl?: string; apiKey?: string; timeoutMs?: number } = {}
 ): Promise<PublishResponse> {
-  const baseUrl = opts.baseUrl || process.env.AGENT_BASE_URL || "https://launchwing-agent.onrender.com";
+  const baseRaw =
+    opts.baseUrl ||
+    safeEnv("AGENT_BASE_URL") ||
+    "https://launchwing-agent.onrender.com";
+  const baseUrl = baseRaw.replace(/\/+$/, ""); // strip trailing slash
   const timeoutMs = opts.timeoutMs ?? 60_000;
 
   const ctrl = new AbortController();
@@ -28,18 +40,17 @@ export async function callPublishToGitHub(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(opts.apiKey || process.env.AGENT_API_KEY
-          ? { Authorization: `Bearer ${opts.apiKey || process.env.AGENT_API_KEY}` }
-          : {}),
+        ...(opts.apiKey ? { Authorization: `Bearer ${opts.apiKey}` } : {}),
       },
       body: JSON.stringify({
-        branch: "main",
+        branch: req.branch ?? "main",
         commitMessage: req.commitMessage ?? "chore: initial MVP",
         createRepo: req.createRepo ?? true,
         ...req,
       }),
       signal: ctrl.signal,
     });
+
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`publish-to-github ${res.status} ${res.statusText}: ${text.slice(0, 400)}`);
