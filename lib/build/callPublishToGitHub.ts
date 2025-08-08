@@ -5,6 +5,9 @@ export type PublishRequest = {
   branch?: string;           // default "main"
   commitMessage?: string;    // default "chore: initial MVP"
   createRepo?: boolean;      // default true
+  // ✅ NEW: allow calling code to force public/private
+  visibility?: "public" | "private";
+  private?: boolean;         // for APIs that still use `private: boolean`
 };
 
 export type PublishResponse = {
@@ -14,7 +17,6 @@ export type PublishResponse = {
 };
 
 function safeEnv(name: string): string | undefined {
-  // Guarded access so Workers don't throw
   if (typeof process !== "undefined" && (process as any)?.env?.[name]) {
     return (process as any).env[name];
   }
@@ -29,7 +31,7 @@ export async function callPublishToGitHub(
     opts.baseUrl ||
     safeEnv("AGENT_BASE_URL") ||
     "https://launchwing-agent.onrender.com";
-  const baseUrl = baseRaw.replace(/\/+$/, ""); // strip trailing slash
+  const baseUrl = baseRaw.replace(/\/+$/, "");
   const timeoutMs = opts.timeoutMs ?? 60_000;
 
   const ctrl = new AbortController();
@@ -46,7 +48,7 @@ export async function callPublishToGitHub(
         branch: req.branch ?? "main",
         commitMessage: req.commitMessage ?? "chore: initial MVP",
         createRepo: req.createRepo ?? true,
-        ...req,
+        ...req, // carries visibility/private through
       }),
       signal: ctrl.signal,
     });
