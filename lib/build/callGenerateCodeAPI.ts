@@ -3,6 +3,13 @@
 export type FileGenInput = { path: string; description: string };
 export type FileGenOutput = { path: string; content: string };
 
+// Extended “object payload” shape used by generateCodeBatch
+export type BatchPayload = {
+  plan?: string;
+  contextFiles?: { path: string; content: string }[];
+  targetFiles: FileGenInput[];
+};
+
 type CallOpts = {
   baseUrl?: string;           // e.g. "https://<your-render-app>"
   apiKey?: string;            // if your agent requires it
@@ -10,12 +17,16 @@ type CallOpts = {
   headers?: Record<string, string>;
 };
 
+type FirstArg = FileGenInput[] | BatchPayload;
+
 /**
- * Calls the codegen agent with a batch of file specs and returns generated files.
- * Tries /generate-batch first, then falls back to /generate for compatibility.
+ * Calls the codegen agent with either:
+ *   A) an array of files to generate, or
+ *   B) an object payload { plan, contextFiles, targetFiles }
+ * Returns normalized [{ path, content }] results.
  */
 export async function callGenerateCodeAPI(
-  filesToGenerate: FileGenInput[],
+  arg: FirstArg,
   opts: CallOpts = {}
 ): Promise<FileGenOutput[]> {
   const baseUrl =
@@ -25,15 +36,25 @@ export async function callGenerateCodeAPI(
 
   const timeoutMs = opts.timeoutMs ?? 60_000;
 
-  // Agent expects a list of FileSpec-like objects.
-  // Send both "file_specs" and "files" for compatibility.
-  const payload = {
-    file_specs: filesToGenerate.map(f => ({
+  const isArrayInput = Array.isArray(arg);
+  const targetFiles: FileGenInput[] = isArrayInput ? (arg as FileGenInput[]) : (arg as BatchPayload).targetFiles;
+  const plan = isArrayInput ? undefined : (arg as BatchPayload).plan;
+  const contextFiles = isArrayInput ? undefined : (arg as BatchPayload).contextFiles;
+
+  // Build a payload that works for both our agent variants
+  const payload: any = {
+    // Newer shape used by /generate-batch
+    plan,
+    context_files: contextFiles,
+    target_files: targetFiles?.map(f => ({ path: f.path, description: f.description })),
+
+    // Back-compat shapes for older /generate handlers
+    file_specs: targetFiles?.map(f => ({
       path: f.path,
       content: f.description,       // agent variant A
       description: f.description,   // agent variant B
     })),
-    files: filesToGenerate.map(f => ({
+    files: targetFiles?.map(f => ({
       path: f.path,
       content: f.description,
       description: f.description,
@@ -48,7 +69,6 @@ export async function callGenerateCodeAPI(
     headers.Authorization = `Bearer ${opts.apiKey || process.env.AGENT_API_KEY}`;
   }
 
-  // Small helper to POST with timeout
   const postJson = async (url: string) => {
     const ac = new AbortController();
     const id = setTimeout(() => ac.abort(), timeoutMs);
@@ -70,7 +90,7 @@ export async function callGenerateCodeAPI(
     }
   };
 
-  // Try /generate-batch then fallback to /generate
+  // Try /generate-batch first, then fallback to /generate
   const endpoints = [`${baseUrl}/generate-batch`, `${baseUrl}/generate`];
 
   let lastErr: unknown;
@@ -98,7 +118,6 @@ async function safeText(res: Response): Promise<string> {
 function normalizeOutputs(raw: any): FileGenOutput[] {
   if (!raw) return [];
 
-  // Common shapes:
   // 1) { files: [{ path, content }...] }
   if (Array.isArray(raw.files) && raw.files.every(isPathContent)) {
     return raw.files as FileGenOutput[];
