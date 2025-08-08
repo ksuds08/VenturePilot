@@ -13,23 +13,20 @@ type Meta = {
 const TRIM_BOM = (s: string) => s.replace(/^\uFEFF/, "");
 
 function isLikelyHTML(s: string) {
-  const t = s.trim().slice(0, 1000);
-  return /<!DOCTYPE html>|<html[\s>]/i.test(t);
+  const t = s.trim().slice(0, 2000);
+  return /<!DOCTYPE html>|<html[\s>]/i.test(t) || /<\/?(head|body|div|main|section|script)\b/i.test(t);
 }
 function isLikelyCSS(s: string) {
   const t = s.trim();
-  return (
-    (!/</.test(t) && /[{};]/.test(t) && /[:;]/.test(t)) ||
-    /^\/\*[\s\S]*\*\/\s*$/.test(t)
-  );
+  return (!/</.test(t) && /[{}]/.test(t)) || /^\/\*[\s\S]*\*\/\s*$/.test(t);
 }
 function isLikelyJS(s: string) {
   const t = s.trim();
-  return /(export|import|function|const|let|var)\s/.test(t) || /=>/.test(t);
+  return /(export|import|function|const|let|var|=>)\s/.test(t);
 }
 function isLikelyTS(s: string) {
   const t = s.trim();
-  return isLikelyJS(t) || /:\s*(string|number|boolean|any|unknown|Record<)/.test(t);
+  return isLikelyJS(t) || /:\s*(string|number|boolean|any|unknown|Record<|Promise<)/.test(t);
 }
 function isJSON(s: string) {
   try {
@@ -38,14 +35,6 @@ function isJSON(s: string) {
   } catch {
     return false;
   }
-}
-
-function extForContent(s: string): "html" | "css" | "js" | "ts" {
-  if (isLikelyHTML(s)) return "html";
-  if (isLikelyCSS(s)) return "css";
-  if (isLikelyTS(s)) return "ts";
-  if (isLikelyJS(s)) return "js";
-  return "js";
 }
 
 function cleanProseFromCode(content: string): string {
@@ -66,7 +55,9 @@ function cleanProseFromCode(content: string): string {
     if (/^\*\*[^\*]+\*\*$/.test(trimmed)) continue;
     if (/^(This|The|It)\s+(file|handler|function|component)\b/i.test(trimmed)) continue;
     if (/^(Purpose|Description|Notes?):/i.test(trimmed)) continue;
-    if (/^To\s+/.test(trimmed) && !trimmed.endsWith(";")) continue; // e.g. “To manage …” prose
+
+    // Typical “To manage …” prose. Allow if it ends with semicolon (code), else drop.
+    if (/^To\s+/i.test(trimmed) && !/[;{]$/.test(trimmed)) continue;
 
     filtered.push(line);
   }
@@ -74,30 +65,39 @@ function cleanProseFromCode(content: string): string {
 }
 
 function normalizePath(p: string): string {
-  return p.replace(/^\.?\/+/, "").replace(/\\/g, "/");
+  return (p || "").replace(/^\.?\/+/, "").replace(/\\/g, "/");
+}
+
+// Heuristic “is this basically empty code?” check per type
+function isEffectivelyEmptyCode(content: string, kind: "html" | "css" | "js" | "ts"): boolean {
+  const t = (content || "").trim();
+  if (!t) return true;
+
+  if (kind === "html") {
+    // require some HTML tags
+    return !(/<\/?(html|head|body|div|main|section|script|link|meta)\b/i.test(t));
+  }
+  if (kind === "css") {
+    // require at least one rule block
+    return !(/[^{]+\{[^}]*\}/.test(t));
+  }
+  // js/ts — require some structural tokens
+  return !(/(export|import|function|const|let|var|=>|return\s+)/.test(t));
 }
 
 function ensurePublicPaths(path: string, content: string): string {
   const p = normalizePath(path);
   const lower = p.toLowerCase();
 
-  // If the model put html/css/js in weird places, herd them into public/
   const looksHTML = isLikelyHTML(content) || /\.(html?)$/i.test(lower);
-  const looksCSS = isLikelyCSS(content) || /\.(css)$/i.test(lower);
-  const looksJS  = isLikelyJS(content)  || /\.(m?jsx?)$/i.test(lower);
+  const looksCSS  = isLikelyCSS(content)  || /\.(css)$/i.test(lower);
+  const looksJS   = isLikelyJS(content)   || /\.(m?jsx?)$/i.test(lower) || isLikelyTS(content);
 
-  // Already under public/
-  if (/^public\//i.test(p)) return p;
+  if (/^public\//i.test(p) || /^functions\//i.test(p)) return p;
 
-  if (looksHTML && !/^functions\//i.test(p)) {
-    return "public/index.html";
-  }
-  if (looksCSS && !/^functions\//i.test(p)) {
-    return "public/styles.css";
-  }
-  if (looksJS && !/^functions\//i.test(p)) {
-    return "public/app.js";
-  }
+  if (looksHTML) return "public/index.html";
+  if (looksCSS)  return "public/styles.css";
+  if (looksJS)   return "public/app.js";
 
   return p;
 }
@@ -115,6 +115,36 @@ function minimalPackageJson(): string {
     null,
     2
   );
+}
+
+function defaultIndexHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LaunchWing MVP</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>LaunchWing MVP</h1>
+    <p>App scaffold generated.</p>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>`.trim();
+}
+
+function defaultStylesCss(): string {
+  return `:root { --fg:#222; --bg:#f7f7f7; --brand:#0066cc; }
+*{box-sizing:border-box} body{margin:0;font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif;color:var(--fg);background:var(--bg)}
+.container{max-width:840px;margin:3rem auto;padding:0 1rem}
+h1{color:var(--brand)}`.trim();
+}
+
+function defaultAppJs(): string {
+  return `window.addEventListener("DOMContentLoaded",()=>{ console.log("LaunchWing MVP ready"); });`.trim();
 }
 
 function defaultWorker(): string {
@@ -192,13 +222,11 @@ bucket = "./public"`;
 /* ---------------------- backend merge (Worker) ---------------------- */
 
 function extractDefaultWorker(content: string): string | null {
-  // If there's already an `export default { fetch(..` block, keep the first one.
   const m = content.match(/export\s+default\s+\{[\s\S]*?\}\s*;?/m);
   return m ? m[0] : null;
 }
 
 function mergeBackend(chunks: string[]): string {
-  // Try to find a valid default worker among chunks; otherwise fall back.
   for (const raw of chunks) {
     const cleaned = cleanProseFromCode(raw);
     const existing = extractDefaultWorker(cleaned);
@@ -217,98 +245,97 @@ export function sanitizeGeneratedFiles(
   const seen = new Set<string>();
 
   const accountId = meta.env.CLOUDFLARE_ACCOUNT_ID;
-  // const apiToken = meta.env.CLOUDFLARE_API_TOKEN; // not used here; creation handled in build service
 
-  // 1) Normalize & clean each incoming file
-  const staged: FileOutput[] = files.map(({ path, content }) => {
+  // 1) Normalize & clean each incoming file; drop effectively-empty code
+  const staged: FileOutput[] = [];
+  for (const { path, content } of files) {
     const p0 = normalizePath(path || "");
     const c0 = TRIM_BOM(content || "");
 
-    // Package.json gets special handling
+    // package.json special-case
     if (/\/?package\.json$/i.test(p0)) {
       const valid = isJSON(c0) ? c0 : minimalPackageJson();
-      return { path: "package.json", content: valid };
+      staged.push({ path: "package.json", content: valid });
+      continue;
     }
 
-    // Clean prose from code-y files (js/ts/html/css; leave md untouched)
-    const isCodeLike =
+    const looksCodeLike =
       /\.(m?jsx?|tsx?|css|html?)$/i.test(p0) ||
       isLikelyJS(c0) ||
       isLikelyTS(c0) ||
       isLikelyHTML(c0) ||
       isLikelyCSS(c0);
 
-    const cleaned = isCodeLike ? cleanProseFromCode(c0) : c0;
+    const cleaned = looksCodeLike ? cleanProseFromCode(c0) : c0;
 
-    // Shuffle frontend files into public/
-    const p1 = ensurePublicPaths(p0, cleaned);
+    let finalPath = ensurePublicPaths(p0, cleaned);
 
-    return { path: p1, content: cleaned };
-  });
+    // Decide type for emptiness check
+    let kind: "html" | "css" | "js" | "ts" | null = null;
+    const lower = finalPath.toLowerCase();
+    if (/\.(html?)$/.test(lower) || isLikelyHTML(cleaned)) kind = "html";
+    else if (/\.(css)$/.test(lower) || isLikelyCSS(cleaned)) kind = "css";
+    else if (/\.(tsx?)$/.test(lower) || isLikelyTS(cleaned)) kind = "ts";
+    else if (/\.(m?jsx?)$/.test(lower) || isLikelyJS(cleaned)) kind = "js";
 
-  // 2) Split into buckets
+    if (kind && isEffectivelyEmptyCode(cleaned, kind)) {
+      console.warn(`⚠️ Skipping empty ${kind.toUpperCase()} after cleanup: ${finalPath}`);
+      continue; // 🚫 drop effectively-empty code files
+    }
+
+    staged.push({ path: finalPath, content: cleaned });
+  }
+
+  // 2) Split/collect
   const backendChunks: string[] = [];
   const keepers: FileOutput[] = [];
 
   for (const f of staged) {
-    // Anything under functions/ stays as-is (assume it's backend code)
     if (/^functions\//i.test(f.path)) {
-      backendChunks.push(f.content);
-      keepers.push(f);
+      // Clean any prose in worker files too
+      const cleaned = cleanProseFromCode(f.content);
+      backendChunks.push(cleaned);
+      keepers.push({ path: f.path, content: cleaned });
       continue;
     }
 
-    // Chunky names (like components/chunk_*, backend/chunk_*) → bucket by content
     if (/chunk_/i.test(f.path) || /backend\//i.test(f.path)) {
       backendChunks.push(f.content);
       continue;
     }
 
-    // Frontend & others
     keepers.push(f);
   }
 
-  // 3) Ensure a proper Worker entry: functions/index.ts (merge backend chunks)
+  // 3) Ensure one proper Worker entry
   const hasWorker = keepers.some(f => f.path === "functions/index.ts");
   if (!hasWorker) {
     const merged = mergeBackend(backendChunks);
     keepers.push({ path: "functions/index.ts", content: merged });
-  } else {
-    // Even if present, clean it to remove prose
-    for (let i = 0; i < keepers.length; i++) {
-      if (keepers[i].path === "functions/index.ts") {
-        keepers[i] = {
-          path: "functions/index.ts",
-          content: cleanProseFromCode(keepers[i].content),
-        };
-        break;
-      }
-    }
   }
 
-  // 4) If any HTML/CSS/JS landed at repo root, move to public/
+  // 4) If any HTML/CSS/JS at repo root, move to public/
   const moved: FileOutput[] = [];
   for (const f of keepers) {
     let p = f.path;
     if (!/^public\//i.test(p) && !/^functions\//i.test(p)) {
       const lower = p.toLowerCase();
-      if (/\.(html?|css|m?jsx?)$/.test(lower)) {
+      if (/\.(html?|css|m?jsx?|tsx?)$/.test(lower)) {
         p = ensurePublicPaths(p, f.content);
       }
     }
     moved.push({ path: p, content: f.content });
   }
 
-  // 5) Deduplicate by last write wins
+  // 5) Deduplicate (last write wins)
   for (const f of moved) {
-    seen.delete(f.path);
-    seen.add(f.path);
-    const existingIdx = out.findIndex((x) => x.path === f.path);
-    if (existingIdx >= 0) out.splice(existingIdx, 1);
+    const idx = out.findIndex(x => x.path === f.path);
+    if (idx >= 0) out.splice(idx, 1);
     out.push(f);
+    seen.add(f.path);
   }
 
-  // 6) Ensure workflow exists (and is correct)
+  // 6) Ensure workflow exists (uses correct secret/action)
   if (!out.some(f => f.path === ".github/workflows/deploy.yml")) {
     out.push({
       path: ".github/workflows/deploy.yml",
@@ -316,7 +343,7 @@ export function sanitizeGeneratedFiles(
     });
   }
 
-  // 7) Ensure wrangler.toml exists and is usable (site bucket, account_id if known)
+  // 7) Ensure wrangler.toml exists and is usable
   const hasPublic = out.some(f => /^public\//i.test(f.path));
   if (!out.some(f => f.path === "wrangler.toml")) {
     out.push({
@@ -324,7 +351,7 @@ export function sanitizeGeneratedFiles(
       content: makeWranglerToml(`mvp-${meta.ideaId}`, accountId, hasPublic),
     });
   } else {
-    // Patch existing: add [site] if serving public, add account_id if provided
+    // Patch existing wrangler.toml: add [site] if public/, add account_id if provided
     const idx = out.findIndex(f => f.path === "wrangler.toml");
     let toml = out[idx].content;
 
@@ -340,18 +367,23 @@ bucket = "./public"`;
     out[idx] = { path: "wrangler.toml", content: toml };
   }
 
-  // 8) Guarantee at least one HTML asset (index) so Workers Sites doesn’t fail
-  const hasIndexHtml = out.some(f => f.path === "public/index.html");
-  if (!hasIndexHtml) {
-    out.push({
-      path: "public/index.html",
-      content: `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>LaunchWing MVP</title></head>
-<body><h1>LaunchWing MVP</h1><p>App scaffold generated.</p></body></html>`,
-    });
-  }
+  // 8) Guarantee non‑empty public assets
+  const ensureAsset = (path: string, fallback: string) => {
+    const idx = out.findIndex(f => f.path === path);
+    if (idx === -1) {
+      out.push({ path, content: fallback });
+    } else {
+      const cleaned = out[idx].content.trim();
+      if (!cleaned) {
+        console.warn(`⚠️ Replacing empty asset: ${path}`);
+        out[idx] = { path, content: fallback };
+      }
+    }
+  };
 
-  // 9) Final pass: keep README.md but ensure others aren’t plain-English “descriptions”
-  // (We’ve already fixed package.json; other files will just ship as-is if not code.)
+  ensureAsset("public/index.html", defaultIndexHtml());
+  ensureAsset("public/styles.css", defaultStylesCss());
+  ensureAsset("public/app.js", defaultAppJs());
+
   return out;
 }
