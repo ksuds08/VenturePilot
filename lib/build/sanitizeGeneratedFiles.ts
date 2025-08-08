@@ -303,7 +303,7 @@ export function sanitizeGeneratedFiles(
     seen.add(f.path);
   }
 
-  // 6) Ensure workflow exists and is correct (Node 20 + wrangler-action@v3)
+  // 6) Ensure workflow exists and is correct (Node 20 + wrangler-action@v3 + token in env)
   if (!out.some(f => f.path === ".github/workflows/deploy.yml")) {
     out.push({
       path: ".github/workflows/deploy.yml",
@@ -316,27 +316,22 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
-      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node 20
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install deps (best-effort)
-        run: npm ci || true
-
-      - name: Publish to Cloudflare Workers
+      - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
+        env:
+          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: publish
+          command: deploy
 `.trim(),
     });
   }
