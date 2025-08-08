@@ -1,6 +1,6 @@
 // lib/build/sanitizeGeneratedFiles.ts
 
-import { generateWranglerToml } from "./generateWranglerToml";
+import { generateWranglerToml } from "../generate/generateWranglerToml";
 
 type FileInput = { path: string; content: string };
 type FileOutput = { path: string; content: string };
@@ -106,29 +106,61 @@ function minimalPackageJson(): string {
   );
 }
 
-function defaultDeployYaml(): string {
-  // Official action; no wranglerVersion pin. Expects secret CLOUDFLARE_API_TOKEN.
-  return `name: Deploy to Cloudflare Workers
+/* ------------------- wrangler.toml patch helpers ------------------- */
 
-on:
-  push:
-    branches: [main]
+function upsertTomlScalar(toml: string, key: string, value: string): string {
+  const line = `${key} = "${value}"`;
+  const keyRe = new RegExp(`^\\s*${key}\\s*=.*$`, "m");
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  if (keyRe.test(toml)) {
+    // Replace the first occurrence
+    toml = toml.replace(keyRe, line);
+    // Deduplicate stray repeats
+    const rows = toml.split("\n");
+    const out: string[] = [];
+    let seen = false;
+    for (const r of rows) {
+      if (new RegExp(`^\\s*${key}\\s*=`).test(r)) {
+        if (seen) continue;
+        seen = true;
+      }
+      out.push(r);
+    }
+    return out.join("\n");
+  }
 
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`.trim();
+  // Insert after name="…" if present; else append
+  const nameRe = /^\s*name\s*=\s*".*?"\s*$/m;
+  if (nameRe.test(toml)) {
+    return toml.replace(nameRe, (m) => `${m}\n${line}`);
+  }
+  return toml.trimEnd() + `\n${line}\n`;
 }
 
-function defaultWorker(): string {
+function ensureSiteBucket(toml: string): string {
+  if (/\[site\][\s\S]*bucket\s*=/.test(toml)) return toml;
+  return toml.trimEnd() + `
+
+[site]
+bucket = "./public"
+`;
+}
+
+/* ---------------------- backend merge (Worker) ---------------------- */
+
+function extractDefaultWorker(content: string): string | null {
+  // If there's already an `export default { fetch(..` block, keep the first one.
+  const m = content.match(/export\s+default\s+\{[\s\S]*?\}\s*;?/m);
+  return m ? m[0] : null;
+}
+
+function mergeBackend(chunks: string[]): string {
+  // Try to find a valid default worker among chunks; otherwise fall back.
+  for (const raw of chunks) {
+    const cleaned = cleanProseFromCode(raw);
+    const existing = extractDefaultWorker(cleaned);
+    if (existing) return existing.trim();
+  }
   return `export default {
   async fetch(request: Request, env: any): Promise<Response> {
     try {
@@ -164,53 +196,6 @@ function getContentType(file: string): string {
 `.trim();
 }
 
-function makeIndexHtml(): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>LaunchWing MVP</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <main class="container">
-    <h1>LaunchWing MVP</h1>
-    <p>App scaffold generated.</p>
-  </main>
-  <script src="/app.js"></script>
-</body>
-</html>`;
-}
-
-function minimalStylesCss(): string {
-  return `.container{max-width:800px;margin:2rem auto;padding:0 1rem;font-family:sans-serif}
-h1{font-size:1.9rem;margin-bottom:.5rem}
-p{color:#444}`;
-}
-
-function minimalAppJs(): string {
-  return `(function(){console.log("LaunchWing MVP scaffold loaded");})();`;
-}
-
-/* ---------------------- backend merge (Worker) ---------------------- */
-
-function extractDefaultWorker(content: string): string | null {
-  // If there's already an `export default { fetch(..` block, keep the first one.
-  const m = content.match(/export\s+default\s+\{[\s\S]*?\}\s*;?/m);
-  return m ? m[0] : null;
-}
-
-function mergeBackend(chunks: string[]): string {
-  // Try to find a valid default worker among chunks; otherwise fall back.
-  for (const raw of chunks) {
-    const cleaned = cleanProseFromCode(raw);
-    const existing = extractDefaultWorker(cleaned);
-    if (existing) return existing.trim();
-  }
-  return defaultWorker();
-}
-
 /* ----------------------------- main API ----------------------------- */
 
 export function sanitizeGeneratedFiles(
@@ -218,6 +203,7 @@ export function sanitizeGeneratedFiles(
   meta: Meta
 ): FileOutput[] {
   const out: FileOutput[] = [];
+  const seen = new Set<string>();
 
   const accountId = meta.env.CLOUDFLARE_ACCOUNT_ID;
 
@@ -245,6 +231,7 @@ export function sanitizeGeneratedFiles(
 
     // ⛔️ Skip files that are effectively empty after cleanup (prevents blank public/*)
     if (codeLike && cleaned.trim().length === 0) {
+      // eslint-disable-next-line no-console
       console.warn(`Skipping empty file after cleanup: ${p0}`);
       continue;
     }
@@ -313,49 +300,65 @@ export function sanitizeGeneratedFiles(
     const idx = out.findIndex((x) => x.path === f.path);
     if (idx >= 0) out.splice(idx, 1);
     out.push(f);
+    seen.add(f.path);
   }
 
   // 6) Ensure workflow exists and is correct
   if (!out.some(f => f.path === ".github/workflows/deploy.yml")) {
     out.push({
       path: ".github/workflows/deploy.yml",
-      content: defaultDeployYaml(),
+      content: `name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+`.trim(),
     });
   }
 
-  // 7) Ensure wrangler.toml exists and is normalized.
-  //    We fully replace any AI-provided file to keep it consistent with buildService.
+  // 7) Ensure wrangler.toml exists and is usable (prefer calling generator)
   const hasPublic = out.some(f => /^public\//i.test(f.path));
-  const wranglerContent = generateWranglerToml({
-    projectName: `mvp-${meta.ideaId}`,
-    accountId,
-    // Don't pass kvId here; buildService will ensure/create ASSETS KV and append the [[kv_namespaces]] block.
-    hasPublic
-  });
-
-  const wranglerIdx = out.findIndex(f => f.path === "wrangler.toml");
-  if (wranglerIdx === -1) {
-    out.push({ path: "wrangler.toml", content: wranglerContent });
+  if (!out.some(f => f.path === "wrangler.toml")) {
+    out.push({
+      path: "wrangler.toml",
+      content: generateWranglerToml(`mvp-${meta.ideaId}`, accountId, undefined, hasPublic),
+    });
   } else {
-    out[wranglerIdx] = { path: "wrangler.toml", content: wranglerContent };
+    const idx = out.findIndex(f => f.path === "wrangler.toml");
+    let toml = out[idx].content;
+
+    // Keep patchers for robustness when agent produced a partial toml
+    if (accountId) {
+      toml = upsertTomlScalar(toml, "account_id", accountId);
+    }
+    if (hasPublic) {
+      toml = ensureSiteBucket(toml);
+    }
+
+    out[idx] = { path: "wrangler.toml", content: toml };
   }
 
   // 8) Guarantee at least one HTML asset (index) so Workers Sites doesn’t fail
-  let hasIndexHtml = out.some(f => f.path === "public/index.html");
+  const hasIndexHtml = out.some(f => f.path === "public/index.html");
   if (!hasIndexHtml) {
-    out.push({ path: "public/index.html", content: makeIndexHtml() });
-    hasIndexHtml = true;
-  }
-
-  // 9) If index.html references styles.js/app.js, ensure they exist with minimal content
-  const hasStyles = out.some(f => f.path === "public/styles.css");
-  const hasAppJs = out.some(f => f.path === "public/app.js");
-
-  if (hasIndexHtml && !hasStyles) {
-    out.push({ path: "public/styles.css", content: minimalStylesCss() });
-  }
-  if (hasIndexHtml && !hasAppJs) {
-    out.push({ path: "public/app.js", content: minimalAppJs() });
+    out.push({
+      path: "public/index.html",
+      content: `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>LaunchWing MVP</title></head>
+<body><h1>LaunchWing MVP</h1><p>App scaffold generated.</p></body></html>`,
+    });
   }
 
   return out;
