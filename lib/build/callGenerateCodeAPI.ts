@@ -3,49 +3,39 @@
 export type FileGenInput = { path: string; description: string };
 export type FileGenOutput = { path: string; content: string };
 
-// Extended “object payload” shape used by generateCodeBatch
 export type BatchPayload = {
   plan?: string;
-  contextFiles?: { path: string; content: string }[]; // kept for compatibility; not sent unless explicitly enabled
+  contextFiles?: { path: string; content: string }[];
   targetFiles: FileGenInput[];
 };
 
 type CallOpts = {
-  baseUrl?: string;           // e.g. "https://<your-render-app>"
-  apiKey?: string;            // if your agent requires it
-  timeoutMs?: number;         // default 60000
+  baseUrl?: string;
+  apiKey?: string;
+  timeoutMs?: number;
   headers?: Record<string, string>;
-
-  /**
-   * If true, include contextFiles in the request payload.
-   * Default: false (omits large bodies that can cause OOM).
-   */
   includeContextFiles?: boolean;
-
-  /**
-   * If the agent is switched to "write-only" responses (no content),
-   * we’ll coerce missing content to "" so downstream stays type-safe.
-   * Default: true (expect content). Set to false to allow content-less.
-   */
   expectContent?: boolean;
 };
 
 type FirstArg = FileGenInput[] | BatchPayload;
 
-/**
- * Calls the codegen agent with either:
- *   A) an array of files to generate, or
- *   B) an object payload { plan, contextFiles, targetFiles }
- * Returns normalized [{ path, content }] results.
- */
+function safeEnv(name: string): string | undefined {
+  if (typeof process !== "undefined" && (process as any)?.env?.[name]) {
+    return (process as any).env[name];
+  }
+  return undefined;
+}
+
 export async function callGenerateCodeAPI(
   arg: FirstArg,
   opts: CallOpts = {}
 ): Promise<FileGenOutput[]> {
-  const baseUrl =
+  const baseRaw =
     opts.baseUrl ||
-    process.env.AGENT_BASE_URL ||
+    safeEnv("AGENT_BASE_URL") ||
     "http://localhost:8000";
+  const base = baseRaw.replace(/\/+$/, "");
 
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const expectContent = opts.expectContent ?? true;
@@ -59,17 +49,13 @@ export async function callGenerateCodeAPI(
   const plan = isArrayInput ? undefined : (arg as BatchPayload).plan;
   const contextFiles = isArrayInput ? undefined : (arg as BatchPayload).contextFiles;
 
-  // Build a payload that works for both our agent variants.
-  // NOTE: context files are omitted unless includeContext=true.
   const payload: any = {
     plan,
     target_files: targetFiles?.map(f => ({ path: f.path, description: f.description })),
-
-    // Back-compat shapes for older /generate handlers
     file_specs: targetFiles?.map(f => ({
       path: f.path,
-      content: f.description,       // agent variant A
-      description: f.description,   // agent variant B
+      content: f.description,
+      description: f.description,
     })),
     files: targetFiles?.map(f => ({
       path: f.path,
@@ -78,17 +64,16 @@ export async function callGenerateCodeAPI(
     })),
   };
 
-  if (includeContext && contextFiles && contextFiles.length) {
-    // Only include if explicitly requested to avoid huge request bodies.
-    (payload as any).context_files = contextFiles;
+  if (includeContext && contextFiles?.length) {
+    payload.context_files = contextFiles;
   }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(opts.headers || {}),
   };
-  if (opts.apiKey || process.env.AGENT_API_KEY) {
-    headers.Authorization = `Bearer ${opts.apiKey || process.env.AGENT_API_KEY}`;
+  if (opts.apiKey) {
+    headers.Authorization = `Bearer ${opts.apiKey}`;
   }
 
   const postJson = async (url: string) => {
@@ -112,8 +97,7 @@ export async function callGenerateCodeAPI(
     }
   };
 
-  // Try /generate-batch first, then fallback to /generate
-  const endpoints = [`${baseUrl}/generate-batch`, `${baseUrl}/generate`];
+  const endpoints = [`${base}/generate-batch`, `${base}/generate`];
 
   let lastErr: unknown;
   for (const ep of endpoints) {
@@ -126,17 +110,10 @@ export async function callGenerateCodeAPI(
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
-/* ----------------------- helpers ----------------------- */
-
 async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return "";
-  }
+  try { return await res.text(); } catch { return ""; }
 }
 
-// Normalize various agent response shapes into { path, content }[]
 function normalizeOutputs(
   raw: any,
   opts: { expectContent: boolean }
@@ -144,19 +121,13 @@ function normalizeOutputs(
   const coerce = (x: any): FileGenOutput | null => {
     if (!x) return null;
     const path =
-      typeof x.path === "string"
-        ? x.path
-        : (x.filename ?? x.file ?? null);
+      typeof x.path === "string" ? x.path : (x.filename ?? x.file ?? null);
     let content: string | null =
       typeof x.content === "string"
         ? x.content
         : (typeof x.body === "string" ? x.body : (typeof x.code === "string" ? x.code : null));
 
-    // If agent is "write-only", allow missing content and coerce to empty string.
-    if (content == null && !opts.expectContent) {
-      content = "";
-    }
-
+    if (content == null && !opts.expectContent) content = "";
     if (typeof path === "string" && typeof content === "string") {
       return { path, content };
     }
@@ -164,21 +135,8 @@ function normalizeOutputs(
   };
 
   if (!raw) return [];
-
-  // 1) { files: [{ path, content }...] }
-  if (Array.isArray(raw.files)) {
-    return raw.files.map(coerce).filter(Boolean) as FileGenOutput[];
-  }
-
-  // 2) direct array: [{ path, content }]
-  if (Array.isArray(raw)) {
-    return raw.map(coerce).filter(Boolean) as FileGenOutput[];
-  }
-
-  // 3) { result: [...] }
-  if (raw && typeof raw === "object" && Array.isArray(raw.result)) {
-    return raw.result.map(coerce).filter(Boolean) as FileGenOutput[];
-  }
-
+  if (Array.isArray(raw.files)) return raw.files.map(coerce).filter(Boolean) as FileGenOutput[];
+  if (Array.isArray(raw))       return raw.map(coerce).filter(Boolean) as FileGenOutput[];
+  if (raw && Array.isArray(raw.result)) return raw.result.map(coerce).filter(Boolean) as FileGenOutput[];
   throw new Error("Unrecognized agent response shape");
 }
