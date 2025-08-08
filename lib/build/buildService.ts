@@ -107,7 +107,11 @@ export async function buildService(
     const out = await generateCodeBatch(batch, {
       plan,
       alreadyGenerated: already,
-      env: getEnvSubset(env),
+      env: {
+        ...getEnvSubset(env),
+        AGENT_BASE_URL: getEnv("AGENT_BASE_URL", env), // ✅ ensure agent URL is passed to codegen
+        // AGENT_API_KEY intentionally omitted unless you add it to Worker env
+      },
     });
     generated.push(...out);
   }
