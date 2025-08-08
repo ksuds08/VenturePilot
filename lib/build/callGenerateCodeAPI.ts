@@ -6,7 +6,7 @@ export type FileGenOutput = { path: string; content: string };
 // Extended “object payload” shape used by generateCodeBatch
 export type BatchPayload = {
   plan?: string;
-  contextFiles?: { path: string; content: string }[];
+  contextFiles?: { path: string; content: string }[]; // kept for compatibility; not sent unless explicitly enabled
   targetFiles: FileGenInput[];
 };
 
@@ -15,6 +15,19 @@ type CallOpts = {
   apiKey?: string;            // if your agent requires it
   timeoutMs?: number;         // default 60000
   headers?: Record<string, string>;
+
+  /**
+   * If true, include contextFiles in the request payload.
+   * Default: false (omits large bodies that can cause OOM).
+   */
+  includeContextFiles?: boolean;
+
+  /**
+   * If the agent is switched to "write-only" responses (no content),
+   * we’ll coerce missing content to "" so downstream stays type-safe.
+   * Default: true (expect content). Set to false to allow content-less.
+   */
+  expectContent?: boolean;
 };
 
 type FirstArg = FileGenInput[] | BatchPayload;
@@ -35,17 +48,21 @@ export async function callGenerateCodeAPI(
     "http://localhost:8000";
 
   const timeoutMs = opts.timeoutMs ?? 60_000;
+  const expectContent = opts.expectContent ?? true;
+  const includeContext = !!opts.includeContextFiles;
 
   const isArrayInput = Array.isArray(arg);
-  const targetFiles: FileGenInput[] = isArrayInput ? (arg as FileGenInput[]) : (arg as BatchPayload).targetFiles;
+  const targetFiles: FileGenInput[] = isArrayInput
+    ? (arg as FileGenInput[])
+    : (arg as BatchPayload).targetFiles;
+
   const plan = isArrayInput ? undefined : (arg as BatchPayload).plan;
   const contextFiles = isArrayInput ? undefined : (arg as BatchPayload).contextFiles;
 
-  // Build a payload that works for both our agent variants
+  // Build a payload that works for both our agent variants.
+  // NOTE: context files are omitted unless includeContext=true.
   const payload: any = {
-    // Newer shape used by /generate-batch
     plan,
-    context_files: contextFiles,
     target_files: targetFiles?.map(f => ({ path: f.path, description: f.description })),
 
     // Back-compat shapes for older /generate handlers
@@ -60,6 +77,11 @@ export async function callGenerateCodeAPI(
       description: f.description,
     })),
   };
+
+  if (includeContext && contextFiles && contextFiles.length) {
+    // Only include if explicitly requested to avoid huge request bodies.
+    (payload as any).context_files = contextFiles;
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -84,7 +106,7 @@ export async function callGenerateCodeAPI(
         throw new Error(`Agent ${res.status} ${res.statusText} at ${url}: ${text.slice(0, 400)}`);
       }
       const data = (await res.json()) as any;
-      return normalizeOutputs(data);
+      return normalizeOutputs(data, { expectContent });
     } finally {
       clearTimeout(id);
     }
@@ -115,44 +137,48 @@ async function safeText(res: Response): Promise<string> {
 }
 
 // Normalize various agent response shapes into { path, content }[]
-function normalizeOutputs(raw: any): FileGenOutput[] {
+function normalizeOutputs(
+  raw: any,
+  opts: { expectContent: boolean }
+): FileGenOutput[] {
+  const coerce = (x: any): FileGenOutput | null => {
+    if (!x) return null;
+    const path =
+      typeof x.path === "string"
+        ? x.path
+        : (x.filename ?? x.file ?? null);
+    let content: string | null =
+      typeof x.content === "string"
+        ? x.content
+        : (typeof x.body === "string" ? x.body : (typeof x.code === "string" ? x.code : null));
+
+    // If agent is "write-only", allow missing content and coerce to empty string.
+    if (content == null && !opts.expectContent) {
+      content = "";
+    }
+
+    if (typeof path === "string" && typeof content === "string") {
+      return { path, content };
+    }
+    return null;
+  };
+
   if (!raw) return [];
 
   // 1) { files: [{ path, content }...] }
-  if (Array.isArray(raw.files) && raw.files.every(isPathContent)) {
-    return raw.files as FileGenOutput[];
+  if (Array.isArray(raw.files)) {
+    return raw.files.map(coerce).filter(Boolean) as FileGenOutput[];
   }
 
   // 2) direct array: [{ path, content }]
-  if (Array.isArray(raw) && raw.every(isPathContent)) {
-    return raw as FileGenOutput[];
+  if (Array.isArray(raw)) {
+    return raw.map(coerce).filter(Boolean) as FileGenOutput[];
   }
 
   // 3) { result: [...] }
-  if (Array.isArray(raw.result) && raw.result.every(isPathContent)) {
-    return raw.result as FileGenOutput[];
-  }
-
-  // 4) fallback: try to coerce
-  if (Array.isArray(raw)) {
-    return raw.map(coercePathContent).filter(Boolean) as FileGenOutput[];
-  }
   if (raw && typeof raw === "object" && Array.isArray(raw.result)) {
-    return raw.result.map(coercePathContent).filter(Boolean) as FileGenOutput[];
+    return raw.result.map(coerce).filter(Boolean) as FileGenOutput[];
   }
+
   throw new Error("Unrecognized agent response shape");
-}
-
-function isPathContent(x: any): x is FileGenOutput {
-  return x && typeof x.path === "string" && typeof x.content === "string";
-}
-
-function coercePathContent(x: any): FileGenOutput | null {
-  if (!x) return null;
-  const path = typeof x.path === "string" ? x.path : (x.filename ?? x.file ?? null);
-  const content = typeof x.content === "string" ? x.content : (x.body ?? x.code ?? null);
-  if (typeof path === "string" && typeof content === "string") {
-    return { path, content };
-  }
-  return null;
 }
