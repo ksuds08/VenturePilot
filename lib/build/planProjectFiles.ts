@@ -1,13 +1,20 @@
 // lib/build/planProjectFiles.ts
 
-import type { BuildPayload } from "./types";
-
 /**
- * Output shape used by buildService
+ * Minimal payload shape we actually use here.
+ * (Avoids depending on ../../types exports that may change.)
  */
+type ChatMsg = { role: "system" | "user" | "assistant"; content?: string };
+type BuildPayload = {
+  ideaId: string;
+  plan?: string;
+  messages?: ChatMsg[];
+  ideaSummary?: { description?: string };
+};
+
 export type PlannedProject = {
   plan: string;
-  filesToGenerate: { path: string; description: string }[];
+  targetFiles: { path: string; description: string }[];
 };
 
 /* ------------------------ helpers ------------------------ */
@@ -93,7 +100,7 @@ function defaultFilesPlan(): { path: string; description: string }[] {
 async function tryModelPlan(
   payload: BuildPayload
 ): Promise<{ plan: string; files: { path: string; description: string }[] } | null> {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_APIKEY;
+  const apiKey = (globalThis as any)?.process?.env?.OPENAI_API_KEY || (globalThis as any)?.process?.env?.OPENAI_APIKEY;
   if (!apiKey) return null;
 
   // Avoid throwing if 'openai' lib is not installed; keep the import truly dynamic.
@@ -135,7 +142,7 @@ async function tryModelPlan(
 
     if (client.responses?.create) {
       const r = await client.responses.create({
-        model: process.env.CODEGEN_PLANNER_MODEL || "gpt-4o-mini",
+        model: (globalThis as any)?.process?.env?.CODEGEN_PLANNER_MODEL || "gpt-4o-mini",
         temperature: 0.2,
         max_output_tokens: 800,
         input: [
@@ -146,7 +153,7 @@ async function tryModelPlan(
       text = r.output_text;
     } else {
       const r = await client.chat.completions.create({
-        model: process.env.CODEGEN_PLANNER_MODEL || "gpt-4o-mini",
+        model: (globalThis as any)?.process?.env?.CODEGEN_PLANNER_MODEL || "gpt-4o-mini",
         temperature: 0.2,
         max_tokens: 800,
         messages: [
@@ -195,7 +202,7 @@ export async function planProjectFiles(payload: BuildPayload): Promise<PlannedPr
   if (modelPlan) {
     return {
       plan: modelPlan.plan,
-      filesToGenerate: modelPlan.files,
+      targetFiles: modelPlan.files,
     };
   }
 
@@ -219,6 +226,6 @@ export async function planProjectFiles(payload: BuildPayload): Promise<PlannedPr
 
   return {
     plan,
-    filesToGenerate: filesResolved,
+    targetFiles: filesResolved,
   };
 }
