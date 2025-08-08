@@ -125,20 +125,30 @@ export async function buildService(
   let repoUrl: string | undefined;
   if (!payload.skipCommit) {
     const repoName = `mvp-${payload.ideaId}`;
-    const publish = await callPublishToGitHub(
-      {
-        repoOwner: "LaunchWing",
-        repoName,
-        branch: "main",
-        commitMessage: `chore: initial MVP for ${payload.ideaId}`,
-        createRepo: true,
-      },
-      {
-        baseUrl: getEnv("AGENT_BASE_URL", env), // <-- from Worker env
-        apiKey: getEnv("AGENT_API_KEY", env),
-      }
-    );
-    repoUrl = publish.repoUrl;
+    try {
+      const baseUrl = getEnv("AGENT_BASE_URL", env);
+      console.log("DEBUG publish -> baseUrl:", baseUrl);
+
+      const publish = await callPublishToGitHub(
+        {
+          repoOwner: "LaunchWing",
+          repoName,
+          branch: "main",
+          commitMessage: `chore: initial MVP for ${payload.ideaId}`,
+          createRepo: true,
+        },
+        {
+          baseUrl,
+          apiKey: getEnv("AGENT_API_KEY", env),
+        }
+      );
+
+      console.log("DEBUG publish <- repoUrl:", publish.repoUrl, "sha:", publish.commitSha);
+      repoUrl = publish.repoUrl;
+    } catch (e: any) {
+      console.error("ERROR publish-to-github:", e?.message || e);
+      throw e;
+    }
   }
 
   return { files: sanitized, plan, repoUrl };
