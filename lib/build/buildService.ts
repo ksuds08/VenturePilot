@@ -101,7 +101,7 @@ export type BuildServiceResult = {
 
 export async function buildService(
   payload: BuildPayloadLike & {
-    repo?: { token: string; org?: string; name?: string };
+    repo?: { token: string; org?: string }; // removed "name" here
     // allow the caller to skip committing (useful in local dev/tests)
     skipCommit?: boolean;
   }
@@ -167,8 +167,7 @@ export async function buildService(
     repoUrl = await commitToGitHub(payload.ideaId, repoFiles, {
       token: payload.repo.token,
       org,
-      // name is optional; if provided, use it; otherwise builder uses mvp-<ideaId>
-      name: payload.repo.name,
+      // removed "name" here to match commitToGitHub opts
     });
   }
 
