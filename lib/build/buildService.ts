@@ -106,14 +106,8 @@ export async function buildService(
   }
 ): Promise<BuildServiceResult> {
   // 1) Plan the project (names + descriptions only; no heavy code here)
-  //    IMPORTANT: planProjectFiles returns files under one of several keys
-  const planResult = await planProjectFiles(payload as any);
-  const plan = (planResult as any).plan as string;
-  const targetFiles =
-    (planResult as any).filesToGenerate ??
-    (planResult as any).targetFiles ??
-    (planResult as any).files ??
-    [];
+  //    IMPORTANT: planProjectFiles returns { plan, targetFiles }
+  const { plan, targetFiles } = await planProjectFiles(payload as any);
 
   // Edge case: nothing to generate
   if (!targetFiles || targetFiles.length === 0) {
