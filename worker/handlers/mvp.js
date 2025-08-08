@@ -2,6 +2,9 @@
 import { buildAndDeployApp } from '../../lib/build/buildService.js';
 
 export async function mvpHandler(request, env) {
+  // 🔊 Debug: prove handler invoked + env var present
+  console.log("MVP handler invoked. AGENT_BASE_URL =", env?.AGENT_BASE_URL);
+
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -95,6 +98,7 @@ export async function mvpHandler(request, env) {
 
         send({ type: 'status', message: '✅ Done' });
       } catch (err) {
+        console.error("MVP handler error:", err?.message || err); // 🔊 Debug
         send({ type: 'error', message: 'Build error', details: String(err?.message || err) });
       } finally {
         controller.close();
