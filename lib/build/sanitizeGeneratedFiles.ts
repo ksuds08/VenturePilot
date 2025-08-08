@@ -1,5 +1,7 @@
 // lib/build/sanitizeGeneratedFiles.ts
 
+import { generateWranglerToml } from "./generateWranglerToml";
+
 type FileInput = { path: string; content: string };
 type FileOutput = { path: string; content: string };
 
@@ -162,59 +164,33 @@ function getContentType(file: string): string {
 `.trim();
 }
 
-function makeWranglerToml(projectName: string, accountId?: string, hasPublic = true): string {
-  const today = new Date().toISOString().slice(0, 10);
-  let toml = `name = "${projectName}"
-main = "functions/index.ts"
-compatibility_date = "${today}"`;
-  if (accountId) toml += `\naccount_id = "${accountId}"`;
-  if (hasPublic) {
-    toml += `
-
-[site]
-bucket = "./public"`;
-  }
-  return toml;
+function makeIndexHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>LaunchWing MVP</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>LaunchWing MVP</h1>
+    <p>App scaffold generated.</p>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>`;
 }
 
-/* ------------------- wrangler.toml patch helpers ------------------- */
-
-function upsertTomlScalar(toml: string, key: string, value: string): string {
-  const line = `${key} = "${value}"`;
-  const keyRe = new RegExp(`^\\s*${key}\\s*=.*$`, "m");
-
-  if (keyRe.test(toml)) {
-    // Replace the first occurrence
-    toml = toml.replace(keyRe, line);
-    // Deduplicate stray repeats
-    const rows = toml.split("\n");
-    const out: string[] = [];
-    let seen = false;
-    for (const r of rows) {
-      if (new RegExp(`^\\s*${key}\\s*=`).test(r)) {
-        if (seen) continue;
-        seen = true;
-      }
-      out.push(r);
-    }
-    return out.join("\n");
-  }
-
-  // Insert after name="…" if present; else append
-  const nameRe = /^\s*name\s*=\s*".*?"\s*$/m;
-  if (nameRe.test(toml)) {
-    return toml.replace(nameRe, (m) => `${m}\n${line}`);
-  }
-  return (toml.trimEnd() + `\n${line}\n`);
+function minimalStylesCss(): string {
+  return `.container{max-width:800px;margin:2rem auto;padding:0 1rem;font-family:sans-serif}
+h1{font-size:1.9rem;margin-bottom:.5rem}
+p{color:#444}`;
 }
 
-function ensureSiteBucket(toml: string): string {
-  if (/\[site\][\s\S]*bucket\s*=/.test(toml)) return toml;
-  return toml.trimEnd() + `
-
-[site]
-bucket = "./public"
-`;
+function minimalAppJs(): string {
+  return `(function(){console.log("LaunchWing MVP scaffold loaded");})();`;
 }
 
 /* ---------------------- backend merge (Worker) ---------------------- */
@@ -242,7 +218,6 @@ export function sanitizeGeneratedFiles(
   meta: Meta
 ): FileOutput[] {
   const out: FileOutput[] = [];
-  const seen = new Set<string>();
 
   const accountId = meta.env.CLOUDFLARE_ACCOUNT_ID;
 
@@ -270,7 +245,6 @@ export function sanitizeGeneratedFiles(
 
     // ⛔️ Skip files that are effectively empty after cleanup (prevents blank public/*)
     if (codeLike && cleaned.trim().length === 0) {
-      // eslint-disable-next-line no-console
       console.warn(`Skipping empty file after cleanup: ${p0}`);
       continue;
     }
@@ -339,7 +313,6 @@ export function sanitizeGeneratedFiles(
     const idx = out.findIndex((x) => x.path === f.path);
     if (idx >= 0) out.splice(idx, 1);
     out.push(f);
-    seen.add(f.path);
   }
 
   // 6) Ensure workflow exists and is correct
@@ -350,36 +323,39 @@ export function sanitizeGeneratedFiles(
     });
   }
 
-  // 7) Ensure wrangler.toml exists and is usable (site bucket, account_id upsert)
+  // 7) Ensure wrangler.toml exists and is normalized.
+  //    We fully replace any AI-provided file to keep it consistent with buildService.
   const hasPublic = out.some(f => /^public\//i.test(f.path));
-  if (!out.some(f => f.path === "wrangler.toml")) {
-    out.push({
-      path: "wrangler.toml",
-      content: makeWranglerToml(`mvp-${meta.ideaId}`, accountId, hasPublic),
-    });
+  const wranglerContent = generateWranglerToml({
+    projectName: `mvp-${meta.ideaId}`,
+    accountId,
+    // Don't pass kvId here; buildService will ensure/create ASSETS KV and append the [[kv_namespaces]] block.
+    hasPublic
+  });
+
+  const wranglerIdx = out.findIndex(f => f.path === "wrangler.toml");
+  if (wranglerIdx === -1) {
+    out.push({ path: "wrangler.toml", content: wranglerContent });
   } else {
-    const idx = out.findIndex(f => f.path === "wrangler.toml");
-    let toml = out[idx].content;
-
-    if (accountId) {
-      toml = upsertTomlScalar(toml, "account_id", accountId);
-    }
-    if (hasPublic) {
-      toml = ensureSiteBucket(toml);
-    }
-
-    out[idx] = { path: "wrangler.toml", content: toml };
+    out[wranglerIdx] = { path: "wrangler.toml", content: wranglerContent };
   }
 
   // 8) Guarantee at least one HTML asset (index) so Workers Sites doesn’t fail
-  const hasIndexHtml = out.some(f => f.path === "public/index.html");
+  let hasIndexHtml = out.some(f => f.path === "public/index.html");
   if (!hasIndexHtml) {
-    out.push({
-      path: "public/index.html",
-      content: `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>LaunchWing MVP</title></head>
-<body><h1>LaunchWing MVP</h1><p>App scaffold generated.</p></body></html>`,
-    });
+    out.push({ path: "public/index.html", content: makeIndexHtml() });
+    hasIndexHtml = true;
+  }
+
+  // 9) If index.html references styles.js/app.js, ensure they exist with minimal content
+  const hasStyles = out.some(f => f.path === "public/styles.css");
+  const hasAppJs = out.some(f => f.path === "public/app.js");
+
+  if (hasIndexHtml && !hasStyles) {
+    out.push({ path: "public/styles.css", content: minimalStylesCss() });
+  }
+  if (hasIndexHtml && !hasAppJs) {
+    out.push({ path: "public/app.js", content: minimalAppJs() });
   }
 
   return out;
