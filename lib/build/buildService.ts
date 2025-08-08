@@ -185,9 +185,12 @@ export async function buildAndDeployApp(
   } else {
     // Patch existing: add account_id, add KV block if needed, add [site] if using public
     let toml = files["wrangler.toml"];
-    if (env.CF_ACCOUNT_ID && !/^\s*account_id\s*=/.test(toml)) {
-      toml = toml.replace(/\bname\s*=\s*".*?"/, (m) => `${m}\naccount_id = "${env.CF_ACCOUNT_ID}"`);
+
+    // ✅ FIX: multiline-aware check; only add if truly missing, and insert after `name =`
+    if (env.CF_ACCOUNT_ID && !/^\s*account_id\s*=/m.test(toml)) {
+      toml = toml.replace(/^(name\s*=\s*".*?")/m, `$1\naccount_id = "${env.CF_ACCOUNT_ID}"`);
     }
+
     if (wantsAssets && assetsKvId && !/binding\s*=\s*"ASSETS"/.test(toml)) {
       toml += `
 
