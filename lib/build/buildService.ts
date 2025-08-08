@@ -140,6 +140,9 @@ export async function buildService(
           branch: "main",
           commitMessage: `chore: initial MVP for ${payload.ideaId}`,
           createRepo: true,
+          // 👇 NEW: ensure public so org-level Actions secrets are accessible
+          visibility: "public",
+          private: false,
         },
         {
           baseUrl,
