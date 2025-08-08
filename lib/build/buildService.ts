@@ -1,154 +1,173 @@
-// lib/build/callGenerateCodeAPI.ts
+// lib/build/buildService.ts
+import { planProjectFiles } from "./planProjectFiles";
+import { generateCodeBatch } from "./generateCodeBatch";
+import { chunkArray } from "./chunkArray";
+// import { commitToGitHub } from "./commitToGitHub"; // ⛔️ no longer used in this flow
+import { sanitizeGeneratedFiles } from "./sanitizeGeneratedFiles";
+import { callPublishToGitHub } from "./callPublishToGitHub";
+import { runInterfaceSelfTest } from "./typecheck";
 
-export type FileGenInput = { path: string; description: string };
-export type FileGenOutput = { path: string; content: string };
-
-export type BatchPayload = {
-  plan?: string;
-  contextFiles?: { path: string; content: string }[];
-  targetFiles: FileGenInput[];
+type BuildPayloadLike = {
+  ideaId: string;
+  userBrief?: string;
+  features?: string[];
+  stack?: string[];
+  [key: string]: unknown;
 };
 
-type CallOpts = {
-  baseUrl?: string;
-  apiKey?: string;
-  timeoutMs?: number;
-  headers?: Record<string, string>;
-  includeContextFiles?: boolean;
-  expectContent?: boolean;
+/* ----------------------- env helpers ----------------------- */
+
+function readEnvVar(name: string): string | undefined {
+  const anyGlobal: any = typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
+  const maybeProc: any =
+    typeof process !== "undefined"
+      ? (process as any)
+      : anyGlobal && typeof anyGlobal.process !== "undefined"
+      ? (anyGlobal.process as any)
+      : undefined;
+  return maybeProc?.env?.[name];
+}
+
+// Prefer Worker `env` first, then fallback to process.env
+function getEnv(name: string, runtimeEnv?: Record<string, any>): string | undefined {
+  const v = runtimeEnv?.[name];
+  return typeof v === "string" && v.length > 0 ? v : readEnvVar(name);
+}
+
+function getBatchSize(runtimeEnv?: Record<string, any>): number {
+  const raw = getEnv("CODEGEN_BATCH_SIZE", runtimeEnv);
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 5;
+}
+
+function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> {
+  const keys = [
+    // OpenAI / model selection
+    "OPENAI_API_KEY",
+    "OPENAI_API_BASE",
+    "CODEGEN_MODEL",
+    "CODEGEN_MAX_TOKENS",
+    "CODEGEN_TEMP",
+    "CODEGEN_TIMEOUT_SECS",
+
+    // Additional toggles affecting validation
+    "CODEGEN_MIN_HTML_BYTES",
+    "CODEGEN_MIN_CSS_BYTES",
+    "CODEGEN_MIN_JS_BYTES",
+  ];
+
+  const out: Record<string, string> = {};
+  for (const k of keys) {
+    const v = getEnv(k, runtimeEnv);
+    if (typeof v === "string" && v.length > 0) out[k] = v;
+  }
+  return out;
+}
+
+/* ----------------------- types ----------------------- */
+
+export type BuildServiceResult = {
+  files: { path: string; content: string }[];
+  plan: string;
+  repoUrl?: string;
+  pagesUrl?: string;
 };
 
-type FirstArg = FileGenInput[] | BatchPayload;
+/* ----------------------- main ----------------------- */
 
-function safeEnv(name: string): string | undefined {
-  if (typeof process !== "undefined" && (process as any)?.env?.[name]) {
-    return (process as any).env[name];
-  }
-  return undefined;
-}
+export async function buildService(
+  payload: BuildPayloadLike & {
+    repo?: { token: string; org?: string }; // kept for compat; ignored now
+    skipCommit?: boolean;
+  },
+  env?: Record<string, any> // <-- accept Worker env
+): Promise<BuildServiceResult> {
+  const { plan, targetFiles } = await planProjectFiles(payload as any);
 
-export async function callGenerateCodeAPI(
-  arg: FirstArg,
-  opts: CallOpts = {}
-): Promise<FileGenOutput[]> {
-  const baseRaw =
-    opts.baseUrl ||
-    safeEnv("AGENT_BASE_URL") ||
-    // Default to your Render agent, not localhost
-    "https://launchwing-agent.onrender.com";
-
-  const base = baseRaw.replace(/\/+$/, "");
-
-  // ⏱️ increased default + env-configurable
-  const timeoutMs =
-    opts.timeoutMs ??
-    Number(safeEnv("CODEGEN_TIMEOUT_MS") || safeEnv("AGENT_TIMEOUT_MS") || 180_000);
-
-  const expectContent = opts.expectContent ?? true;
-  const includeContext = !!opts.includeContextFiles;
-
-  const isArrayInput = Array.isArray(arg);
-  const targetFiles: FileGenInput[] = isArrayInput
-    ? (arg as FileGenInput[])
-    : (arg as BatchPayload).targetFiles;
-
-  const plan = isArrayInput ? undefined : (arg as BatchPayload).plan;
-  const contextFiles = isArrayInput ? undefined : (arg as BatchPayload).contextFiles;
-
-  const payload: any = {
-    plan,
-    target_files: targetFiles?.map(f => ({ path: f.path, description: f.description })),
-    file_specs: targetFiles?.map(f => ({
-      path: f.path,
-      content: f.description,
-      description: f.description,
-    })),
-    files: targetFiles?.map(f => ({
-      path: f.path,
-      content: f.description,
-      description: f.description,
-    })),
-  };
-
-  if (includeContext && contextFiles?.length) {
-    payload.context_files = contextFiles;
+  if (!targetFiles || targetFiles.length === 0) {
+    const minimal = sanitizeGeneratedFiles([], {
+      ideaId: payload.ideaId,
+      env: {
+        CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
+        CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
+      },
+    });
+    return { files: minimal, plan };
   }
 
-  const resolvedApiKey = opts.apiKey || safeEnv("AGENT_API_KEY");
+  // 2) Batched generation → agent (write-only)
+  const batches = chunkArray(
+    targetFiles.map((t: any) => ({ path: t.path, description: t.description })),
+    getBatchSize(env)
+  );
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(opts.headers || {}),
-  };
-  if (resolvedApiKey) {
-    headers.Authorization = `Bearer ${resolvedApiKey}`;
+  const generated: { path: string; content: string }[] = [];
+  for (const batch of batches) {
+    const already = generated.map((f) => ({ path: f.path, content: f.content }));
+    const out = await generateCodeBatch(batch, {
+      plan,
+      alreadyGenerated: already,
+      env: {
+        ...getEnvSubset(env),
+        AGENT_BASE_URL: getEnv("AGENT_BASE_URL", env), // ✅ ensure agent URL is passed to codegen
+        // AGENT_API_KEY intentionally omitted unless you add it to Worker env
+      },
+    });
+    generated.push(...out);
   }
 
-  // Small debug to confirm which base we’re using in CF logs
-  // (won’t throw if console isn’t available)
-  try { console.log("callGenerateCodeAPI → base:", base); } catch {}
+  // 3) Sanitize for return only (UI)—deployment will use agent’s on-disk files
+  const sanitized = sanitizeGeneratedFiles(generated, {
+    ideaId: payload.ideaId,
+    env: {
+      CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
+      CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
+    },
+  });
 
-  const postJson = async (url: string) => {
-    const ac = new AbortController();
-    const id = setTimeout(() => ac.abort(), timeoutMs);
+  // 4) Publish via agent → GitHub
+  let repoUrl: string | undefined;
+  if (!payload.skipCommit) {
+    const repoName = `mvp-${payload.ideaId}`;
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-        signal: ac.signal,
-      });
-      if (!res.ok) {
-        const text = await safeText(res);
-        throw new Error(`Agent ${res.status} ${res.statusText} at ${url}: ${text.slice(0, 400)}`);
-      }
-      const data = (await res.json()) as any;
-      return normalizeOutputs(data, { expectContent });
-    } finally {
-      clearTimeout(id);
-    }
-  };
+      const baseUrl = getEnv("AGENT_BASE_URL", env);
+      console.log("DEBUG publish -> baseUrl:", baseUrl);
 
-  const endpoints = [`${base}/generate-batch`, `${base}/generate`];
+      const publish = await callPublishToGitHub(
+        {
+          repoOwner: "LaunchWing",
+          repoName,
+          branch: "main",
+          commitMessage: `chore: initial MVP for ${payload.ideaId}`,
+          createRepo: true,
+        },
+        {
+          baseUrl,
+          apiKey: getEnv("AGENT_API_KEY", env),
+        }
+      );
 
-  let lastErr: unknown;
-  for (const ep of endpoints) {
-    try {
-      return await postJson(ep);
-    } catch (e) {
-      lastErr = e;
+      console.log("DEBUG publish <- repoUrl:", publish.repoUrl, "sha:", publish.commitSha);
+      repoUrl = publish.repoUrl;
+    } catch (e: any) {
+      console.error("ERROR publish-to-github:", e?.message || e);
+      throw e;
     }
   }
-  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+
+  return { files: sanitized, plan, repoUrl };
 }
 
-async function safeText(res: Response): Promise<string> {
-  try { return await res.text(); } catch { return ""; }
-}
+// Keep default export
+export default buildService;
 
-function normalizeOutputs(
-  raw: any,
-  opts: { expectContent: boolean }
-): FileGenOutput[] {
-  const coerce = (x: any): FileGenOutput | null => {
-    if (!x) return null;
-    const path =
-      typeof x.path === "string" ? x.path : (x.filename ?? x.file ?? null);
-    let content: string | null =
-      typeof x.content === "string"
-        ? x.content
-        : (typeof x.body === "string" ? x.body : (typeof x.code === "string" ? x.code : null));
-
-    if (content == null && !opts.expectContent) content = "";
-    if (typeof path === "string" && typeof content === "string") {
-      return { path, content };
-    }
-    return null;
-  };
-
-  if (!raw) return [];
-  if (Array.isArray(raw.files)) return raw.files.map(coerce).filter(Boolean) as FileGenOutput[];
-  if (Array.isArray(raw))       return raw.map(coerce).filter(Boolean) as FileGenOutput[];
-  if (raw && Array.isArray(raw.result)) return raw.result.map(coerce).filter(Boolean) as FileGenOutput[];
-  throw new Error("Unrecognized agent response shape");
+// 👇 Explicit named export so the bundler can resolve it reliably
+export async function buildAndDeployApp(
+  payload: BuildPayloadLike & {
+    repo?: { token: string; org?: string };
+    skipCommit?: boolean;
+  },
+  env?: Record<string, any>
+): Promise<BuildServiceResult> {
+  return buildService(payload, env);
 }
