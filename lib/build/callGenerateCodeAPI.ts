@@ -34,7 +34,9 @@ export async function callGenerateCodeAPI(
   const baseRaw =
     opts.baseUrl ||
     safeEnv("AGENT_BASE_URL") ||
-    "http://localhost:8000";
+    // Default to your Render agent, not localhost
+    "https://launchwing-agent.onrender.com";
+
   const base = baseRaw.replace(/\/+$/, "");
 
   const timeoutMs = opts.timeoutMs ?? 60_000;
@@ -68,13 +70,19 @@ export async function callGenerateCodeAPI(
     payload.context_files = contextFiles;
   }
 
+  const resolvedApiKey = opts.apiKey || safeEnv("AGENT_API_KEY");
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(opts.headers || {}),
   };
-  if (opts.apiKey) {
-    headers.Authorization = `Bearer ${opts.apiKey}`;
+  if (resolvedApiKey) {
+    headers.Authorization = `Bearer ${resolvedApiKey}`;
   }
+
+  // Small debug to confirm which base we’re using in CF logs
+  // (won’t throw if console isn’t available)
+  try { console.log("callGenerateCodeAPI → base:", base); } catch {}
 
   const postJson = async (url: string) => {
     const ac = new AbortController();
