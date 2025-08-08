@@ -90,7 +90,7 @@ function makeWranglerToml(opts: {
   accountId?: string;
   kvId?: string;
   hasPublic: boolean;
-}): string {
+}: string | any): string {
   const today = new Date().toISOString().slice(0, 10);
   const lines: string[] = [];
   lines.push(`name = "${opts.projectName}"`);
@@ -154,7 +154,6 @@ export async function buildAndDeployApp(
         console.warn("⚠️ Could not ensure ASSETS KV for fallback:", String(e));
       }
     }
-    // 🔧 FIX: your local generateSimpleApp takes 4 args (no accountId)
     files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvId);
     console.log("✅ Fallback files generated");
   }
@@ -177,35 +176,13 @@ export async function buildAndDeployApp(
     files["functions/index.ts"] = defaultWorkerHandler();
   }
 
-  // --- ensure wrangler.toml is correct ---
-  if (!files["wrangler.toml"]) {
-    files["wrangler.toml"] = makeWranglerToml({
-      projectName,
-      accountId: env.CF_ACCOUNT_ID,
-      kvId: assetsKvId || undefined,
-      hasPublic,
-    });
-  } else {
-    // Patch existing: add account_id, add KV block if needed, add [site] if using public
-    let toml = files["wrangler.toml"];
-    if (env.CF_ACCOUNT_ID && !/^\s*account_id\s*=/.test(toml)) {
-      toml = toml.replace(/\bname\s*=\s*".*?"/, (m) => `${m}\naccount_id = "${env.CF_ACCOUNT_ID}"`);
-    }
-    if (wantsAssets && assetsKvId && !/binding\s*=\s*"ASSETS"/.test(toml)) {
-      toml += `
-
-[[kv_namespaces]]
-binding = "ASSETS"
-id = "${assetsKvId}"`;
-    }
-    if (hasPublic && !/\[site\][\s\S]*bucket\s*=/.test(toml)) {
-      toml += `
-
-[site]
-bucket = "./public"`;
-    }
-    files["wrangler.toml"] = toml;
-  }
+  // --- HARD OVERRIDE wrangler.toml (prevents duplicate keys) ---
+  files["wrangler.toml"] = makeWranglerToml({
+    projectName,
+    accountId: env.CF_ACCOUNT_ID,
+    kvId: assetsKvId || undefined,
+    hasPublic,
+  });
 
   // --- ensure GitHub Actions workflow exists ---
   if (!files[".github/workflows/deploy.yml"]) {
