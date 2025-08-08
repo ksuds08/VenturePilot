@@ -39,8 +39,14 @@ export async function callGenerateCodeAPI(
 
   const base = baseRaw.replace(/\/+$/, "");
 
-  // ⬆️ bump default timeout
-  const timeoutMs = opts.timeoutMs ?? 120_000;
+  // NEW: allow env to control timeout; default to 180s instead of 60s
+  const secsFromEnv = (() => {
+    const s = safeEnv("CODEGEN_TIMEOUT_SECS");
+    const n = s ? parseInt(s, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  })();
+  const timeoutMs = opts.timeoutMs ?? (secsFromEnv ? secsFromEnv * 1000 : 180_000);
+
   const expectContent = opts.expectContent ?? true;
   const includeContext = !!opts.includeContextFiles;
 
@@ -75,14 +81,16 @@ export async function callGenerateCodeAPI(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "Accept": "application/json", // ensure JSON, not SSE
     ...(opts.headers || {}),
   };
   if (resolvedApiKey) {
     headers.Authorization = `Bearer ${resolvedApiKey}`;
   }
 
-  try { console.log("callGenerateCodeAPI → base:", base); } catch {}
+  // Debug breadcrumbs
+  try {
+    console.log("callGenerateCodeAPI → base:", base, "timeoutMs:", timeoutMs);
+  } catch {}
 
   const postJson = async (url: string) => {
     const ac = new AbortController();
@@ -105,9 +113,17 @@ export async function callGenerateCodeAPI(
     }
   };
 
-  // 🚫 no SSE fallback — only use the JSON endpoint
-  const endpoint = `${base}/generate-batch`;
-  return await postJson(endpoint);
+  const endpoints = [`${base}/generate-batch`, `${base}/generate`];
+
+  let lastErr: unknown;
+  for (const ep of endpoints) {
+    try {
+      return await postJson(ep);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
 async function safeText(res: Response): Promise<string> {
