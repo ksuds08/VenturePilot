@@ -28,7 +28,6 @@ function extractFallbackPlan(payload: BuildPayload): string {
 /* ------------------- deploy files we might need to inject ------------------- */
 
 function defaultDeployYaml(): string {
-  // ✅ Official Action v3, correct secret name, no wranglerVersion pinning
   return `name: Deploy to Cloudflare Workers
 
 on:
@@ -50,7 +49,6 @@ jobs:
 }
 
 function defaultWorkerHandler(): string {
-  // ✅ Serves from KV ASSETS if present; falls back to text if missing
   return `export default {
   async fetch(request: Request, env: any): Promise<Response> {
     try {
@@ -156,7 +154,8 @@ export async function buildAndDeployApp(
         console.warn("⚠️ Could not ensure ASSETS KV for fallback:", String(e));
       }
     }
-    files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvId, env.CF_ACCOUNT_ID);
+    // 🔧 FIX: your local generateSimpleApp takes 4 args (no accountId)
+    files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvId);
     console.log("✅ Fallback files generated");
   }
 
@@ -241,10 +240,9 @@ bucket = "./public"`;
 /* ------------------------------- utilities ------------------------------- */
 
 async function ensureAssetsKv(projectName: string, accountId: string, token: string): Promise<string> {
-  // Try to reuse a namespace with a stable title for idempotency
   const title = `${projectName}-ASSETS`;
 
-  // List namespaces to see if it already exists
+  // Try to reuse existing
   try {
     const listRes = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces?per_page=100`,
@@ -256,10 +254,10 @@ async function ensureAssetsKv(projectName: string, accountId: string, token: str
       if (found?.id) return found.id;
     }
   } catch {
-    // ignore listing errors
+    // ignore
   }
 
-  // Otherwise create via your helper (keeps one implementation path)
+  // Create if missing
   const id = await createKvNamespace({ token, accountId, title });
   return id;
 }
