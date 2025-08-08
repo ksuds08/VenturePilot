@@ -22,8 +22,13 @@ export async function generateCodeBatch(
   const { plan /*, alreadyGenerated*/ } = opts;
 
   // Chunk size from env or default 5 (keeps payloads and responses small)
-  const chunkSize =
-    (Number(opts.env?.CODEGEN_CHUNK_SIZE) || 5);
+  const chunkSize = Number(opts.env?.CODEGEN_CHUNK_SIZE) || 5;
+
+  // Resolve agent endpoint from Worker env (with fallbacks)
+  const baseUrl =
+    opts.env?.AGENT_BASE_URL ||
+    (typeof process !== 'undefined' ? (process as any)?.env?.AGENT_BASE_URL : undefined) ||
+    'http://localhost:8000';
 
   const chunks = chunkArray(filesToGenerate || [], Math.max(1, chunkSize));
   const allResults: FileGenOutput[] = [];
@@ -39,7 +44,7 @@ export async function generateCodeBatch(
         targetFiles: chunk,
       },
       {
-        // You can flip these via env or caller if needed:
+        baseUrl,
         includeContextFiles: false,
         expectContent: true,
         timeoutMs: Number(opts.env?.CODEGEN_TIMEOUT_MS) || 60_000,
