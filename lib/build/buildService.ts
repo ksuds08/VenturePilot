@@ -1,5 +1,3 @@
-// lib/build/buildService.ts
-
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
@@ -90,7 +88,7 @@ function makeWranglerToml(opts: {
   accountId?: string;
   kvId?: string;
   hasPublic: boolean;
-}: string | any): string {
+}): string {
   const today = new Date().toISOString().slice(0, 10);
   const lines: string[] = [];
   lines.push(`name = "${opts.projectName}"`);
@@ -176,13 +174,35 @@ export async function buildAndDeployApp(
     files["functions/index.ts"] = defaultWorkerHandler();
   }
 
-  // --- HARD OVERRIDE wrangler.toml (prevents duplicate keys) ---
-  files["wrangler.toml"] = makeWranglerToml({
-    projectName,
-    accountId: env.CF_ACCOUNT_ID,
-    kvId: assetsKvId || undefined,
-    hasPublic,
-  });
+  // --- ensure wrangler.toml is correct ---
+  if (!files["wrangler.toml"]) {
+    files["wrangler.toml"] = makeWranglerToml({
+      projectName,
+      accountId: env.CF_ACCOUNT_ID,
+      kvId: assetsKvId || undefined,
+      hasPublic,
+    });
+  } else {
+    // Patch existing: add account_id, add KV block if needed, add [site] if using public
+    let toml = files["wrangler.toml"];
+    if (env.CF_ACCOUNT_ID && !/^\s*account_id\s*=/.test(toml)) {
+      toml = toml.replace(/\bname\s*=\s*".*?"/, (m) => `${m}\naccount_id = "${env.CF_ACCOUNT_ID}"`);
+    }
+    if (wantsAssets && assetsKvId && !/binding\s*=\s*"ASSETS"/.test(toml)) {
+      toml += `
+
+[[kv_namespaces]]
+binding = "ASSETS"
+id = "${assetsKvId}"`;
+    }
+    if (hasPublic && !/\[site\][\s\S]*bucket\s*=/.test(toml)) {
+      toml += `
+
+[site]
+bucket = "./public"`;
+    }
+    files["wrangler.toml"] = toml;
+  }
 
   // --- ensure GitHub Actions workflow exists ---
   if (!files[".github/workflows/deploy.yml"]) {
