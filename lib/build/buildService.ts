@@ -1,125 +1,127 @@
 // lib/build/buildService.ts
 
-import { commitToGitHub } from "./commitToGitHub";
-import { sanitizeGeneratedFiles } from "./sanitizeGeneratedFiles";
+/**
+ * Orchestrates: plan -> batched codegen -> sanitize -> (optional) commit.
+ * - Uses small batched requests to the agent/API to avoid OOM/timeouts.
+ * - Passes only the minimal environment the generator needs.
+ * - Avoids top-level `process` access so this file won’t explode when bundled by Wrangler.
+ */
+
 import { planProjectFiles } from "./planProjectFiles";
 import { generateCodeBatch } from "./generateCodeBatch";
 import { chunkArray } from "./chunkArray";
+import { commitToGitHub } from "./commitToGitHub";
+import { sanitizeGeneratedFiles } from "./sanitizeGeneratedFiles";
 
-/** Minimal shape we actually use; avoids importing from ../../types */
-type BuildPayloadLite = {
-  ideaId: string;
-  ideaSummary?: { description?: string };
-  messages?: { role: "assistant" | "user" | "system"; content?: string }[];
-  branding?: unknown;
-  files?: { path: string; content: string }[];
-};
+import type { BuildPayload } from "../../types";
 
 /* -------------------------------------------------------------------------- */
 /*                             Safe env accessors                              */
 /* -------------------------------------------------------------------------- */
 
-function getSafeNodeEnv(): Record<string, string> {
-  const env = (typeof process !== "undefined" && (process as any).env) || {};
-  const out: Record<string, string> = {};
-  for (const k in env) {
-    const v = (env as any)[k];
-    if (typeof v === "string") out[k] = v;
-  }
-  return out;
+/**
+ * Runtime-safe read of env values even when `process` is not defined (e.g., Wrangler).
+ * Never referenced at module top-level; only inside functions.
+ */
+function readEnvVar(name: string): string | undefined {
+  // Narrowly probe for process in multiple runtimes
+  const anyGlobal: any = typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
+  const maybeProc: any =
+    typeof process !== "undefined"
+      ? (process as any)
+      : anyGlobal && typeof anyGlobal.process !== "undefined"
+      ? (anyGlobal.process as any)
+      : undefined;
+
+  return maybeProc?.env?.[name];
 }
 
-/** Only the bits needed by codegen calls */
-function getCodegenEnv(overrides?: Record<string, string | undefined>): Record<string, string> {
-  const env = { ...getSafeNodeEnv(), ...(overrides || {}) } as Record<string, string>;
-  const out: Record<string, string> = {};
-  const allow = [
+/** Batch size: defaults to 5, overridable with CODEGEN_BATCH_SIZE env */
+function getBatchSize(): number {
+  const raw = readEnvVar("CODEGEN_BATCH_SIZE");
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 5;
+}
+
+/**
+ * Only pass the minimal env the generator needs. Keep this list short on purpose.
+ * If you add a new dependency in the generator, also add it here.
+ */
+function getEnvSubset(): Record<string, string> {
+  const keys = [
+    // OpenAI / model selection
     "OPENAI_API_KEY",
-    "OPENAI_APIKEY",
+    "OPENAI_API_BASE",
     "CODEGEN_MODEL",
-    "CODEGEN_MAX_DESC_CHARS",
     "CODEGEN_MAX_TOKENS",
     "CODEGEN_TEMP",
     "CODEGEN_TIMEOUT_SECS",
-    "CODEGEN_INTER_FILE_SLEEP",
-    "CODEGEN_RETRIES",
-    "CODEGEN_OUTPUT_ROOT",
+
+    // Any additional toggles that affect prompts/validation
     "CODEGEN_MIN_HTML_BYTES",
     "CODEGEN_MIN_CSS_BYTES",
     "CODEGEN_MIN_JS_BYTES",
   ];
-  for (const k of allow) {
-    if (env[k]) out[k] = env[k];
+
+  const out: Record<string, string> = {};
+  for (const k of keys) {
+    const v = readEnvVar(k);
+    if (typeof v === "string" && v.length > 0) {
+      out[k] = v;
+    }
   }
   return out;
 }
 
-function getBatchSize(): number {
-  const env = getSafeNodeEnv();
-  const n = parseInt(env.CODEGEN_BATCH_SIZE || "5", 10);
-  return Number.isFinite(n) && n > 0 ? n : 5;
-}
-
 /* -------------------------------------------------------------------------- */
-/*                         Cloudflare KV ensure helper                         */
+/*                              Types for returns                              */
 /* -------------------------------------------------------------------------- */
 
-async function ensureAssetsKv(projectName: string, accountId?: string, token?: string): Promise<string> {
-  if (!accountId || !token) return "";
-  const title = `${projectName}-ASSETS`;
+export type BuildServiceResult = {
+  files: { path: string; content: string }[];
+  plan: string;
+  repoUrl?: string;
+  pagesUrl?: string;
+};
 
-  // Try to find existing
-  try {
-    const list = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces?per_page=100`,
-      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
-    );
-    if (list.ok) {
-      const data = (await list.json()) as any;
-      const found = data?.result?.find((ns: any) => ns.title === title);
-      if (found?.id) return found.id;
-    }
-  } catch {
-    // ignore and attempt create
+/* -------------------------------------------------------------------------- */
+/*                               Main workflow                                 */
+/* -------------------------------------------------------------------------- */
+
+export async function buildService(
+  payload: BuildPayload & {
+    repo?: { token: string; org?: string; name?: string };
+    // allow the caller to skip committing (useful in local dev/tests)
+    skipCommit?: boolean;
+  }
+): Promise<BuildServiceResult> {
+  // 1) Plan the project (names + descriptions only; no heavy code here)
+  //    IMPORTANT: planProjectFiles returns { plan, targetFiles }
+  const { plan, targetFiles } = await planProjectFiles(payload);
+
+  // Edge case: nothing to generate
+  if (!targetFiles || targetFiles.length === 0) {
+    // Still sanitize to ensure wrangler.toml / index.html get injected later if needed
+    const minimal = sanitizeGeneratedFiles([], {
+      ideaId: payload.ideaId,
+      env: {
+        CLOUDFLARE_ACCOUNT_ID: readEnvVar("CLOUDFLARE_ACCOUNT_ID"),
+        CLOUDFLARE_API_TOKEN: readEnvVar("CLOUDFLARE_API_TOKEN"),
+      },
+    });
+
+    return {
+      files: minimal,
+      plan,
+    };
   }
 
-  // Create if missing
-  const createRes = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    }
+  // 2) Generate code in batches, passing minimal env and previously generated files as context
+  const batches = chunkArray(
+    targetFiles.map((t) => ({ path: t.path, description: t.description })),
+    getBatchSize()
   );
-  if (!createRes.ok) {
-    throw new Error(`Failed to create KV namespace "${title}": ${createRes.status} ${createRes.statusText}`);
-  }
-  const created = (await createRes.json()) as any;
-  const id = created?.result?.id;
-  if (!id) throw new Error("Cloudflare KV create returned no id");
-  return id;
-}
 
-/* -------------------------------------------------------------------------- */
-/*                              Main entry point                               */
-/* -------------------------------------------------------------------------- */
-
-export async function buildAndDeployApp(
-  payload: BuildPayloadLite & { files?: { path: string; content: string }[] },
-  env: {
-    CF_API_TOKEN?: string;
-    CF_ACCOUNT_ID?: string;
-    GITHUB_PAT: string;
-  }
-) {
-  const projectName = `mvp-${payload.ideaId}`;
-
-  // 1) Plan the project
-  const { plan, targets } = await planProjectFiles(payload as any);
-
-  // 2) Generate code in batches, passing minimal env the generator needs
-  const batches = chunkArray(targets, getBatchSize());
   const generated: { path: string; content: string }[] = [];
 
   for (const batch of batches) {
@@ -127,68 +129,48 @@ export async function buildAndDeployApp(
     const out = await generateCodeBatch(batch, {
       plan,
       alreadyGenerated: already,
-      env: getCodegenEnv(), // ensure env is provided
+      env: getEnvSubset(),
     });
     generated.push(...out);
   }
 
-  // 3) Merge any caller-provided files (last-write-wins)
-  if (payload.files?.length) {
-    for (const f of payload.files) {
-      const idx = generated.findIndex((x) => x.path === f.path);
-      if (idx >= 0) generated.splice(idx, 1);
-      generated.push({ path: f.path, content: f.content });
-    }
-  }
-
-  // 4) Sanitize/normalize outputs (adds worker, wrangler.toml, index.html, etc.)
+  // 3) Sanitize/normalize outputs (move to public/, inject worker, wrangler.toml, deploy.yml, etc.)
   const sanitized = sanitizeGeneratedFiles(generated, {
     ideaId: payload.ideaId,
     env: {
-      CLOUDFLARE_API_TOKEN: env.CF_API_TOKEN,
-      CLOUDFLARE_ACCOUNT_ID: env.CF_ACCOUNT_ID,
+      CLOUDFLARE_ACCOUNT_ID: readEnvVar("CLOUDFLARE_ACCOUNT_ID"),
+      CLOUDFLARE_API_TOKEN: readEnvVar("CLOUDFLARE_API_TOKEN"),
     },
   });
 
-  // 5) If serving static assets or worker references env.ASSETS, ensure KV
-  const hasPublic = sanitized.some((f) => f.path.startsWith("public/"));
-  const workerTxt = sanitized.find((f) => f.path === "functions/index.ts")?.content || "";
-  const wantsAssets = hasPublic || /env\.ASSETS\b/.test(workerTxt);
+  // 4) Optional commit to GitHub (no Cloudflare ops here; those happen post-commit via Actions)
+  let repoUrl: string | undefined;
 
-  let assetsKvId = "";
-  if (wantsAssets && env.CF_API_TOKEN && env.CF_ACCOUNT_ID) {
-    assetsKvId = await ensureAssetsKv(projectName, env.CF_ACCOUNT_ID, env.CF_API_TOKEN);
-  }
+  if (!payload.skipCommit && payload.repo?.token) {
+    const org = payload.repo.org || "LaunchWing";
+    const repoFiles: Record<string, string> = Object.fromEntries(
+      sanitized.map((f) => [f.path, f.content])
+    );
 
-  // 6) Patch wrangler.toml with ASSETS binding if needed
-  if (assetsKvId) {
-    const idx = sanitized.findIndex((f) => f.path === "wrangler.toml");
-    if (idx !== -1) {
-      let toml = sanitized[idx].content;
-      if (!/binding\s*=\s*"ASSETS"/.test(toml)) {
-        toml += `
-
-[[kv_namespaces]]
-binding = "ASSETS"
-id = "${assetsKvId}"`;
-      }
-      sanitized[idx] = { path: "wrangler.toml", content: toml };
-    }
-  }
-
-  // 7) Commit to GitHub
-  const filesMap = Object.fromEntries(sanitized.map((f) => [f.path, f.content]));
-  let repoUrl = "";
-  try {
-    repoUrl = await commitToGitHub(payload.ideaId, filesMap, {
-      token: env.GITHUB_PAT,
-      org: "LaunchWing",
+    // commitToGitHub will create or update a repo like: LaunchWing/mvp-<ideaId>
+    repoUrl = await commitToGitHub(payload.ideaId, repoFiles, {
+      token: payload.repo.token,
+      org,
+      // name is optional; if provided, use it; otherwise builder uses mvp-<ideaId>
+      name: payload.repo.name,
     });
-  } catch (err) {
-    throw new Error(`GitHub commit failed: ${String(err)}`);
   }
 
-  const pagesUrl = `https://${projectName}.promptpulse.workers.dev`;
-
-  return { pagesUrl, repoUrl, plan };
+  // 5) Return everything to caller; Pages/Workers URL (if any) is inferred later by deploy step
+  return {
+    files: sanitized,
+    plan,
+    repoUrl,
+  };
 }
+
+/* -------------------------------------------------------------------------- */
+/*                             Default export (opt)                            */
+/* -------------------------------------------------------------------------- */
+
+export default buildService;
