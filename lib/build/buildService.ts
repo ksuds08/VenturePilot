@@ -1,3 +1,5 @@
+// lib/build/buildService.ts
+
 import { commitToGitHub } from './commitToGitHub';
 import { generateSimpleApp } from './generateSimpleApp';
 import { createKvNamespace } from '../cloudflare/createKvNamespace';
@@ -66,7 +68,7 @@ function defaultWorkerHandler(): string {
       return new Response("Hello from LaunchWing!", {
         headers: { "Content-Type": "text/plain" }
       });
-    } catch (err) {
+    } catch {
       return new Response("Internal Error", { status: 500 });
     }
   }
@@ -82,6 +84,8 @@ function getContentType(file: string): string {
 }
 `.trim();
 }
+
+/* -------------------------- wrangler.toml helpers -------------------------- */
 
 function makeWranglerToml(opts: {
   projectName: string;
@@ -109,6 +113,66 @@ bucket = "./public"`.trim());
   return lines.join("\n");
 }
 
+// idempotent upserts
+function addAccountIdOnce(toml: string, accountId?: string): string {
+  if (!accountId) return toml;
+  // If any account_id present anywhere, do nothing
+  if (/^\s*account_id\s*=/m.test(toml)) return toml;
+  // Insert after name="…", otherwise append
+  const nameLine = /^\s*name\s*=\s*".*?"\s*$/m;
+  if (nameLine.test(toml)) {
+    return toml.replace(nameLine, (m) => `${m}\naccount_id = "${accountId}"`);
+  }
+  return (toml.trimEnd() + `\naccount_id = "${accountId}"\n`);
+}
+
+function addAssetsKvOnce(toml: string, kvId?: string): string {
+  if (!kvId) return toml;
+  if (/^\s*\[\[kv_namespaces\]\][\s\S]*?^\s*binding\s*=\s*"ASSETS"/m.test(toml)) {
+    return toml; // already has ASSETS binding somewhere
+  }
+  return toml.trimEnd() + `
+
+[[kv_namespaces]]
+binding = "ASSETS"
+id = "${kvId}"
+`;
+}
+
+function addSiteBucketOnce(toml: string, hasPublic: boolean): string {
+  if (!hasPublic) return toml;
+  if (/\[site\][\s\S]*bucket\s*=/.test(toml)) return toml;
+  return toml.trimEnd() + `
+
+[site]
+bucket = "./public"
+`;
+}
+
+/* ------------------------------- utilities ------------------------------- */
+
+async function ensureAssetsKv(projectName: string, accountId: string, token: string): Promise<string> {
+  const title = `${projectName}-ASSETS`;
+
+  // Try to reuse existing
+  try {
+    const listRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces?per_page=100`,
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+    );
+    if (listRes.ok) {
+      const data = await listRes.json() as any;
+      const found = data?.result?.find((ns: any) => ns.title === title);
+      if (found?.id) return found.id;
+    }
+  } catch {
+    // ignore listing errors; we'll create below
+  }
+
+  // Create if missing
+  return createKvNamespace({ token, accountId, title });
+}
+
 /* -------------------------- main build+deploy API -------------------------- */
 
 export async function buildAndDeployApp(
@@ -124,7 +188,7 @@ export async function buildAndDeployApp(
   const fallbackPlan = extractFallbackPlan(payload);
   const projectName = `mvp-${payload.ideaId}`;
 
-  // --- sanitize / or fall back ---
+  // --- sanitize input or fall back to a trivial app scaffold ---
   let files: Record<string, string> = {};
 
   if (payload.files && payload.files.length > 0) {
@@ -142,7 +206,7 @@ export async function buildAndDeployApp(
     console.log("✅ Sanitized file list:", Object.keys(files));
   } else {
     console.warn("⚠️ No agent files provided — falling back to generateSimpleApp()");
-    // With fallback, we *do* create a KV so static assets can be served
+    // For fallback, try to ensure KV so /public can be served from ASSETS if we upload later
     let kvId = "";
     if (env.CF_API_TOKEN && env.CF_ACCOUNT_ID) {
       try {
@@ -152,11 +216,12 @@ export async function buildAndDeployApp(
         console.warn("⚠️ Could not ensure ASSETS KV for fallback:", String(e));
       }
     }
+    // generateSimpleApp has 4 params (plan, branding, projectName, kvId)
     files = await generateSimpleApp(fallbackPlan, payload.branding, projectName, kvId);
     console.log("✅ Fallback files generated");
   }
 
-  // --- detect if we want ASSETS (KV + [site] bucket) ---
+  // --- detect whether we need assets (KV + [site] bucket) ---
   const hasPublic = Object.keys(files).some(p => p.startsWith("public/"));
   const workerTxt = files["functions/index.ts"] || "";
   const wantsAssets = hasPublic || /env\.ASSETS\b/.test(workerTxt);
@@ -166,6 +231,8 @@ export async function buildAndDeployApp(
   if (wantsAssets && env.CF_API_TOKEN && env.CF_ACCOUNT_ID) {
     assetsKvId = await ensureAssetsKv(projectName, env.CF_ACCOUNT_ID, env.CF_API_TOKEN);
     console.log("✅ ASSETS KV ensured:", assetsKvId);
+  } else if (wantsAssets) {
+    console.warn("⚠️ Wants ASSETS but Cloudflare credentials missing — proceeding without KV.");
   }
 
   // --- ensure worker exists (serve from KV) ---
@@ -174,7 +241,7 @@ export async function buildAndDeployApp(
     files["functions/index.ts"] = defaultWorkerHandler();
   }
 
-  // --- ensure wrangler.toml is correct ---
+  // --- ensure wrangler.toml is correct and idempotent ---
   if (!files["wrangler.toml"]) {
     files["wrangler.toml"] = makeWranglerToml({
       projectName,
@@ -183,27 +250,10 @@ export async function buildAndDeployApp(
       hasPublic,
     });
   } else {
-    // Patch existing: add account_id, add KV block if needed, add [site] if using public
     let toml = files["wrangler.toml"];
-
-    // ✅ FIX: multiline-aware check; only add if truly missing, and insert after `name =`
-    if (env.CF_ACCOUNT_ID && !/^\s*account_id\s*=/m.test(toml)) {
-      toml = toml.replace(/^(name\s*=\s*".*?")/m, `$1\naccount_id = "${env.CF_ACCOUNT_ID}"`);
-    }
-
-    if (wantsAssets && assetsKvId && !/binding\s*=\s*"ASSETS"/.test(toml)) {
-      toml += `
-
-[[kv_namespaces]]
-binding = "ASSETS"
-id = "${assetsKvId}"`;
-    }
-    if (hasPublic && !/\[site\][\s\S]*bucket\s*=/.test(toml)) {
-      toml += `
-
-[site]
-bucket = "./public"`;
-    }
+    toml = addAccountIdOnce(toml, env.CF_ACCOUNT_ID);
+    toml = addAssetsKvOnce(toml, wantsAssets ? assetsKvId : undefined);
+    toml = addSiteBucketOnce(toml, hasPublic);
     files["wrangler.toml"] = toml;
   }
 
@@ -235,29 +285,4 @@ bucket = "./public"`;
     repoUrl,
     plan: fallbackPlan,
   };
-}
-
-/* ------------------------------- utilities ------------------------------- */
-
-async function ensureAssetsKv(projectName: string, accountId: string, token: string): Promise<string> {
-  const title = `${projectName}-ASSETS`;
-
-  // Try to reuse existing
-  try {
-    const listRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces?per_page=100`,
-      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
-    );
-    if (listRes.ok) {
-      const data = await listRes.json() as any;
-      const found = data?.result?.find((ns: any) => ns.title === title);
-      if (found?.id) return found.id;
-    }
-  } catch {
-    // ignore
-  }
-
-  // Create if missing
-  const id = await createKvNamespace({ token, accountId, title });
-  return id;
 }
