@@ -2,26 +2,23 @@
 import { planProjectFiles } from "./planProjectFiles";
 import { generateCodeBatch } from "./generateCodeBatch";
 import { chunkArray } from "./chunkArray";
+import { sanitizeGeneratedFiles } from "./sanitizeGeneratedFiles";
 import { callPublishToGitHub } from "./callPublishToGitHub";
+import { runInterfaceSelfTest } from "./typecheck";
 
-// ——— types ———
 type BuildPayloadLike = {
   ideaId: string;
   userBrief?: string;
   features?: string[];
   stack?: string[];
+  messages?: any[];            // ✅ make sure messages is allowed through
+  ideaSummary?: { description?: string; [k: string]: any };
+  branding?: Record<string, any>;
   [key: string]: unknown;
 };
 
-export type BuildServiceResult = {
-  // What we show back to the UI (just the generated files)
-  files: { path: string; content: string }[];
-  plan: string;
-  repoUrl?: string;
-  pagesUrl?: string;
-};
+/* ----------------------- env helpers ----------------------- */
 
-// ——— env helpers ———
 function readEnvVar(name: string): string | undefined {
   const anyGlobal: any = typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
   const maybeProc: any =
@@ -52,7 +49,18 @@ function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> 
     "CODEGEN_MAX_TOKENS",
     "CODEGEN_TEMP",
     "CODEGEN_TIMEOUT_SECS",
+
+    "CODEGEN_MIN_HTML_BYTES",
+    "CODEGEN_MIN_CSS_BYTES",
+    "CODEGEN_MIN_JS_BYTES",
+
+    // 👇 new knobs (optional)
+    "CODEGEN_TIMEOUT_MS",
+    "CODEGEN_RETRIES",
+    "CODEGEN_RETRY_BACKOFF_MS",
+    "CODEGEN_CHUNK_SIZE",
   ];
+
   const out: Record<string, string> = {};
   for (const k of keys) {
     const v = getEnv(k, runtimeEnv);
@@ -61,52 +69,35 @@ function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> 
   return out;
 }
 
-// ——— path/content utils (NO content rewriting) ———
-function normPath(p: string): string {
-  return p.replace(/\\/g, "/").replace(/^\/+/, "");
-}
+/* ----------------------- types ----------------------- */
 
-/**
- * Strict, minimal normalization for publishing:
- * - normalize slashes
- * - drop blank/unsafe paths
- * - do not modify content
- * - preserve duplicates by last-write-wins (so later batches can overwrite)
- */
-function normalizeForPublish(
-  files: { path: string; content: string }[]
-): { path: string; content: string }[] {
-  const map = new Map<string, { path: string; content: string }>();
-  for (const f of files) {
-    const raw = (f?.path || "").trim();
-    if (!raw) continue;
-    const np = normPath(raw);
+export type BuildServiceResult = {
+  files: { path: string; content: string }[];
+  plan: string;
+  repoUrl?: string;
+  pagesUrl?: string;
+};
 
-    // guard against traversal
-    if (np.includes("..")) continue;
+/* ----------------------- main ----------------------- */
 
-    // ensure folder structure preserved (Map keeps last write)
-    map.set(np, { path: np, content: typeof f.content === "string" ? f.content : "" });
-  }
-  return Array.from(map.values());
-}
-
-// ——— main ———
 export async function buildService(
-  payload: BuildPayloadLike & {
-    repo?: { token: string; org?: string }; // kept for compat; ignored now
-    skipCommit?: boolean;
-  },
+  payload: BuildPayloadLike & { repo?: { token: string; org?: string }; skipCommit?: boolean },
   env?: Record<string, any>
 ): Promise<BuildServiceResult> {
   const { plan, targetFiles } = await planProjectFiles(payload as any);
 
-  // If planner yielded nothing, just stop early (don’t create stubs)
   if (!targetFiles || targetFiles.length === 0) {
-    return { files: [], plan };
+    const minimal = sanitizeGeneratedFiles([], {
+      ideaId: payload.ideaId,
+      env: {
+        CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
+        CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
+      },
+    });
+    return { files: minimal, plan };
   }
 
-  // 1) Generate files in small batches
+  // 2) Batched generation → agent (write-only)
   const batches = chunkArray(
     targetFiles.map((t: any) => ({ path: t.path, description: t.description })),
     getBatchSize(env)
@@ -121,60 +112,53 @@ export async function buildService(
       env: {
         ...getEnvSubset(env),
         AGENT_BASE_URL: getEnv("AGENT_BASE_URL", env),
-        // AGENT_API_KEY intentionally not exposed to codegen
+      },
+      // ✅ pass conversation + identifiers through so the agent can condition on them
+      meta: {
+        ideaId: payload.ideaId,
+        ideaSummary: payload.ideaSummary ?? {},
+        branding: payload.branding ?? {},
+        messages: Array.isArray(payload.messages) ? payload.messages : [],
       },
     });
     generated.push(...out);
   }
 
-  // 2) Minimal, safe normalization; NO sanitization, NO filler content.
-  const publishReady = normalizeForPublish(generated);
+  // 3) Sanitize for UI **and** for publish (authoritative file set)
+  const sanitized = sanitizeGeneratedFiles(generated, {
+    ideaId: payload.ideaId,
+    env: {
+      CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
+      CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
+    },
+  });
 
-  // Optional: visibility logs (safe) -> can help trace empties if they ever appear.
-  try {
-    const total = publishReady.length;
-    const empties = publishReady.filter(f => (f.content ?? "").length === 0).length;
-    console.log(
-      `PUBLISH_STATS files=${total} empty=${empties} sample=${publishReady.slice(0, 5).map(f => `${f.path}:${(f.content||"").length}`).join(",")}`
-    );
-  } catch {}
-
-  // 3) Publish exactly what we generated to GitHub
+  // 4) Publish via agent → GitHub (send sanitized files)
   let repoUrl: string | undefined;
   if (!payload.skipCommit) {
     const repoName = `mvp-${payload.ideaId}`;
     const baseUrl = getEnv("AGENT_BASE_URL", env);
-    try {
-      const publish = await callPublishToGitHub(
-        {
-          repoOwner: "LaunchWing",
-          repoName,
-          branch: "main",
-          commitMessage: `chore: MVP for ${payload.ideaId}`,
-          createRepo: true,
-          // 👇 send the exact files we just generated (paths + content + dirs preserved)
-          files: publishReady,
-        },
-        {
-          baseUrl,
-          apiKey: getEnv("AGENT_API_KEY", env),
-        }
-      );
-      repoUrl = publish.repoUrl;
-      console.log("Publish complete:", publish.repoUrl, publish.commitSha);
-    } catch (e: any) {
-      console.error("ERROR publish-to-github:", e?.message || e);
-      throw e;
-    }
+    const apiKey = getEnv("AGENT_API_KEY", env);
+
+    const publish = await callPublishToGitHub(
+      {
+        repoOwner: "LaunchWing",
+        repoName,
+        branch: "main",
+        commitMessage: `chore: initial MVP for ${payload.ideaId}`,
+        createRepo: true,
+        files: sanitized,
+      },
+      { baseUrl, apiKey }
+    );
+    repoUrl = publish.repoUrl;
   }
 
-  // 4) Return the same set to the UI (what got published)
-  return { files: publishReady, plan, repoUrl };
+  return { files: sanitized, plan, repoUrl };
 }
 
 export default buildService;
 
-// Convenience alias
 export async function buildAndDeployApp(
   payload: BuildPayloadLike & { repo?: { token: string; org?: string }; skipCommit?: boolean },
   env?: Record<string, any>
