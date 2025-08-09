@@ -6,6 +6,8 @@ export type PublishRequest = {
   branch?: string;           // default "main"
   commitMessage?: string;    // default "chore: initial MVP"
   createRepo?: boolean;      // default true
+  // ✅ NEW: allow passing exact files to commit (so sanitizer wins)
+  files?: { path: string; content: string }[];
 };
 
 export type PublishResponse = {
@@ -15,7 +17,6 @@ export type PublishResponse = {
 };
 
 function safeEnv(name: string): string | undefined {
-  // Guarded access so Workers don't throw
   if (typeof process !== "undefined" && (process as any)?.env?.[name]) {
     return (process as any).env[name];
   }
@@ -30,9 +31,8 @@ export async function callPublishToGitHub(
     opts.baseUrl ||
     safeEnv("AGENT_BASE_URL") ||
     "https://launchwing-agent.onrender.com";
-  const baseUrl = baseRaw.replace(/\/+$/, ""); // strip trailing slash
+  const baseUrl = baseRaw.replace(/\/+$/, "");
 
-  // ⏱️ increased default + env-configurable
   const timeoutMs =
     opts.timeoutMs ??
     Number(safeEnv("AGENT_TIMEOUT_MS") || safeEnv("PUBLISH_TIMEOUT_MS") || 180_000);
@@ -51,7 +51,7 @@ export async function callPublishToGitHub(
         branch: req.branch ?? "main",
         commitMessage: req.commitMessage ?? "chore: initial MVP",
         createRepo: req.createRepo ?? true,
-        ...req,
+        ...req, // ✅ includes req.files when present
       }),
       signal: ctrl.signal,
     });
