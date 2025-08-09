@@ -3,14 +3,24 @@
 export type FileGenTarget = { path: string; description: string };
 export type FileGenOutput = { path: string; content: string };
 
+type ChatMsg = { role: "system" | "user" | "assistant"; content?: string };
+
 type GeneratePayload = {
   plan: string;
-  // we’ll send both keys to be extra compatible with older handlers
+
+  // Primary key the agent expects
   target_files: FileGenTarget[];
+  // Back-compat for any older handler
   targetFiles?: FileGenTarget[];
-  // optional context from the MVP request (thread/messages)
-  messages?: { role: "system" | "user" | "assistant"; content?: string }[];
+
+  // Context / metadata
+  messages?: ChatMsg[];
   ideaSummary?: { description?: string; [k: string]: unknown };
+
+  // Optional extras (send both snake & camel for compatibility)
+  idea_id?: string;
+  ideaId?: string;
+  branding?: Record<string, unknown>;
 };
 
 function safeEnv(name: string): string | undefined {
@@ -60,35 +70,36 @@ export async function callGenerateCodeAPI(
   data: {
     plan: string;
     targetFiles: FileGenTarget[];
-    // thread context is optional but helps quality
-    messages?: { role: "system" | "user" | "assistant"; content?: string }[];
+    messages?: ChatMsg[];
     ideaSummary?: { description?: string; [k: string]: unknown };
+    ideaId?: string;
+    branding?: Record<string, unknown>;
   },
   opts: {
     baseUrl?: string;
-    includeContextFiles?: boolean; // kept for API compatibility
-    expectContent?: boolean;       // kept for API compatibility
+    includeContextFiles?: boolean; // reserved
+    expectContent?: boolean;       // reserved
     timeoutMs?: number;
     apiKey?: string;
   } = {}
 ): Promise<FileGenOutput[]> {
-  // 🚧 Guard: never call agent with zero files
   if (!data.targetFiles || data.targetFiles.length === 0) {
     throw new Error("callGenerateCodeAPI: targetFiles is empty");
   }
 
   const urls = withBase(opts.baseUrl);
 
-  // Build agent-friendly payload (snake_case), plus camelCase for old routes
   const payload: GeneratePayload = {
     plan: data.plan,
-    target_files: data.targetFiles, // ✅ agent’s expected key
-    targetFiles: data.targetFiles,  // ✅ compatibility with older handlers
+    target_files: data.targetFiles, // ✅ agent’s key
+    targetFiles: data.targetFiles,  // ✅ back-compat
     messages: data.messages,
     ideaSummary: data.ideaSummary,
+    idea_id: data.ideaId,
+    ideaId: data.ideaId,
+    branding: data.branding,
   };
 
-  // Optional: log first few paths so we can see what we sent in CF logs
   try {
     const first = data.targetFiles.slice(0, 3).map((f) => f.path).join(", ");
     console.log(
@@ -97,7 +108,6 @@ export async function callGenerateCodeAPI(
     );
   } catch {}
 
-  // One retry on AbortError / 524-like messages
   const attempt = async () =>
     postJSON<FileGenOutput[]>(
       urls.generateBatch,
@@ -112,7 +122,6 @@ export async function callGenerateCodeAPI(
     return await attempt();
   } catch (e: any) {
     const msg = String(e?.message || e);
-    // Basic backoff + retry on timeouts/gateway errors
     if (/aborted|timed\s*out|524|timeout/i.test(msg)) {
       await new Promise((r) => setTimeout(r, 1500));
       return await attempt();
