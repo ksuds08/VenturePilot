@@ -192,17 +192,17 @@ function getContentType(file: string): string {
 function ensureDeployWorkflow(body: string): string {
   let out = body;
 
-  // Ensure it's wrangler-action@v3
+  // Normalize wrangler action to v3
   out = out.replace(
     /uses:\s*cloudflare\/wrangler-action@v[0-9.]+/g,
     "uses: cloudflare/wrangler-action@v3"
   );
 
-  // Force Node 20 setup (add if missing)
+  // Force Node 20 setup (insert after checkout if missing, or normalize existing step)
   if (!/uses:\s*actions\/setup-node@v4/.test(out)) {
     out = out.replace(
-      /- name:\s*Checkout[\s\S]*?uses:\s*actions\/checkout@v4\s*\n/,
-      (m) => `${m}\n      - name: Use Node 20\n        uses: actions/setup-node@v4\n        with:\n          node-version: '20'\n`
+      /(-\s*name:\s*Checkout[\s\S]*?uses:\s*actions\/checkout@v4\s*\n)/,
+      (m) => `${m}      - name: Use Node 20\n        uses: actions/setup-node@v4\n        with:\n          node-version: '20'\n`
     );
   } else {
     out = out.replace(
@@ -211,39 +211,48 @@ function ensureDeployWorkflow(body: string): string {
     );
   }
 
-  // Replace publish with deploy in the action input
-  // 1) If the action uses "with: command: <...>", normalize to deploy
+  // Change publish → deploy anywhere it appears as the wrangler action command
   out = out.replace(/command:\s*publish/g, "command: deploy");
 
-  // 2) If the action is called without "with", inject it
-  if (!/with:\s*[\s\S]*command:\s*(deploy|publish)/.test(out)) {
+  // If the wrangler action step lacks "with:", inject it (with both command + apiToken)
+  out = out.replace(
+    /(uses:\s*cloudflare\/wrangler-action@v3[^\n]*\n)(?!\s*with:)/g,
+    (_m, head) =>
+      `${head}        with:\n          command: deploy\n          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}\n`
+  );
+
+  // Ensure apiToken present and correctly sourced
+  if (/uses:\s*cloudflare\/wrangler-action@v3/.test(out)) {
+    // Add/normalize apiToken under the same step
     out = out.replace(
-      /uses:\s*cloudflare\/wrangler-action@v3[^\n]*\n/,
-      (m) => `${m}        with:\n          command: deploy\n`
+      /(with:\s*(?:\n\s{8,}.+)*)/g,
+      (block) => {
+        if (!/apiToken:/.test(block)) {
+          return block.replace(
+            /with:\s*\n/,
+            `with:\n          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}\n`
+          );
+        }
+        return block.replace(
+          /apiToken:\s*.+/,
+          "apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}"
+        );
+      }
     );
   }
 
-  // Ensure the token is passed via input (more reliable than only env)
-  if (!/with:\s*[\s\S]*apiToken:/.test(out)) {
-    out = out.replace(
-      /with:\s*\n(\s*)/,
-      (_m, indent) =>
-        `with:\n${indent}  apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}\n${indent}`
-    );
-  } else {
-    out = out.replace(
-      /apiToken:\s*.+/g,
-      "apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}"
-    );
-  }
-
-  // Keep job-level env (doesn't hurt), add if missing
+  // Ensure job-level env has CLOUDFLARE_API_TOKEN
   if (!/CLOUDFLARE_API_TOKEN:\s*\$\{\{\s*secrets\.CLOUDFLARE_API_TOKEN\s*\}\}/.test(out)) {
-    out = out.replace(
-      /permissions:\s*[\s\S]*?\n\s*steps:/m,
+    // Insert under the job (after permissions or before steps)
+    const jobEnvInjected = out.replace(
+      /(permissions:\s*[^\n]*[\s\S]*?\n\s*steps:\s*\n)/m,
       (m) =>
-        `${m}\n      env:\n        CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}\n`
+        `${m.replace(
+          /\n\s*steps:\s*\n/,
+          `\n      env:\n        CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}\n      steps:\n`
+        )}`
     );
+    if (jobEnvInjected !== out) out = jobEnvInjected;
   }
 
   return out;
@@ -280,7 +289,6 @@ export function sanitizeGeneratedFiles(
       isLikelyCSS(c0);
 
     const cleaned = codeLike ? cleanProseFromCode(c0) : c0;
-
     if (codeLike && cleaned.trim().length === 0) continue;
 
     const p1 = ensurePublicPaths(p0, cleaned);
@@ -340,12 +348,15 @@ export function sanitizeGeneratedFiles(
     seen.add(f.path);
   }
 
-  // 6) Ensure/patch workflow (Node 20, deploy, apiToken)
-  const workflowPath = ".github/workflows/deploy.yml";
-  const existingIdx = out.findIndex(f => f.path === workflowPath);
-  if (existingIdx === -1) {
+  // 6) Ensure/patch ANY workflow YAML under .github/workflows/
+  const workflowFiles = out
+    .map((f, i) => ({ i, f }))
+    .filter(({ f }) => /^\.github\/workflows\/.+\.(yml|yaml)$/i.test(f.path));
+
+  if (workflowFiles.length === 0) {
+    // Create a default deploy workflow if none exists
     out.push({
-      path: workflowPath,
+      path: ".github/workflows/deploy.yml",
       content: `name: Deploy to Cloudflare Workers
 
 on:
@@ -376,20 +387,23 @@ jobs:
       - name: Deploy (Wrangler v4)
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy
+          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
 `.trim(),
     });
   } else {
-    out[existingIdx] = {
-      path: workflowPath,
-      content: ensureDeployWorkflow(out[existingIdx].content),
-    };
+    for (const { i } of workflowFiles) {
+      out[i] = {
+        path: out[i].path,
+        content: ensureDeployWorkflow(out[i].content),
+      };
+    }
   }
 
-  // 7) Ensure wrangler.toml (account/site/compat date)
+  // 7) Ensure wrangler.toml (account/site/compat date preserved)
   const hasPublic = out.some(f => /^public\//i.test(f.path));
   const compat = todayISO();
+  const accountId = meta.env.CLOUDFLARE_ACCOUNT_ID;
 
   if (!out.some(f => f.path === "wrangler.toml")) {
     let toml = generateWranglerToml(`mvp-${meta.ideaId}`, accountId, undefined, hasPublic);
