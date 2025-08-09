@@ -12,15 +12,17 @@ type BuildPayloadLike = {
   userBrief?: string;
   features?: string[];
   stack?: string[];
-  // may include: messages, ideaSummary, branding, etc.
+  // Optional context we forward to the agent
+  messages?: { role: "system" | "user" | "assistant"; content?: string }[];
+  ideaSummary?: { description?: string };
+  branding?: Record<string, any>;
   [key: string]: unknown;
 };
 
 /* ----------------------- env helpers ----------------------- */
 
 function readEnvVar(name: string): string | undefined {
-  const anyGlobal: any =
-    typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
+  const anyGlobal: any = typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
   const maybeProc: any =
     typeof process !== "undefined"
       ? (process as any)
@@ -56,6 +58,13 @@ function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> 
     "CODEGEN_MIN_HTML_BYTES",
     "CODEGEN_MIN_CSS_BYTES",
     "CODEGEN_MIN_JS_BYTES",
+
+    // Optional chunk override / timeouts
+    "CODEGEN_CHUNK_SIZE",
+    "CODEGEN_TIMEOUT_MS",
+
+    // Agent URL (worker env preferred; this is only a fallback)
+    "AGENT_BASE_URL",
   ];
 
   const out: Record<string, string> = {};
@@ -64,20 +73,6 @@ function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> 
     if (typeof v === "string" && v.length > 0) out[k] = v;
   }
   return out;
-}
-
-/* ----------------------- helpers ----------------------- */
-
-function isCiOrMeta(path: string) {
-  const p = path.replace(/\\/g, "/");
-  return p.startsWith(".github/") || p === "wrangler.toml";
-}
-
-function hasSubstantiveFiles(files: { path: string; content: string }[]): boolean {
-  // “Real” == non-CI/meta file with at least 1 byte
-  return files.some(
-    (f) => !isCiOrMeta(f.path) && typeof f.content === "string" && f.content.length > 0
-  );
 }
 
 /* ----------------------- types ----------------------- */
@@ -101,7 +96,14 @@ export async function buildService(
   const { plan, targetFiles } = await planProjectFiles(payload as any);
 
   if (!targetFiles || targetFiles.length === 0) {
-    throw new Error("Planner returned 0 target files; aborting before publish.");
+    const minimal = sanitizeGeneratedFiles([], {
+      ideaId: payload.ideaId,
+      env: {
+        CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
+        CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
+      },
+    });
+    return { files: minimal, plan };
   }
 
   // 2) Batched generation → agent (write-only)
@@ -119,10 +121,10 @@ export async function buildService(
       env: {
         ...getEnvSubset(env),
         AGENT_BASE_URL: getEnv("AGENT_BASE_URL", env), // ✅ ensure agent URL is passed to codegen
+        // AGENT_API_KEY intentionally omitted unless you add it to Worker env
       },
-      // ✅ pass through context so the agent gets the full brief/thread
+      // ✅ pass through context so the agent gets the full brief/thread (no ideaId here)
       meta: {
-        ideaId: String(payload.ideaId || ""),
         messages: (payload as any).messages || [],
         ideaSummary: (payload as any).ideaSummary || undefined,
         branding: (payload as any).branding || undefined,
@@ -133,25 +135,12 @@ export async function buildService(
 
   // 3) Sanitize for UI **and** for publish (this is the authoritative file set)
   const sanitized = sanitizeGeneratedFiles(generated, {
-    ideaId: String(payload.ideaId || ""),
+    ideaId: payload.ideaId,
     env: {
       CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
       CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
     },
   });
-
-  // 🔎 Log sizes for debugging
-  try {
-    console.log(
-      "SANITIZED FILES:",
-      sanitized.map((f) => `${f.path}(${(f.content ?? "").length})`).join(", ")
-    );
-  } catch {}
-
-  // 🚫 Guard: don’t publish if nothing substantive was generated
-  if (!hasSubstantiveFiles(sanitized)) {
-    throw new Error("No substantive files generated (only CI/meta or empty). Not publishing.");
-  }
 
   // 4) Publish via agent → GitHub (send sanitized files so agent doesn't re-generate)
   let repoUrl: string | undefined;
