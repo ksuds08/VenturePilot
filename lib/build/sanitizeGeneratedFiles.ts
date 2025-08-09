@@ -24,6 +24,47 @@ function getDefaultCompatibilityDate(): string {
 }
 
 /**
+ * Canonical package.json so npm/yarn steps don't fail when a broken/empty file is generated.
+ */
+function getCanonicalPackageJson(ideaId: string): string {
+  const name = `mvp-${(ideaId || "app").toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
+  const pkg = {
+    name,
+    version: "0.0.0",
+    private: true,
+    type: "module",
+    scripts: { build: "echo \"(no build)\"" }
+  };
+  return JSON.stringify(pkg, null, 2) + "\n";
+}
+
+/**
+ * Ensure a valid package.json exists; replace if empty/invalid.
+ */
+function upsertPackageJson(files: FileOutput[], ideaId: string): FileOutput[] {
+  const target = "package.json";
+  let found = false;
+
+  const next = files.map((f) => {
+    if (normPath(f.path) !== target) return f;
+    found = true;
+    const raw = (f.content || "").trim();
+    if (!raw) return { path: target, content: getCanonicalPackageJson(ideaId) };
+    try {
+      JSON.parse(raw);
+      return f; // valid JSON—keep as is
+    } catch {
+      return { path: target, content: getCanonicalPackageJson(ideaId) };
+    }
+  });
+
+  if (!found) {
+    next.push({ path: target, content: getCanonicalPackageJson(ideaId) });
+  }
+  return next;
+}
+
+/**
  * Canonical deploy workflow that uses Node 20 + Wrangler v4 with `deploy`,
  * and reads CLOUDFLARE_API_TOKEN from repo secrets.
  * ✅ Install step is conditional so we don't fail when there's no lockfile.
@@ -271,6 +312,9 @@ export function sanitizeGeneratedFiles(
     }
     return f;
   });
+
+  // 3.5) Ensure a valid package.json exists so npm/yarn steps don't explode.
+  staged = upsertPackageJson(staged, meta.ideaId);
 
   // 4) Ensure canonical deploy workflow (Node 20 + Wrangler 4 + deploy + token via secrets)
   staged = upsertDeployWorkflow(staged);
