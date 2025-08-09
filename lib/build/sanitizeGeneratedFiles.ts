@@ -26,6 +26,7 @@ function getDefaultCompatibilityDate(): string {
 /**
  * Canonical deploy workflow that uses Node 20 + Wrangler v4 with `deploy`,
  * and reads CLOUDFLARE_API_TOKEN from repo secrets.
+ * ✅ Install step is conditional so we don't fail when there's no lockfile.
  */
 function getCanonicalDeployWorkflowYml(): string {
   return [
@@ -46,10 +47,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install deps
-        run: npm ci --ignore-scripts
+      - name: Install deps (if lockfile present)
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            echo "Using npm ci"
+            npm ci --ignore-scripts
+          elif [ -f yarn.lock ]; then
+            echo "Using Yarn"
+            corepack enable
+            yarn install --immutable --ignore-scripts
+          else
+            echo "No lockfile found, skipping install."
+          fi
 
       - name: Deploy with Wrangler 4
         uses: cloudflare/wrangler-action@v3
