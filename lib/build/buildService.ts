@@ -18,7 +18,8 @@ type BuildPayloadLike = {
 /* ----------------------- env helpers ----------------------- */
 
 function readEnvVar(name: string): string | undefined {
-  const anyGlobal: any = typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
+  const anyGlobal: any =
+    typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
   const maybeProc: any =
     typeof process !== "undefined"
       ? (process as any)
@@ -109,7 +110,7 @@ export async function buildService(
       alreadyGenerated: already,
       env: {
         ...getEnvSubset(env),
-        AGENT_BASE_URL: getEnv("AGENT_BASE_URL", env), // ✅ ensure agent URL is passed to codegen
+        AGENT_BASE_URL: getEnv("AGENT_BASE_URL", env), // ✅ pass agent URL to codegen
         // AGENT_API_KEY intentionally omitted unless you add it to Worker env
       },
     });
@@ -140,8 +141,7 @@ export async function buildService(
           branch: "main",
           commitMessage: `chore: initial MVP for ${payload.ideaId}`,
           createRepo: true,
-          // 👇 NEW: ship the sanitized files to the agent, verbatim
-          files: sanitized,
+          files: sanitized, // ✉️ ship the exact files we just generated/sanitized
         },
         {
           baseUrl,
@@ -149,7 +149,12 @@ export async function buildService(
         }
       );
 
-      console.log("DEBUG publish <- repoUrl:", publish.repoUrl, "sha:", publish.commitSha);
+      console.log(
+        "DEBUG publish <- repoUrl:",
+        publish.repoUrl,
+        "sha:",
+        publish.commitSha
+      );
       repoUrl = publish.repoUrl;
     } catch (e: any) {
       console.error("ERROR publish-to-github:", e?.message || e);
