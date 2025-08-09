@@ -75,12 +75,12 @@ function defaultFilesPlan(): { path: string; description: string }[] {
     {
       path: "wrangler.toml",
       description:
-        "Wrangler config: name=mvp-<ideaId>, main=functions/index.ts, compatibility_date=today, add [site] bucket=./public. The ASSETS KV is handled/injected by build service.",
+        "Wrangler config: name=mvp-<ideaId>, main=functions/index.ts, compatibility_date=2024-11-06, add [site] bucket=./public. The ASSETS KV is handled/injected by build service.",
     },
     {
       path: ".github/workflows/deploy.yml",
       description:
-        "GitHub Actions workflow that deploys with cloudflare/wrangler-action@v3. Expects CLOUDFLARE_API_TOKEN secret.",
+        "GitHub Actions workflow that deploys with cloudflare/wrangler-action@v3 using Wrangler v4 `deploy`. Expects CLOUDFLARE_API_TOKEN secret.",
     },
     {
       path: "package.json",
@@ -100,7 +100,9 @@ function defaultFilesPlan(): { path: string; description: string }[] {
 async function tryModelPlan(
   payload: BuildPayload
 ): Promise<{ plan: string; files: { path: string; description: string }[] } | null> {
-  const apiKey = (globalThis as any)?.process?.env?.OPENAI_API_KEY || (globalThis as any)?.process?.env?.OPENAI_APIKEY;
+  const apiKey =
+    (globalThis as any)?.process?.env?.OPENAI_API_KEY ||
+    (globalThis as any)?.process?.env?.OPENAI_APIKEY;
   if (!apiKey) return null;
 
   // Avoid throwing if 'openai' lib is not installed; keep the import truly dynamic.
@@ -119,7 +121,7 @@ async function tryModelPlan(
       extractSimplePlan(payload).slice(0, 1200);
 
     const sys =
-      "You are a senior software planner. Output a short, explicit plan (3-6 sentences) and a minimal set of concrete files to implement it. Keep descriptions concise (<= 200 chars). No markdown, no code fences.";
+      "You are a senior software planner. Output a short, explicit plan (3-6 sentences) and a minimal set of concrete files to implement it. Keep descriptions concise (<= 200 chars). No markdown, no code fences. Use Cloudflare Wrangler v4 with the 'deploy' subcommand and Node 20+. For wrangler.toml, use a real ISO date (YYYY-MM-DD) and specifically '2024-11-06' — do NOT use 'today'.";
 
     const user = [
       "Context:",
@@ -142,7 +144,9 @@ async function tryModelPlan(
 
     if (client.responses?.create) {
       const r = await client.responses.create({
-        model: (globalThis as any)?.process?.env?.CODEGEN_PLANNER_MODEL || "gpt-4o-mini",
+        model:
+          (globalThis as any)?.process?.env?.CODEGEN_PLANNER_MODEL ||
+          "gpt-4o-mini",
         temperature: 0.2,
         max_output_tokens: 800,
         input: [
@@ -153,7 +157,9 @@ async function tryModelPlan(
       text = r.output_text;
     } else {
       const r = await client.chat.completions.create({
-        model: (globalThis as any)?.process?.env?.CODEGEN_PLANNER_MODEL || "gpt-4o-mini",
+        model:
+          (globalThis as any)?.process?.env?.CODEGEN_PLANNER_MODEL ||
+          "gpt-4o-mini",
         temperature: 0.2,
         max_tokens: 800,
         messages: [
@@ -179,8 +185,14 @@ async function tryModelPlan(
 
     // Normalize shape
     const files = parsed.files
-      .filter((f: any) => f && typeof f.path === "string" && typeof f.description === "string")
-      .map((f: any) => ({ path: String(f.path), description: String(f.description) }));
+      .filter(
+        (f: any) =>
+          f && typeof f.path === "string" && typeof f.description === "string"
+      )
+      .map((f: any) => ({
+        path: String(f.path),
+        description: String(f.description),
+      }));
 
     if (files.length === 0) return null;
 
@@ -196,7 +208,9 @@ async function tryModelPlan(
 
 /* ------------------------ main API ------------------------ */
 
-export async function planProjectFiles(payload: BuildPayload): Promise<PlannedProject> {
+export async function planProjectFiles(
+  payload: BuildPayload
+): Promise<PlannedProject> {
   // Try the model-driven plan first (only if OPENAI_API_KEY + openai lib exist)
   const modelPlan = await tryModelPlan(payload);
   if (modelPlan) {
@@ -219,7 +233,7 @@ export async function planProjectFiles(payload: BuildPayload): Promise<PlannedPr
           description:
             "Wrangler config: name=mvp-" +
             id +
-            ", main=functions/index.ts, compatibility_date=today, add [site] bucket=./public. The ASSETS KV is handled/injected by build service.",
+            ", main=functions/index.ts, compatibility_date=2024-11-06, add [site] bucket=./public. The ASSETS KV is handled/injected by build service.",
         }
       : f
   );
