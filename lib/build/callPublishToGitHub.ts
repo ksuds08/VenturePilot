@@ -3,10 +3,10 @@
 export type PublishRequest = {
   repoOwner?: string;
   repoName: string;
-  branch?: string;           // default "main"
-  commitMessage?: string;    // default "chore: initial MVP"
-  createRepo?: boolean;      // default true
-  // ✅ NEW: allow passing exact files to commit (so sanitizer wins)
+  branch?: string;            // default "main"
+  commitMessage?: string;     // default "chore: initial MVP"
+  createRepo?: boolean;       // default true
+  // Allow passing exact files to commit (so sanitizer wins and we avoid empty commits)
   files?: { path: string; content: string }[];
 };
 
@@ -17,8 +17,13 @@ export type PublishResponse = {
 };
 
 function safeEnv(name: string): string | undefined {
-  if (typeof process !== "undefined" && (process as any)?.env?.[name]) {
-    return (process as any).env[name];
+  try {
+    // Guarded access so Workers/edge runtimes don't throw
+    if (typeof process !== "undefined" && (process as any)?.env?.[name]) {
+      return (process as any).env[name];
+    }
+  } catch {
+    // ignore
   }
   return undefined;
 }
@@ -31,14 +36,15 @@ export async function callPublishToGitHub(
     opts.baseUrl ||
     safeEnv("AGENT_BASE_URL") ||
     "https://launchwing-agent.onrender.com";
-  const baseUrl = baseRaw.replace(/\/+$/, "");
+  const baseUrl = baseRaw.replace(/\/+$/, ""); // strip trailing slash
 
+  // Default timeout (overridable via opts or env)
   const timeoutMs =
     opts.timeoutMs ??
     Number(safeEnv("AGENT_TIMEOUT_MS") || safeEnv("PUBLISH_TIMEOUT_MS") || 180_000);
 
   const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${baseUrl}/publish-to-github`, {
@@ -51,17 +57,22 @@ export async function callPublishToGitHub(
         branch: req.branch ?? "main",
         commitMessage: req.commitMessage ?? "chore: initial MVP",
         createRepo: req.createRepo ?? true,
-        ...req, // ✅ includes req.files when present
+        ...req, // includes req.files, repoOwner, repoName, etc.
       }),
       signal: ctrl.signal,
     });
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`publish-to-github ${res.status} ${res.statusText}: ${text.slice(0, 400)}`);
+      throw new Error(
+        `publish-to-github ${res.status} ${res.statusText}: ${text.slice(0, 400)}`
+      );
     }
+
     return (await res.json()) as PublishResponse;
   } finally {
-    clearTimeout(id);
+    clearTimeout(timer);
   }
 }
+
+export default callPublishToGitHub;
