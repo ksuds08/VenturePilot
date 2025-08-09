@@ -116,7 +116,7 @@ export async function buildService(
     generated.push(...out);
   }
 
-  // 3) Sanitize for return only (UI)—deployment will use agent’s on-disk files
+  // 3) Sanitize for UI **and** for publish (this is the authoritative file set)
   const sanitized = sanitizeGeneratedFiles(generated, {
     ideaId: payload.ideaId,
     env: {
@@ -125,7 +125,7 @@ export async function buildService(
     },
   });
 
-  // 4) Publish via agent → GitHub
+  // 4) Publish via agent → GitHub (send sanitized files so agent doesn't re-generate)
   let repoUrl: string | undefined;
   if (!payload.skipCommit) {
     const repoName = `mvp-${payload.ideaId}`;
@@ -140,6 +140,8 @@ export async function buildService(
           branch: "main",
           commitMessage: `chore: initial MVP for ${payload.ideaId}`,
           createRepo: true,
+          // 👇 NEW: ship the sanitized files to the agent, verbatim
+          files: sanitized,
         },
         {
           baseUrl,
