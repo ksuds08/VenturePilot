@@ -43,15 +43,16 @@ function isJSON(s: string) {
 }
 
 function cleanProseFromCode(content: string): string {
+  // Remove markdown/prose bullets, headings, and lines that explain “This file/handler …”
   const lines = TRIM_BOM(content).split("\n");
   const filtered: string[] = [];
   for (const raw of lines) {
     const line = raw.replace(/\r$/, "");
     const trimmed = line.trim();
 
-    if (!trimmed) continue;
+    if (!trimmed) continue; // drop empty
 
-    // obvious markdown / prose
+    // Obvious markdown / prose
     if (/^#{1,6}\s+/.test(trimmed)) continue;
     if (/^[-*+]\s+/.test(trimmed)) continue;
     if (/^\d+[\.\)]\s+/.test(trimmed)) continue;
@@ -60,6 +61,7 @@ function cleanProseFromCode(content: string): string {
     if (/^(This|The|It)\s+(file|handler|function|component)\b/i.test(trimmed)) continue;
     if (/^(Purpose|Description|Notes?):/i.test(trimmed)) continue;
 
+    // “To manage …”, “To configure …” etc (not code)
     if (/^To\s+[A-Z]/.test(trimmed) && !/[;{}()=]$/.test(trimmed)) continue;
 
     filtered.push(line);
@@ -111,6 +113,7 @@ function upsertTomlScalar(toml: string, key: string, value: string): string {
   const keyRe = new RegExp(`^\\s*${key}\\s*=.*$`, "m");
 
   if (keyRe.test(toml)) {
+    // Replace the first occurrence
     toml = toml.replace(keyRe, line);
     // Deduplicate stray repeats
     const rows = toml.split("\n");
@@ -226,7 +229,7 @@ export function sanitizeGeneratedFiles(
 
     const cleaned = codeLike ? cleanProseFromCode(c0) : c0;
 
-    // Skip files that are effectively empty after cleanup
+    // ⛔️ Skip files that are effectively empty after cleanup (prevents blank public/*)
     if (codeLike && cleaned.trim().length === 0) {
       // eslint-disable-next-line no-console
       console.warn(`Skipping empty file after cleanup: ${p0}`);
@@ -251,7 +254,7 @@ export function sanitizeGeneratedFiles(
       continue;
     }
 
-    // Chunky names → bucket by content
+    // Chunky names (like backend/chunk_*, components/chunk_*) → bucket by content
     if (/chunk_/i.test(f.path) || /backend\//i.test(f.path)) {
       backendChunks.push(f.content);
       continue;
@@ -301,7 +304,7 @@ export function sanitizeGeneratedFiles(
   }
 
   // 6) Always write/update the GitHub Actions workflow
-  //    Node 20 + wrangler-action@v3 + `deploy` + CLOUDFLARE_API_TOKEN at job & step.
+  //    Node 20 + run wrangler via npx (no wrangler-action) + token at job & step scope.
   const workflowContent = `name: Deploy to Cloudflare Workers
 
 on:
@@ -330,13 +333,10 @@ jobs:
       - name: Install deps (best-effort)
         run: npm ci || true
 
-      - name: Deploy with Wrangler
-        uses: cloudflare/wrangler-action@v3
+      - name: Deploy with Wrangler (v4)
         env:
           CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-        with:
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy
+        run: npx --yes wrangler@4 deploy
 `;
   const wfPath = ".github/workflows/deploy.yml";
   const wfIdx = out.findIndex(f => f.path === wfPath);
@@ -346,7 +346,7 @@ jobs:
     out.push({ path: wfPath, content: workflowContent.trim() });
   }
 
-  // 7) Ensure wrangler.toml exists and is usable
+  // 7) Ensure wrangler.toml exists and is usable (prefer calling generator)
   const hasPublic = out.some(f => /^public\//i.test(f.path));
   if (!out.some(f => f.path === "wrangler.toml")) {
     out.push({
@@ -357,6 +357,7 @@ jobs:
     const idx = out.findIndex(f => f.path === "wrangler.toml");
     let toml = out[idx].content;
 
+    // Keep patchers for robustness when agent produced a partial toml
     if (accountId) {
       toml = upsertTomlScalar(toml, "account_id", accountId);
     }
@@ -367,7 +368,7 @@ jobs:
     out[idx] = { path: "wrangler.toml", content: toml };
   }
 
-  // 8) Guarantee at least one HTML asset (index)
+  // 8) Guarantee at least one HTML asset (index) so Workers Sites doesn’t fail
   const hasIndexHtml = out.some(f => f.path === "public/index.html");
   if (!hasIndexHtml) {
     out.push({
