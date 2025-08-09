@@ -70,6 +70,16 @@ function normPath(p: string): string {
 }
 
 /**
+ * Normalize workflow filenames so `.yaml` won't slip through.
+ * Also collapse any accidental case/dup variations if needed later.
+ */
+function normalizeWorkflowPath(p: string): string {
+  const np = normPath(p);
+  if (np === ".github/workflows/deploy.yaml") return ".github/workflows/deploy.yml";
+  return np;
+}
+
+/**
  * Ensure the repo contains a single correct deploy workflow.
  * - Overwrites any existing `.github/workflows/deploy.yml` with the canonical one.
  */
@@ -212,21 +222,38 @@ export function sanitizeGeneratedFiles(
   const seenPaths = new Set<string>();
   const out: FileOutput[] = [];
 
+  // 0) Normalize/rename workflow variants *before* dedupe so sanitizer wins.
+  const pre = (filesIn || []).map((f) => {
+    const normalized = normalizeWorkflowPath(f.path);
+    return { path: normalized, content: f.content ?? "" };
+  });
+
   // 1) Normalize list, drop dupes (first write wins)
-  for (const f of filesIn || []) {
+  for (const f of pre) {
     const p = normPath(f.path);
     if (!p || seenPaths.has(p)) continue;
     seenPaths.add(p);
     out.push({ path: p, content: f.content ?? "" });
   }
 
+  // 1.5) Drop any other workflow files except the canonical deploy.yml
+  const workflowsDir = ".github/workflows/";
+  let filtered = out.filter((f) => {
+    const p = normPath(f.path);
+    if (p.startsWith(workflowsDir) && p !== `${workflowsDir}deploy.yml`) {
+      // remove conflicting workflows entirely
+      return false;
+    }
+    return true;
+  });
+
   // 2) Size minimums (preserve previous behavior)
-  for (let i = 0; i < out.length; i++) {
-    out[i] = enforceSizeMinimums(out[i], meta);
+  for (let i = 0; i < filtered.length; i++) {
+    filtered[i] = enforceSizeMinimums(filtered[i], meta);
   }
 
   // 3) Ensure/patch wrangler.toml (compatibility_date, optional account_id)
-  let staged = upsertWranglerToml(out).map((f) => {
+  let staged = upsertWranglerToml(filtered).map((f) => {
     if (normPath(f.path) === "wrangler.toml") {
       const accId = meta.env?.CLOUDFLARE_ACCOUNT_ID; // avoid duplicate const names
       const patched = maybeInjectAccountIdIntoToml(f.content, accId);
