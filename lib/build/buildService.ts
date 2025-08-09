@@ -2,11 +2,9 @@
 import { planProjectFiles } from "./planProjectFiles";
 import { generateCodeBatch } from "./generateCodeBatch";
 import { chunkArray } from "./chunkArray";
-// import { commitToGitHub } from "./commitToGitHub"; // ⛔️ no longer used in this flow
-import { sanitizeGeneratedFiles } from "./sanitizeGeneratedFiles";
 import { callPublishToGitHub } from "./callPublishToGitHub";
-import { runInterfaceSelfTest } from "./typecheck";
 
+// ——— types ———
 type BuildPayloadLike = {
   ideaId: string;
   userBrief?: string;
@@ -15,11 +13,17 @@ type BuildPayloadLike = {
   [key: string]: unknown;
 };
 
-/* ----------------------- env helpers ----------------------- */
+export type BuildServiceResult = {
+  // What we show back to the UI (just the generated files)
+  files: { path: string; content: string }[];
+  plan: string;
+  repoUrl?: string;
+  pagesUrl?: string;
+};
 
+// ——— env helpers ———
 function readEnvVar(name: string): string | undefined {
-  const anyGlobal: any =
-    typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
+  const anyGlobal: any = typeof globalThis !== "undefined" ? (globalThis as any) : undefined;
   const maybeProc: any =
     typeof process !== "undefined"
       ? (process as any)
@@ -29,7 +33,6 @@ function readEnvVar(name: string): string | undefined {
   return maybeProc?.env?.[name];
 }
 
-// Prefer Worker `env` first, then fallback to process.env
 function getEnv(name: string, runtimeEnv?: Record<string, any>): string | undefined {
   const v = runtimeEnv?.[name];
   return typeof v === "string" && v.length > 0 ? v : readEnvVar(name);
@@ -43,20 +46,13 @@ function getBatchSize(runtimeEnv?: Record<string, any>): number {
 
 function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> {
   const keys = [
-    // OpenAI / model selection
     "OPENAI_API_KEY",
     "OPENAI_API_BASE",
     "CODEGEN_MODEL",
     "CODEGEN_MAX_TOKENS",
     "CODEGEN_TEMP",
     "CODEGEN_TIMEOUT_SECS",
-
-    // Additional toggles affecting validation
-    "CODEGEN_MIN_HTML_BYTES",
-    "CODEGEN_MIN_CSS_BYTES",
-    "CODEGEN_MIN_JS_BYTES",
   ];
-
   const out: Record<string, string> = {};
   for (const k of keys) {
     const v = getEnv(k, runtimeEnv);
@@ -65,38 +61,52 @@ function getEnvSubset(runtimeEnv?: Record<string, any>): Record<string, string> 
   return out;
 }
 
-/* ----------------------- types ----------------------- */
+// ——— path/content utils (NO content rewriting) ———
+function normPath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/^\/+/, "");
+}
 
-export type BuildServiceResult = {
-  files: { path: string; content: string }[];
-  plan: string;
-  repoUrl?: string;
-  pagesUrl?: string;
-};
+/**
+ * Strict, minimal normalization for publishing:
+ * - normalize slashes
+ * - drop blank/unsafe paths
+ * - do not modify content
+ * - preserve duplicates by last-write-wins (so later batches can overwrite)
+ */
+function normalizeForPublish(
+  files: { path: string; content: string }[]
+): { path: string; content: string }[] {
+  const map = new Map<string, { path: string; content: string }>();
+  for (const f of files) {
+    const raw = (f?.path || "").trim();
+    if (!raw) continue;
+    const np = normPath(raw);
 
-/* ----------------------- main ----------------------- */
+    // guard against traversal
+    if (np.includes("..")) continue;
 
+    // ensure folder structure preserved (Map keeps last write)
+    map.set(np, { path: np, content: typeof f.content === "string" ? f.content : "" });
+  }
+  return Array.from(map.values());
+}
+
+// ——— main ———
 export async function buildService(
   payload: BuildPayloadLike & {
     repo?: { token: string; org?: string }; // kept for compat; ignored now
     skipCommit?: boolean;
   },
-  env?: Record<string, any> // <-- accept Worker env
+  env?: Record<string, any>
 ): Promise<BuildServiceResult> {
   const { plan, targetFiles } = await planProjectFiles(payload as any);
 
+  // If planner yielded nothing, just stop early (don’t create stubs)
   if (!targetFiles || targetFiles.length === 0) {
-    const minimal = sanitizeGeneratedFiles([], {
-      ideaId: payload.ideaId,
-      env: {
-        CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
-        CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
-      },
-    });
-    return { files: minimal, plan };
+    return { files: [], plan };
   }
 
-  // 2) Batched generation → agent (write-only)
+  // 1) Generate files in small batches
   const batches = chunkArray(
     targetFiles.map((t: any) => ({ path: t.path, description: t.description })),
     getBatchSize(env)
@@ -110,70 +120,63 @@ export async function buildService(
       alreadyGenerated: already,
       env: {
         ...getEnvSubset(env),
-        AGENT_BASE_URL: getEnv("AGENT_BASE_URL", env), // ✅ pass agent URL to codegen
-        // AGENT_API_KEY intentionally omitted unless you add it to Worker env
+        AGENT_BASE_URL: getEnv("AGENT_BASE_URL", env),
+        // AGENT_API_KEY intentionally not exposed to codegen
       },
     });
     generated.push(...out);
   }
 
-  // 3) Sanitize for UI **and** for publish (this is the authoritative file set)
-  const sanitized = sanitizeGeneratedFiles(generated, {
-    ideaId: payload.ideaId,
-    env: {
-      CLOUDFLARE_ACCOUNT_ID: getEnv("CLOUDFLARE_ACCOUNT_ID", env),
-      CLOUDFLARE_API_TOKEN: getEnv("CLOUDFLARE_API_TOKEN", env),
-    },
-  });
+  // 2) Minimal, safe normalization; NO sanitization, NO filler content.
+  const publishReady = normalizeForPublish(generated);
 
-  // 4) Publish via agent → GitHub (send sanitized files so agent doesn't re-generate)
+  // Optional: visibility logs (safe) -> can help trace empties if they ever appear.
+  try {
+    const total = publishReady.length;
+    const empties = publishReady.filter(f => (f.content ?? "").length === 0).length;
+    console.log(
+      `PUBLISH_STATS files=${total} empty=${empties} sample=${publishReady.slice(0, 5).map(f => `${f.path}:${(f.content||"").length}`).join(",")}`
+    );
+  } catch {}
+
+  // 3) Publish exactly what we generated to GitHub
   let repoUrl: string | undefined;
   if (!payload.skipCommit) {
     const repoName = `mvp-${payload.ideaId}`;
+    const baseUrl = getEnv("AGENT_BASE_URL", env);
     try {
-      const baseUrl = getEnv("AGENT_BASE_URL", env);
-      console.log("DEBUG publish -> baseUrl:", baseUrl);
-
       const publish = await callPublishToGitHub(
         {
           repoOwner: "LaunchWing",
           repoName,
           branch: "main",
-          commitMessage: `chore: initial MVP for ${payload.ideaId}`,
+          commitMessage: `chore: MVP for ${payload.ideaId}`,
           createRepo: true,
-          files: sanitized, // ✉️ ship the exact files we just generated/sanitized
+          // 👇 send the exact files we just generated (paths + content + dirs preserved)
+          files: publishReady,
         },
         {
           baseUrl,
           apiKey: getEnv("AGENT_API_KEY", env),
         }
       );
-
-      console.log(
-        "DEBUG publish <- repoUrl:",
-        publish.repoUrl,
-        "sha:",
-        publish.commitSha
-      );
       repoUrl = publish.repoUrl;
+      console.log("Publish complete:", publish.repoUrl, publish.commitSha);
     } catch (e: any) {
       console.error("ERROR publish-to-github:", e?.message || e);
       throw e;
     }
   }
 
-  return { files: sanitized, plan, repoUrl };
+  // 4) Return the same set to the UI (what got published)
+  return { files: publishReady, plan, repoUrl };
 }
 
-// Keep default export
 export default buildService;
 
-// 👇 Explicit named export so the bundler can resolve it reliably
+// Convenience alias
 export async function buildAndDeployApp(
-  payload: BuildPayloadLike & {
-    repo?: { token: string; org?: string };
-    skipCommit?: boolean;
-  },
+  payload: BuildPayloadLike & { repo?: { token: string; org?: string }; skipCommit?: boolean },
   env?: Record<string, any>
 ): Promise<BuildServiceResult> {
   return buildService(payload, env);
