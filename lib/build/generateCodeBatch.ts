@@ -1,12 +1,15 @@
 // lib/build/generateCodeBatch.ts
+
 import { callGenerateCodeAPI, type FileGenOutput } from './callGenerateCodeAPI';
 
-function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
+type ChatMsg = { role: "system" | "user" | "assistant"; content?: string };
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   if (size <= 0) return [arr];
   const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
   return chunks;
 }
 
@@ -16,67 +19,52 @@ export async function generateCodeBatch(
     plan: any;
     alreadyGenerated: { path: string; content: string }[];
     env: Record<string, string | undefined>;
+    // 🔥 pass through thread + metadata so the agent has real context
     meta?: {
+      messages?: ChatMsg[];
       ideaId?: string;
-      ideaSummary?: any;
-      branding?: any;
-      messages?: any[];
+      ideaSummary?: { description?: string; [k: string]: unknown };
+      branding?: Record<string, unknown>;
     };
   }
 ): Promise<FileGenOutput[]> {
   const { plan } = opts;
 
   const chunkSize = Number(opts.env?.CODEGEN_CHUNK_SIZE) || 5;
+
   const baseUrl =
     opts.env?.AGENT_BASE_URL ||
     (typeof process !== 'undefined' ? (process as any)?.env?.AGENT_BASE_URL : undefined) ||
     'http://localhost:8000';
 
-  const timeoutMs = Number(opts.env?.CODEGEN_TIMEOUT_MS) || 300_000; // ✅ 5 min
-  const maxRetries = Number(opts.env?.CODEGEN_RETRIES) ?? 1;         // retry count (1 = one extra try)
-  const baseBackoff = Number(opts.env?.CODEGEN_RETRY_BACKOFF_MS) || 2_000;
+  const apiKey =
+    opts.env?.AGENT_API_KEY ||
+    (typeof process !== 'undefined' ? (process as any)?.env?.AGENT_API_KEY : undefined);
+
+  const timeoutMs = Number(opts.env?.CODEGEN_TIMEOUT_MS) || 300_000; // 5 min
 
   const chunks = chunkArray(filesToGenerate || [], Math.max(1, chunkSize));
   const allResults: FileGenOutput[] = [];
 
   for (const chunk of chunks) {
-    let attempt = 0;
-    // simple retry loop for AbortError or CF 524
-    while (true) {
-      try {
-        const res = await callGenerateCodeAPI(
-          {
-            plan,
-            targetFiles: chunk,
-            messages: opts.meta?.messages ?? [],
-            ideaId: opts.meta?.ideaId,
-            ideaSummary: opts.meta?.ideaSummary,
-            branding: opts.meta?.branding,
-          },
-          {
-            baseUrl,
-            includeContextFiles: false,
-            expectContent: true,
-            timeoutMs,
-          }
-        );
-        allResults.push(...res);
-        break; // chunk success
-      } catch (err: any) {
-        const msg = String(err?.message || err);
-        const isAbort = err?.name === 'AbortError' || /aborted|timeout/i.test(msg);
-        const is524 = /(\b524\b|HTTP\s?524)/.test(msg);
-        if ((isAbort || is524) && attempt < maxRetries) {
-          const backoff = baseBackoff * Math.pow(2, attempt);
-          console.log(`generateCodeBatch: retrying chunk (attempt ${attempt + 1}/${maxRetries}) after ${backoff}ms due to: ${msg}`);
-          await sleep(backoff);
-          attempt++;
-          continue;
-        }
-        console.log(`generateCodeBatch: giving up on chunk due to: ${msg}`);
-        throw err;
+    const res = await callGenerateCodeAPI(
+      {
+        plan,
+        targetFiles: chunk,
+        messages: opts.meta?.messages ?? [],
+        ideaId: opts.meta?.ideaId,
+        ideaSummary: opts.meta?.ideaSummary,
+        branding: opts.meta?.branding,
+      },
+      {
+        baseUrl,
+        includeContextFiles: false,
+        expectContent: true,
+        timeoutMs,
+        apiKey,
       }
-    }
+    );
+    allResults.push(...res);
   }
 
   return allResults;
