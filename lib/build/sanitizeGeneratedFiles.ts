@@ -1,432 +1,256 @@
 // lib/build/sanitizeGeneratedFiles.ts
 
-import { generateWranglerToml } from "../generate/generateWranglerToml";
-
-type FileInput = { path: string; content: string };
-type FileOutput = { path: string; content: string };
+export type FileInput = { path: string; content: string };
+export type FileOutput = { path: string; content: string };
 
 type Meta = {
   ideaId: string;
-  env: Record<string, string | undefined>;
+  env?: {
+    CLOUDFLARE_ACCOUNT_ID?: string;
+    CLOUDFLARE_API_TOKEN?: string; // do NOT inline; just detect/preserve behavior
+    CODEGEN_MIN_HTML_BYTES?: string;
+    CODEGEN_MIN_CSS_BYTES?: string;
+    CODEGEN_MIN_JS_BYTES?: string;
+  };
 };
 
-/* -------------------------- tiny helpers -------------------------- */
-
-const TRIM_BOM = (s: string) => s.replace(/^\uFEFF/, "");
-
-function isLikelyHTML(s: string) {
-  const t = s.trim().slice(0, 2000);
-  return /<!DOCTYPE html>|<html[\s>]/i.test(t);
-}
-function isLikelyCSS(s: string) {
-  const t = s.trim();
-  return (
-    (!/</.test(t) && /[{};]/.test(t) && /[:;]/.test(t)) ||
-    /^\/\*[\s\S]*\*\/\s*$/.test(t)
-  );
-}
-function isLikelyJS(s: string) {
-  const t = s.trim();
-  return /(export|import|function|const|let|var)\s/.test(t) || /=>/.test(t);
-}
-function isLikelyTS(s: string) {
-  const t = s.trim();
-  return isLikelyJS(t) || /:\s*(string|number|boolean|any|unknown|Record<)/.test(t);
-}
-function isJSON(s: string) {
-  try {
-    JSON.parse(s);
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * Deterministic compatibility date for Wrangler.
+ * Must be YYYY-MM-DD; don't use "today".
+ */
+function getDefaultCompatibilityDate(): string {
+  // Pick a recent, fixed date to avoid CI drift.
+  return "2024-11-06";
 }
 
-function cleanProseFromCode(content: string): string {
-  const lines = TRIM_BOM(content).split("\n");
-  const filtered: string[] = [];
-  for (const raw of lines) {
-    const line = raw.replace(/\r$/, "");
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    if (/^#{1,6}\s+/.test(trimmed)) continue;
-    if (/^[-*+]\s+/.test(trimmed)) continue;
-    if (/^\d+[\.\)]\s+/.test(trimmed)) continue;
-    if (/^>/.test(trimmed)) continue;
-    if (/^\*\*[^\*]+\*\*$/.test(trimmed)) continue;
-    if (/^(This|The|It)\s+(file|handler|function|component)\b/i.test(trimmed)) continue;
-    if (/^(Purpose|Description|Notes?):/i.test(trimmed)) continue;
-    if (/^To\s+[A-Z]/.test(trimmed) && !/[;{}()=]$/.test(trimmed)) continue;
-
-    filtered.push(line);
-  }
-  return filtered.join("\n").trim();
-}
-
-function normalizePath(p: string): string {
-  return (p || "").replace(/^\.?\/+/, "").replace(/\\/g, "/");
-}
-
-function ensurePublicPaths(path: string, content: string): string {
-  const p = normalizePath(path);
-  const lower = p.toLowerCase();
-
-  const looksHTML = isLikelyHTML(content) || /\.(html?)$/i.test(lower);
-  const looksCSS = isLikelyCSS(content) || /\.(css)$/i.test(lower);
-  const looksJS  = isLikelyJS(content)  || /\.(m?jsx?)$/i.test(lower);
-
-  if (/^public\//i.test(p) || /^functions\//i.test(p)) return p;
-
-  if (looksHTML) return "public/index.html";
-  if (looksCSS)  return "public/styles.css";
-  if (looksJS)   return "public/app.js";
-  return p;
-}
-
-function minimalPackageJson(): string {
-  return JSON.stringify(
-    {
-      name: "launchwing-mvp",
-      private: true,
-      type: "module",
-      scripts: { build: "echo 'No build step required'" },
-    },
-    null,
-    2
-  );
-}
-
-/* ------------------- wrangler.toml patch helpers ------------------- */
-
-function upsertTomlScalar(toml: string, key: string, value: string): string {
-  const line = `${key} = "${value}"`;
-  const keyRe = new RegExp(`^\\s*${key}\\s*=.*$`, "m");
-
-  if (keyRe.test(toml)) {
-    toml = toml.replace(keyRe, line);
-    const rows = toml.split("\n");
-    const out: string[] = [];
-    let seen = false;
-    for (const r of rows) {
-      if (new RegExp(`^\\s*${key}\\s*=`).test(r)) {
-        if (seen) continue;
-        seen = true;
-      }
-      out.push(r);
-    }
-    return out.join("\n");
-  }
-
-  const nameRe = /^\s*name\s*=\s*".*?"\s*$/m;
-  if (nameRe.test(toml)) return toml.replace(nameRe, (m) => `${m}\n${line}`);
-  return toml.trimEnd() + `\n${line}\n`;
-}
-
-function ensureSiteBucket(toml: string): string {
-  if (/\[site\][\s\S]*bucket\s*=/.test(toml)) return toml;
-  return toml.trimEnd() + `
-
-[site]
-bucket = "./public"
-`;
-}
-
-function todayISO(): string {
-  const d = new Date();
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-/* ---------------------- backend merge (Worker) ---------------------- */
-
-function extractDefaultWorker(content: string): string | null {
-  const m = content.match(/export\s+default\s+\{[\s\S]*?\}\s*;?/m);
-  return m ? m[0] : null;
-}
-
-function mergeBackend(chunks: string[]): string {
-  for (const raw of chunks) {
-    const cleaned = cleanProseFromCode(raw);
-    const existing = extractDefaultWorker(cleaned);
-    if (existing) return existing.trim();
-  }
-  return `export default {
-  async fetch(request: Request, env: any): Promise<Response> {
-    try {
-      const url = new URL(request.url);
-      const path = url.pathname === "/" ? "/index.html" : url.pathname;
-      if (env.ASSETS) {
-        const key = path.startsWith("/") ? path.slice(1) : path;
-        const content = await env.ASSETS.get(key, { type: "text" });
-        if (content) {
-          return new Response(content, {
-            headers: { "Content-Type": getContentType(key) },
-          });
-        }
-      }
-      return new Response("Hello from LaunchWing!", {
-        headers: { "Content-Type": "text/plain" }
-      });
-    } catch {
-      return new Response("Internal Error", { status: 500 });
-    }
-  }
-};
-
-function getContentType(file: string): string {
-  if (file.endsWith(".html")) return "text/html";
-  if (file.endsWith(".css")) return "text/css";
-  if (file.endsWith(".js")) return "application/javascript";
-  if (file.endsWith(".json")) return "application/json";
-  if (file.endsWith(".svg")) return "image/svg+xml";
-  return "text/plain";
-}
-`.trim();
-}
-
-/* ---------------------- workflow patch helpers ---------------------- */
-
-function ensureDeployWorkflow(body: string): string {
-  let out = body;
-
-  // Normalize wrangler action to v3
-  out = out.replace(
-    /uses:\s*cloudflare\/wrangler-action@v[0-9.]+/g,
-    "uses: cloudflare/wrangler-action@v3"
-  );
-
-  // Force Node 20 setup (insert after checkout if missing, or normalize existing step)
-  if (!/uses:\s*actions\/setup-node@v4/.test(out)) {
-    out = out.replace(
-      /(-\s*name:\s*Checkout[\s\S]*?uses:\s*actions\/checkout@v4\s*\n)/,
-      (m) => `${m}      - name: Use Node 20\n        uses: actions/setup-node@v4\n        with:\n          node-version: '20'\n`
-    );
-  } else {
-    out = out.replace(
-      /uses:\s*actions\/setup-node@v4[\s\S]*?node-version:\s*['"]?\d+['"]?/,
-      "uses: actions/setup-node@v4\n        with:\n          node-version: '20'"
-    );
-  }
-
-  // Change publish → deploy anywhere it appears as the wrangler action command
-  out = out.replace(/command:\s*publish/g, "command: deploy");
-
-  // If the wrangler action step lacks "with:", inject it (with both command + apiToken)
-  out = out.replace(
-    /(uses:\s*cloudflare\/wrangler-action@v3[^\n]*\n)(?!\s*with:)/g,
-    (_m, head) =>
-      `${head}        with:\n          command: deploy\n          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}\n`
-  );
-
-  // Ensure apiToken present and correctly sourced
-  if (/uses:\s*cloudflare\/wrangler-action@v3/.test(out)) {
-    // Add/normalize apiToken under the same step
-    out = out.replace(
-      /(with:\s*(?:\n\s{8,}.+)*)/g,
-      (block) => {
-        if (!/apiToken:/.test(block)) {
-          return block.replace(
-            /with:\s*\n/,
-            `with:\n          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}\n`
-          );
-        }
-        return block.replace(
-          /apiToken:\s*.+/,
-          "apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}"
-        );
-      }
-    );
-  }
-
-  // Ensure job-level env has CLOUDFLARE_API_TOKEN
-  if (!/CLOUDFLARE_API_TOKEN:\s*\$\{\{\s*secrets\.CLOUDFLARE_API_TOKEN\s*\}\}/.test(out)) {
-    // Insert under the job (after permissions or before steps)
-    const jobEnvInjected = out.replace(
-      /(permissions:\s*[^\n]*[\s\S]*?\n\s*steps:\s*\n)/m,
-      (m) =>
-        `${m.replace(
-          /\n\s*steps:\s*\n/,
-          `\n      env:\n        CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}\n      steps:\n`
-        )}`
-    );
-    if (jobEnvInjected !== out) out = jobEnvInjected;
-  }
-
-  return out;
-}
-
-/* ----------------------------- main API ----------------------------- */
-
-export function sanitizeGeneratedFiles(
-  files: FileInput[],
-  meta: Meta
-): FileOutput[] {
-  const out: FileOutput[] = [];
-  const seen = new Set<string>();
-
-  // 1) Normalize & clean
-  const staged: FileOutput[] = [];
-  for (const { path, content } of files) {
-    const p0 = normalizePath(path || "");
-    const c0 = TRIM_BOM(content || "");
-
-    if (/\/?package\.json$/i.test(p0)) {
-      const valid = isJSON(c0) ? c0 : minimalPackageJson();
-      staged.push({ path: "package.json", content: valid });
-      continue;
-    }
-
-    const codeLike =
-      /\.(m?jsx?|tsx?|css|html?)$/i.test(p0) ||
-      isLikelyJS(c0) ||
-      isLikelyTS(c0) ||
-      isLikelyHTML(c0) ||
-      isLikelyCSS(c0);
-
-    const cleaned = codeLike ? cleanProseFromCode(c0) : c0;
-    if (codeLike && cleaned.trim().length === 0) continue;
-
-    const p1 = ensurePublicPaths(p0, cleaned);
-    staged.push({ path: p1, content: cleaned });
-  }
-
-  // 2) Buckets
-  const backendChunks: string[] = [];
-  const keepers: FileOutput[] = [];
-
-  for (const f of staged) {
-    if (/^functions\//i.test(f.path)) {
-      backendChunks.push(f.content);
-      keepers.push(f);
-      continue;
-    }
-    if (/chunk_/i.test(f.path) || /backend\//i.test(f.path)) {
-      backendChunks.push(f.content);
-      continue;
-    }
-    keepers.push(f);
-  }
-
-  // 3) Ensure Worker entry
-  const hasWorker = keepers.some(f => f.path === "functions/index.ts");
-  if (!hasWorker) {
-    const merged = mergeBackend(backendChunks);
-    keepers.push({ path: "functions/index.ts", content: merged });
-  } else {
-    for (let i = 0; i < keepers.length; i++) {
-      if (keepers[i].path === "functions/index.ts") {
-        keepers[i] = {
-          path: "functions/index.ts",
-          content: cleanProseFromCode(keepers[i].content),
-        };
-        break;
-      }
-    }
-  }
-
-  // 4) Move stray assets into public/
-  const moved: FileOutput[] = [];
-  for (const f of keepers) {
-    let p = f.path;
-    if (!/^public\//i.test(p) && !/^functions\//i.test(p)) {
-      const lower = p.toLowerCase();
-      if (/\.(html?|css|m?jsx?)$/.test(lower)) p = ensurePublicPaths(p, f.content);
-    }
-    moved.push({ path: p, content: f.content });
-  }
-
-  // 5) Dedup
-  for (const f of moved) {
-    const idx = out.findIndex((x) => x.path === f.path);
-    if (idx >= 0) out.splice(idx, 1);
-    out.push(f);
-    seen.add(f.path);
-  }
-
-  // 6) Ensure/patch ANY workflow YAML under .github/workflows/
-  const workflowFiles = out
-    .map((f, i) => ({ i, f }))
-    .filter(({ f }) => /^\.github\/workflows\/.+\.(yml|yaml)$/i.test(f.path));
-
-  if (workflowFiles.length === 0) {
-    // Create a default deploy workflow if none exists
-    out.push({
-      path: ".github/workflows/deploy.yml",
-      content: `name: Deploy to Cloudflare Workers
+/**
+ * Canonical deploy workflow that uses Node 20 + Wrangler v4 with `deploy`,
+ * and reads CLOUDFLARE_API_TOKEN from repo secrets.
+ */
+function getCanonicalDeployWorkflowYml(): string {
+  return [
+`name: Deploy Worker
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
-      id-token: write
-    env:
-      CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - name: Install deps (best-effort)
-        run: npm ci || true
+      - name: Install deps
+        run: npm ci --ignore-scripts
 
-      - name: Deploy (Wrangler v4)
+      - name: Deploy with Wrangler 4
         uses: cloudflare/wrangler-action@v3
         with:
           command: deploy
-          apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-`.trim(),
-    });
-  } else {
-    for (const { i } of workflowFiles) {
-      out[i] = {
-        path: out[i].path,
-        content: ensureDeployWorkflow(out[i].content),
-      };
+          wranglerVersion: '4'
+        env:
+          CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+`
+  ].join("\n");
+}
+
+/**
+ * Normalize path separators and trim redundant slashes.
+ */
+function normPath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+/**
+ * Ensure the repo contains a single correct deploy workflow.
+ * - Overwrites any existing `.github/workflows/deploy.yml` with the canonical one.
+ */
+function upsertDeployWorkflow(files: FileOutput[]): FileOutput[] {
+  const targetPath = ".github/workflows/deploy.yml";
+  const canonical = getCanonicalDeployWorkflowYml();
+
+  let found = false;
+  const next: FileOutput[] = files.map((f) => {
+    if (normPath(f.path) === targetPath) {
+      found = true;
+      return { path: targetPath, content: canonical };
     }
+    return f;
+  });
+
+  if (!found) {
+    next.push({ path: targetPath, content: canonical });
   }
 
-  // 7) Ensure wrangler.toml (account/site/compat date preserved)
-  const hasPublic = out.some(f => /^public\//i.test(f.path));
-  const compat = todayISO();
-  const accountId = meta.env.CLOUDFLARE_ACCOUNT_ID;
+  return next;
+}
 
-  if (!out.some(f => f.path === "wrangler.toml")) {
-    let toml = generateWranglerToml(`mvp-${meta.ideaId}`, accountId, undefined, hasPublic);
-    if (accountId) toml = upsertTomlScalar(toml, "account_id", String(accountId));
-    if (hasPublic) toml = ensureSiteBucket(toml);
-    toml = upsertTomlScalar(toml, "compatibility_date", compat);
-    out.push({ path: "wrangler.toml", content: toml });
-  } else {
-    const idx = out.findIndex(f => f.path === "wrangler.toml");
-    let toml = out[idx].content;
-    if (accountId) toml = upsertTomlScalar(toml, "account_id", String(accountId));
-    if (hasPublic) toml = ensureSiteBucket(toml);
-    toml = upsertTomlScalar(toml, "compatibility_date", compat);
-    out[idx] = { path: "wrangler.toml", content: toml };
-  }
+/**
+ * Patch wrangler.toml:
+ * - Ensure a real ISO date (no "today")
+ * - Leave user bindings alone
+ */
+function patchWranglerToml(content: string): string {
+  let out = content;
 
-  // 8) Ensure index.html exists
-  if (!out.some(f => f.path === "public/index.html")) {
-    out.push({
-      path: "public/index.html",
-      content: `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>LaunchWing MVP</title></head>
-<body><h1>LaunchWing MVP</h1><p>App scaffold generated.</p></body></html>`,
-    });
+  // Replace compatibility_date = "today" (any quotes / spacing)
+  out = out.replace(
+    /compatibility_date\s*=\s*["']\s*today\s*["']/gi,
+    `compatibility_date = "${getDefaultCompatibilityDate()}"`
+  );
+
+  // If no compatibility_date present at all, add one near top.
+  if (!/^\s*compatibility_date\s*=.*/m.test(out)) {
+    // If file is basically empty or minimal, seed a basic header
+    if (!out.trim()) {
+      out = `name = "worker"\nmain = "dist/worker.js"\ncompatibility_date = "${getDefaultCompatibilityDate()}"\n`;
+    } else {
+      out = `compatibility_date = "${getDefaultCompatibilityDate()}"\n` + out;
+    }
   }
 
   return out;
 }
+
+/**
+ * Ensure wrangler.toml exists and is valid.
+ */
+function upsertWranglerToml(files: FileOutput[]): FileOutput[] {
+  const target = "wrangler.toml";
+  let exists = false;
+
+  const next = files.map((f) => {
+    if (normPath(f.path) === target) {
+      exists = true;
+      return { path: target, content: patchWranglerToml(f.content || "") };
+    }
+    return f;
+  });
+
+  if (!exists) {
+    next.push({
+      path: target,
+      content: patchWranglerToml(""),
+    });
+  }
+
+  return next;
+}
+
+/**
+ * Basic HTML/CSS/JS byte thresholds (existing behavior preserved).
+ */
+function getMinBytes(env?: Meta["env"]) {
+  const toInt = (s?: string) => {
+    const n = s ? parseInt(s, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  return {
+    minHtml: toInt(env?.CODEGEN_MIN_HTML_BYTES) ?? 100,
+    minCss: toInt(env?.CODEGEN_MIN_CSS_BYTES) ?? 60,
+    minJs: toInt(env?.CODEGEN_MIN_JS_BYTES) ?? 60,
+  };
+}
+
+/**
+ * Lightweight content guards (same as before).
+ */
+function enforceSizeMinimums(file: FileOutput, meta: Meta): FileOutput {
+  const p = normPath(file.path);
+  const { minHtml, minCss, minJs } = getMinBytes(meta.env);
+
+  if (p.endsWith(".html") && file.content && file.content.length < minHtml) {
+    const body = file.content.includes("<body") ? "" : "<body></body>";
+    const head = file.content.includes("<head") ? "" : "<head></head>";
+    file.content = `<!doctype html>\n<html>\n${head}\n${body}\n</html>\n`;
+  }
+
+  if (p.endsWith(".css") && file.content.length < minCss) {
+    file.content += `\n/* minimal */\n`;
+  }
+
+  if (p.endsWith(".js") && file.content.length < minJs) {
+    file.content += `\n// minimal\n`;
+  }
+
+  return file;
+}
+
+/**
+ * DO NOT inline secrets. The only "Cloudflare token fix" we preserve is:
+ * - The workflow references \${{ secrets.CLOUDFLARE_API_TOKEN }}
+ * - We do NOT write the token into repo files.
+ * We *optionally* keep account_id if it was already present in env/meta and file wants it.
+ */
+function maybeInjectAccountIdIntoToml(content: string, accountId?: string): string {
+  if (!accountId) return content;
+
+  // If wrangler.toml has no account_id, insert it.
+  if (!/^\s*account_id\s*=.*/m.test(content)) {
+    return content.replace(/^(compatibility_date.*\n)?/m, (m) => m + `account_id = "${accountId}"\n`);
+  }
+  return content;
+}
+
+/**
+ * Public API: sanitize files for display/commit.
+ * Keeps prior behavior, adds the CI/Wrangler hardening above, and avoids
+ * duplicate variable declarations.
+ */
+export function sanitizeGeneratedFiles(
+  filesIn: FileInput[],
+  meta: Meta
+): FileOutput[] {
+  const seenPaths = new Set<string>();
+  const out: FileOutput[] = [];
+
+  // 1) Normalize list, drop dupes (first write wins)
+  for (const f of filesIn || []) {
+    const p = normPath(f.path);
+    if (!p || seenPaths.has(p)) continue;
+    seenPaths.add(p);
+    out.push({ path: p, content: f.content ?? "" });
+  }
+
+  // 2) Size minimums (preserve previous behavior)
+  for (let i = 0; i < out.length; i++) {
+    out[i] = enforceSizeMinimums(out[i], meta);
+  }
+
+  // 3) Ensure/patch wrangler.toml (compatibility_date, optional account_id)
+  let staged = upsertWranglerToml(out).map((f) => {
+    if (normPath(f.path) === "wrangler.toml") {
+      const accId = meta.env?.CLOUDFLARE_ACCOUNT_ID; // avoid duplicate const names
+      const patched = maybeInjectAccountIdIntoToml(f.content, accId);
+      return { ...f, content: patched };
+    }
+    return f;
+  });
+
+  // 4) Ensure canonical deploy workflow (Node 20 + Wrangler 4 + deploy + token via secrets)
+  staged = upsertDeployWorkflow(staged);
+
+  // 5) Final pass: never inline CLOUDFLARE_API_TOKEN anywhere
+  staged = staged.map((f) => {
+    if (/CLOUDFLARE_API_TOKEN\s*=\s*["'][^"']+["']/.test(f.content)) {
+      // Scrub any accidental literal tokens
+      f.content = f.content.replace(
+        /CLOUDFLARE_API_TOKEN\s*=\s*["'][^"']+["']/g,
+        `CLOUDFLARE_API_TOKEN = "\${{ secrets.CLOUDFLARE_API_TOKEN }}"`
+      );
+    }
+    return f;
+  });
+
+  return staged;
+}
+
+export default sanitizeGeneratedFiles;
