@@ -43,16 +43,14 @@ function isJSON(s: string) {
 }
 
 function cleanProseFromCode(content: string): string {
-  // Remove markdown/prose bullets, headings, and lines that explain “This file/handler …”
   const lines = TRIM_BOM(content).split("\n");
   const filtered: string[] = [];
   for (const raw of lines) {
     const line = raw.replace(/\r$/, "");
     const trimmed = line.trim();
 
-    if (!trimmed) continue; // drop empty
+    if (!trimmed) continue;
 
-    // Obvious markdown / prose
     if (/^#{1,6}\s+/.test(trimmed)) continue;
     if (/^[-*+]\s+/.test(trimmed)) continue;
     if (/^\d+[\.\)]\s+/.test(trimmed)) continue;
@@ -61,7 +59,6 @@ function cleanProseFromCode(content: string): string {
     if (/^(This|The|It)\s+(file|handler|function|component)\b/i.test(trimmed)) continue;
     if (/^(Purpose|Description|Notes?):/i.test(trimmed)) continue;
 
-    // “To manage …”, “To configure …” etc (not code)
     if (/^To\s+[A-Z]/.test(trimmed) && !/[;{}()=]$/.test(trimmed)) continue;
 
     filtered.push(line);
@@ -81,7 +78,6 @@ function ensurePublicPaths(path: string, content: string): string {
   const looksCSS = isLikelyCSS(content) || /\.(css)$/i.test(lower);
   const looksJS  = isLikelyJS(content)  || /\.(m?jsx?)$/i.test(lower);
 
-  // Already under public/ or backend folder (leave backend alone)
   if (/^public\//i.test(p) || /^functions\//i.test(p)) return p;
 
   if (looksHTML) return "public/index.html";
@@ -113,9 +109,7 @@ function upsertTomlScalar(toml: string, key: string, value: string): string {
   const keyRe = new RegExp(`^\\s*${key}\\s*=.*$`, "m");
 
   if (keyRe.test(toml)) {
-    // Replace the first occurrence
     toml = toml.replace(keyRe, line);
-    // Deduplicate stray repeats
     const rows = toml.split("\n");
     const out: string[] = [];
     let seen = false;
@@ -129,7 +123,6 @@ function upsertTomlScalar(toml: string, key: string, value: string): string {
     return out.join("\n");
   }
 
-  // Insert after name="…" if present; else append
   const nameRe = /^\s*name\s*=\s*".*?"\s*$/m;
   if (nameRe.test(toml)) {
     return toml.replace(nameRe, (m) => `${m}\n${line}`);
@@ -149,13 +142,11 @@ bucket = "./public"
 /* ---------------------- backend merge (Worker) ---------------------- */
 
 function extractDefaultWorker(content: string): string | null {
-  // If there's already an `export default { fetch(..` block, keep the first one.
   const m = content.match(/export\s+default\s+\{[\s\S]*?\}\s*;?/m);
   return m ? m[0] : null;
 }
 
 function mergeBackend(chunks: string[]): string {
-  // Try to find a valid default worker among chunks; otherwise fall back.
   for (const raw of chunks) {
     const cleaned = cleanProseFromCode(raw);
     const existing = extractDefaultWorker(cleaned);
@@ -213,7 +204,6 @@ export function sanitizeGeneratedFiles(
     const p0 = normalizePath(path || "");
     const c0 = TRIM_BOM(content || "");
 
-    // package.json gets special handling (must be valid JSON)
     if (/\/?package\.json$/i.test(p0)) {
       const valid = isJSON(c0) ? c0 : minimalPackageJson();
       staged.push({ path: "package.json", content: valid });
@@ -229,16 +219,12 @@ export function sanitizeGeneratedFiles(
 
     const cleaned = codeLike ? cleanProseFromCode(c0) : c0;
 
-    // ⛔️ Skip files that are effectively empty after cleanup (prevents blank public/*)
     if (codeLike && cleaned.trim().length === 0) {
-      // eslint-disable-next-line no-console
       console.warn(`Skipping empty file after cleanup: ${p0}`);
       continue;
     }
 
-    // Normalize frontend assets into public/
     const p1 = ensurePublicPaths(p0, cleaned);
-
     staged.push({ path: p1, content: cleaned });
   }
 
@@ -247,30 +233,26 @@ export function sanitizeGeneratedFiles(
   const keepers: FileOutput[] = [];
 
   for (const f of staged) {
-    // Anything under functions/ stays as-is (assume it's backend code)
     if (/^functions\//i.test(f.path)) {
       backendChunks.push(f.content);
       keepers.push(f);
       continue;
     }
 
-    // Chunky names (like backend/chunk_*, components/chunk_*) → bucket by content
     if (/chunk_/i.test(f.path) || /backend\//i.test(f.path)) {
       backendChunks.push(f.content);
       continue;
     }
 
-    // Frontend & others
     keepers.push(f);
   }
 
-  // 3) Ensure a proper Worker entry: functions/index.ts (merge backend chunks)
+  // 3) Ensure a proper Worker entry
   const hasWorker = keepers.some(f => f.path === "functions/index.ts");
   if (!hasWorker) {
     const merged = mergeBackend(backendChunks);
     keepers.push({ path: "functions/index.ts", content: merged });
   } else {
-    // Even if present, clean it to remove prose
     for (let i = 0; i < keepers.length; i++) {
       if (keepers[i].path === "functions/index.ts") {
         keepers[i] = {
@@ -282,7 +264,7 @@ export function sanitizeGeneratedFiles(
     }
   }
 
-  // 4) If any HTML/CSS/JS landed at repo root, move to public/
+  // 4) Move root assets to public/
   const moved: FileOutput[] = [];
   for (const f of keepers) {
     let p = f.path;
@@ -295,7 +277,7 @@ export function sanitizeGeneratedFiles(
     moved.push({ path: p, content: f.content });
   }
 
-  // 5) Deduplicate by last write wins
+  // 5) Deduplicate (last write wins)
   for (const f of moved) {
     const idx = out.findIndex((x) => x.path === f.path);
     if (idx >= 0) out.splice(idx, 1);
@@ -303,11 +285,8 @@ export function sanitizeGeneratedFiles(
     seen.add(f.path);
   }
 
-  // 6) Ensure workflow exists and is correct (export token + Node 20 + deploy)
-  if (!out.some(f => f.path === ".github/workflows/deploy.yml")) {
-    out.push({
-      path: ".github/workflows/deploy.yml",
-      content: `name: Deploy to Cloudflare Workers
+  // 6) Always (re)write workflow to ensure Node 20 + deploy + token present
+  const workflowContent = `name: Deploy to Cloudflare Workers
 
 on:
   push:
@@ -342,11 +321,15 @@ jobs:
         with:
           apiToken: \${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy
-`.trim(),
-    });
+`;
+  const wfIdx = out.findIndex(f => f.path === ".github/workflows/deploy.yml");
+  if (wfIdx >= 0) {
+    out[wfIdx] = { path: ".github/workflows/deploy.yml", content: workflowContent.trim() };
+  } else {
+    out.push({ path: ".github/workflows/deploy.yml", content: workflowContent.trim() });
   }
 
-  // 7) Ensure wrangler.toml exists and is usable (prefer calling generator)
+  // 7) Ensure wrangler.toml
   const hasPublic = out.some(f => /^public\//i.test(f.path));
   if (!out.some(f => f.path === "wrangler.toml")) {
     out.push({
@@ -356,19 +339,12 @@ jobs:
   } else {
     const idx = out.findIndex(f => f.path === "wrangler.toml");
     let toml = out[idx].content;
-
-    // Keep patchers for robustness when agent produced a partial toml
-    if (accountId) {
-      toml = upsertTomlScalar(toml, "account_id", accountId);
-    }
-    if (hasPublic) {
-      toml = ensureSiteBucket(toml);
-    }
-
+    if (accountId) toml = upsertTomlScalar(toml, "account_id", accountId);
+    if (hasPublic) toml = ensureSiteBucket(toml);
     out[idx] = { path: "wrangler.toml", content: toml };
   }
 
-  // 8) Guarantee at least one HTML asset (index) so Workers Sites doesn’t fail
+  // 8) Ensure index.html
   const hasIndexHtml = out.some(f => f.path === "public/index.html");
   if (!hasIndexHtml) {
     out.push({
