@@ -146,6 +146,15 @@ bucket = "./public"
 `;
 }
 
+// Return UTC YYYY-MM-DD (Wrangler requires ISO-8601 date, not "today")
+function todayISO(): string {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /* ---------------------- backend merge (Worker) ---------------------- */
 
 function extractDefaultWorker(content: string): string | null {
@@ -303,9 +312,11 @@ export function sanitizeGeneratedFiles(
     seen.add(f.path);
   }
 
-  // 6) Always write/update the GitHub Actions workflow
-  //    Node 20 + run wrangler via npx (no wrangler-action) + token at job & step scope.
-  const workflowContent = `name: Deploy to Cloudflare Workers
+  // 6) Ensure workflow exists and is correct (Node 20 + wrangler-action@v3, token in env)
+  if (!out.some(f => f.path === ".github/workflows/deploy.yml")) {
+    out.push({
+      path: ".github/workflows/deploy.yml",
+      content: `name: Deploy to Cloudflare Workers
 
 on:
   push:
@@ -320,7 +331,6 @@ jobs:
       id-token: write
     env:
       CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -333,37 +343,39 @@ jobs:
       - name: Install deps (best-effort)
         run: npm ci || true
 
-      - name: Deploy with Wrangler (v4)
+      - name: Deploy (Wrangler v4)
+        uses: cloudflare/wrangler-action@v3
         env:
           CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4 deploy
-`;
-  const wfPath = ".github/workflows/deploy.yml";
-  const wfIdx = out.findIndex(f => f.path === wfPath);
-  if (wfIdx >= 0) {
-    out[wfIdx] = { path: wfPath, content: workflowContent.trim() };
-  } else {
-    out.push({ path: wfPath, content: workflowContent.trim() });
+        with:
+          command: deploy
+`.trim(),
+    });
   }
 
-  // 7) Ensure wrangler.toml exists and is usable (prefer calling generator)
+  // 7) Ensure wrangler.toml exists and is usable (patch account_id/site bucket/compat date)
   const hasPublic = out.some(f => /^public\//i.test(f.path));
+  const compat = todayISO();
+
   if (!out.some(f => f.path === "wrangler.toml")) {
-    out.push({
-      path: "wrangler.toml",
-      content: generateWranglerToml(`mvp-${meta.ideaId}`, accountId, undefined, hasPublic),
-    });
+    // Generate then patch scalars we control
+    let toml = generateWranglerToml(`mvp-${meta.ideaId}`, accountId, undefined, hasPublic);
+    if (accountId) toml = upsertTomlScalar(toml, "account_id", String(accountId));
+    if (hasPublic) toml = ensureSiteBucket(toml);
+    toml = upsertTomlScalar(toml, "compatibility_date", compat);
+    out.push({ path: "wrangler.toml", content: toml });
   } else {
     const idx = out.findIndex(f => f.path === "wrangler.toml");
     let toml = out[idx].content;
 
-    // Keep patchers for robustness when agent produced a partial toml
     if (accountId) {
-      toml = upsertTomlScalar(toml, "account_id", accountId);
+      toml = upsertTomlScalar(toml, "account_id", String(accountId));
     }
     if (hasPublic) {
       toml = ensureSiteBucket(toml);
     }
+    // Force valid ISO date (overwrite "today" or missing value)
+    toml = upsertTomlScalar(toml, "compatibility_date", compat);
 
     out[idx] = { path: "wrangler.toml", content: toml };
   }
