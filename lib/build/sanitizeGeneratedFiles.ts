@@ -267,8 +267,6 @@ export function sanitizeGeneratedFiles(
   const out: FileOutput[] = [];
   const seen = new Set<string>();
 
-  const accountId = meta.env.CLOUDFLARE_ACCOUNT_ID;
-
   // 1) Normalize & clean
   const staged: FileOutput[] = [];
   for (const { path, content } of files) {
